@@ -97,7 +97,10 @@ def create_app(
 
     @app.api_route("/api/{path:path}", methods=_ALL_METHODS, include_in_schema=False)
     async def unknown_api_path(path: str) -> None:
-        """Answer an unknown `/api` path with FastAPI's JSON 404, so the MCP mount below never answers it."""
+        """Answer an unknown `/api` path with FastAPI's JSON 404, so the MCP mount below never answers it.
+
+        It must stay after every `/api` route: a route registered below it is shadowed.
+        """
         raise HTTPException(status_code=404)
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)

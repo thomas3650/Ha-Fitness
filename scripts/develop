@@ -73,6 +73,8 @@ trap 'exit 143' TERM
 echo $! > "$watch_pidfile"
 (
   export HA_FITNESS_PORT=8765 HA_FITNESS_DATA_DIR="$root/local/addon-data"
+  # The server reads the token file at each call, so a token that dev_onboard.py writes later needs no restart.
+  export HA_FITNESS_HA_URL=http://localhost:8123 HA_FITNESS_HA_TOKEN_FILE="$root/local/dev-ha-token"
   exec addon/server/.venv/bin/python -m ha_fitness_server
 ) >local/addon-server.log 2>&1 &
 echo $! > "$server_pidfile"
