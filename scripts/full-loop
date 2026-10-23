@@ -3,7 +3,8 @@
 # (.devcontainer/supervisor/devcontainer.json), with the add-on built from the working tree.
 #
 #   scripts/full-loop up       start the container and the Supervisor, wait for Home Assistant on
-#                              http://localhost:7123, then onboard it (user dev / dev, Danish)
+#                              http://localhost:7123, then onboard it (user dev / dev, Danish) and keep
+#                              a token for the dev user in local/full-loop-ha-token
 #   scripts/full-loop install  stage addon/ for the Supervisor, then install and start the add-on
 #                              (rebuild and start when it is installed already)
 #   scripts/full-loop check    print the add-on's health (http://localhost:8765/api/v1/health)
@@ -75,7 +76,7 @@ up() {
   # 180 tries of up to 10 s: up to about 30 min for a first start.
   curl -sf -o /dev/null -L --max-redirs 0 --retry 180 --retry-delay 10 --retry-connrefused \
     --retry-all-errors --max-time 10 "$ha_url/api/onboarding"
-  uv run python scripts/dev_onboard.py --url "$ha_url" --no-entry
+  uv run python scripts/dev_onboard.py --url "$ha_url" --no-entry --token-file local/full-loop-ha-token
   echo "full-loop: Home Assistant runs on $ha_url (user dev / dev)."
 }
 

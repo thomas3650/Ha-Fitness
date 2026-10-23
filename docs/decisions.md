@@ -222,3 +222,39 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   add-on feature with docs also released an unchanged integration.
 - **Source:** the step 3 spec (programs through chat) §12; Claude, 2026-10-24
   (Thomas's delegation for the night)
+
+### D30: The library's data is built in; its media is downloaded
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The filtered exercise data (721 records, English steps) is committed as
+  `addon/server/src/ha_fitness_server/library/exercises.json` and ships in the image. Only the GIFs and thumbnails are
+  downloaded, into the data folder (D13).
+- **Why:** The data is MIT licensed, the media is Gym visual's. Built-in data makes search work offline from the first
+  start, and tests need no network.
+- **Source:** [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md) §3.1; Claude, 2026-10-24
+  (Thomas's delegation for the night)
+
+### D31: Hot backups hold a `VACUUM INTO` snapshot, not the live database
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** Backups stay hot. `backup_pre` writes a consistent copy of the database to `backup/snapshot.db` with
+  SQLite's `VACUUM INTO`, and `backup_exclude` leaves out the live database files and the media. A start with no
+  database and a snapshot restores the snapshot.
+- **Why:** A backup must never stop a running workout, and a raw copy of a WAL database while it runs can be
+  inconsistent.
+- **Source:** [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md) §10; Claude, 2026-10-24
+  (Thomas's delegation for the night)
+
+### D32: The dev HA token lives in `local/dev-ha-token`
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** `scripts/dev_onboard.py` keeps a long-lived token for the dev user in `local/dev-ha-token` (mode 600).
+  The fast loop's add-on server reads it at each call through `HA_FITNESS_HA_TOKEN_FILE`. Nothing reads `.env`. This
+  replaces design spec §4's token from a git-ignored `.env`.
+- **Why:** The token is made by a script, not by hand, and a token written after the server started works without a
+  restart.
+- **Source:** [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md) §11; Claude, 2026-10-24
+  (Thomas's delegation for the night)
+
+### D33: Person ids are never reused
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The `people` table uses `AUTOINCREMENT`, so a removed person's id is never given out again.
+- **Why:** Step 5's history is keyed on the person id. A reused id would hand a removed person's history to someone new.
+- **Source:** the step 3 build (Task 5 review); Claude, 2026-10-24
