@@ -34,7 +34,7 @@ ignore_missing_imports = true
 
 [tool.ruff]
 required-version = ">=0.16.8"
-extend-exclude = [".claude"]
+extend-exclude = [".claude", "docs/superpowers"]
 force-exclude = true
 
 [tool.ruff.lint]
