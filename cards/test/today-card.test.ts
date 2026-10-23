@@ -63,7 +63,9 @@ function fakeConnection() {
   const listeners: Listener[] = [];
   const unsubscribes: ReturnType<typeof vi.fn>[] = [];
   const events = new Map<string, Set<(...args: unknown[]) => void>>();
-  const subscribeMessage = vi.fn<(callback: Listener, message: unknown) => Promise<() => void>>(
+  const subscribeMessage = vi.fn<
+    (callback: Listener, message: unknown, options?: unknown) => Promise<() => void>
+  >(
     (callback) => {
       listeners.push(callback);
       const unsubscribe = vi.fn();
@@ -180,9 +182,12 @@ test("due and late rows in da and en", async () => {
 
   const fake = fakeHass("da");
   const card = await mount(fake);
-  expect(fake.subscribeMessage).toHaveBeenCalledWith(expect.any(Function), {
-    type: "ha_fitness/today/subscribe",
-  });
+  // The card resubscribes itself after a reconnect, so the library must not (HA's own cards do the same).
+  expect(fake.subscribeMessage).toHaveBeenCalledWith(
+    expect.any(Function),
+    { type: "ha_fitness/today/subscribe" },
+    { resubscribe: false },
+  );
 
   await push(card, fake, today([wednesday, strength]));
   expect(rows(card).map(text)).toEqual([
@@ -513,6 +518,11 @@ test("subscribes again when the connection is ready after a reconnect", async ()
   await wait(card, 0);
   expect(fake.subscribeMessage).toHaveBeenCalledTimes(2);
   expect(fake.unsubscribes[0]).toHaveBeenCalledTimes(1);
+  expect(fake.subscribeMessage).toHaveBeenLastCalledWith(
+    expect.any(Function),
+    { type: "ha_fitness/today/subscribe" },
+    { resubscribe: false },
+  );
 
   // A late message on the old subscription is ignored.
   fake.listeners[0](today([]));

@@ -20,7 +20,11 @@ export interface Today {
 
 /** The part of home-assistant-js-websocket's `Connection` the subscription uses. */
 export interface Connection {
-  subscribeMessage<T>(callback: (message: T) => void, message: { type: string }): Promise<() => unknown>;
+  subscribeMessage<T>(
+    callback: (message: T) => void,
+    message: { type: string },
+    options?: { resubscribe?: boolean },
+  ): Promise<() => unknown>;
   /** `ready` fires after the connection has reconnected. */
   addEventListener?(type: "ready", callback: () => void): void;
   removeEventListener?(type: "ready", callback: () => void): void;
@@ -78,6 +82,9 @@ export class TodaySubscription {
           if (this.current === subscription) this.onData(today);
         },
         { type: "ha_fitness/today/subscribe" },
+        // The `ready` handler subscribes again itself; the library's own resubscribe would leave an
+        // extra server subscription behind after each reconnect.
+        { resubscribe: false },
       )
       .catch(() => {
         if (this.current === subscription) {
