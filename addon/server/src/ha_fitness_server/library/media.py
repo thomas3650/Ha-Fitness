@@ -68,13 +68,13 @@ class MediaStore:
 
         A failed file is logged and counted as missing; the state ends `done` if every file is there, else `failed`.
         """
+        wanted = [path for e in exercises for path in (e.gif, e.thumbnail)]
+        self._total = len(wanted)
         self._state = "downloading"
         try:
             self._folder.mkdir(parents=True, exist_ok=True)
             for part in self._folder.glob(f"*{PART_SUFFIX}"):
                 part.unlink()
-            wanted = [path for e in exercises for path in (e.gif, e.thumbnail)]
-            self._total = len(wanted)
             missing = [
                 path for path in wanted if not (self._folder / _name(path)).is_file()
             ]
@@ -88,6 +88,8 @@ class MediaStore:
                 )
         except Exception:
             _LOGGER.exception("The media download stopped")
+            self._state = "failed"
+            return
         self._state = "done" if self._present == self._total else "failed"
         if self._state == "failed":
             _LOGGER.warning(

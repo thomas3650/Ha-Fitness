@@ -150,3 +150,14 @@ async def test_partial_file_is_not_kept_and_is_fetched_next_start(
                 FAILING_PATH
             )
         assert list(folder.glob("*.part")) == []
+
+
+async def test_download_that_cannot_start_is_failed(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """When the media folder can't be made, the download ends `failed` with nothing present."""
+    (tmp_path / "library").mkdir()
+    _media_folder(tmp_path).write_bytes(b"not a folder")
+    async with asyncio.timeout(TEST_BOUND), running(make_app()) as client:
+        media = await _settled_media(client)
+        assert media == {"state": "failed", "present": 0, "total": TOTAL}
