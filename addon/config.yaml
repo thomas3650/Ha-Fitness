@@ -1,0 +1,17 @@
+# https://contributors.home-assistant.io/apps/reference/configuration/
+name: HA Fitness
+version: "0.0.0"  # x-release-please-version
+slug: ha_fitness
+description: Circuit training at home - the server behind the HA Fitness integration.
+url: https://github.com/thomas3650/Ha-Fitness/tree/main/addon
+arch:
+  - aarch64
+  - amd64
+image: ghcr.io/thomas3650/ha-fitness-addon
+init: false
+homeassistant_api: true
+backup: hot
+ports:
+  8765/tcp: 8765
+ports_description:
+  8765/tcp: HA Fitness API (REST, used by the integration)
