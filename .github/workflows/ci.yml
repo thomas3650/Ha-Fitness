@@ -13,7 +13,8 @@ defaults:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Only superseded PR runs: every push to main is checked.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   python:
@@ -101,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
-      version: ${{ steps.info.outputs.version }}
+      version: ${{ steps.image.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -110,13 +111,18 @@ jobs:
         uses: home-assistant/actions/helpers/info@cd6f3635a740c84d8a14f6121a90068b8ece6bf6  # master 2026-10-17
         with:
           path: ./addon
+      # The info helper returns JSON values ("0.0.0" with its quotes): decode them first.
       - id: image
         env:
-          IMAGE: ${{ steps.info.outputs.image }}
+          IMAGE_JSON: ${{ steps.info.outputs.image }}
+          VERSION_JSON: ${{ steps.info.outputs.version }}
         run: |
+          image="$(jq -er . <<< "$IMAGE_JSON")"
+          version="$(jq -er . <<< "$VERSION_JSON")"
           {
-            echo "name=${IMAGE##*/}"
-            echo "registry_prefix=${IMAGE%/*}"
+            echo "name=${image##*/}"
+            echo "registry_prefix=${image%/*}"
+            echo "version=${version}"
           } >> "$GITHUB_OUTPUT"
       - id: matrix
         uses: home-assistant/builder/actions/prepare-multi-arch-matrix@7412f0023ea9b6e58e8bb5059f1660f51376f49a  # 2026.09.0
@@ -152,7 +158,7 @@ jobs:
   # The one required check for the add-on image: the per-arch checks are named "addon-build (<arch>)".
   addon-build:
     needs: addon-build-arch
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - env:
