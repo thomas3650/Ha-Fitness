@@ -6,8 +6,9 @@ Closes #
 
 ## Checklist
 
-- [ ] Gates pass (`CLAUDE.md` → *Commands*: tests, coverage and lint)
-- [ ] Title type per `docs/releasing.md` (user-visible → `feat`, `fix` or `perf`)
+- [ ] Gates pass (`CLAUDE.md` → *Commands*: lint, types, tests, build; Python coverage is reported, with no threshold)
+- [ ] Title type per `docs/releasing.md`: `feat`, `fix`, `docs`, `test`, `chore`, `refactor` or `ci`; user-visible →
+  `feat` or `fix`; only `scripts/` or `.github/` → a non-releasing type
 - [ ] UI change → Chrome screenshot at 1368×912 attached, no console errors
 - [ ] Docs updated (same PR as the code)
 - [ ] Lasting decision → `docs/decisions.md` entry
