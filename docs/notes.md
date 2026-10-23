@@ -31,3 +31,13 @@ ignores TypeScript's minor and major updates. Lift the hold when `typescript-esl
 The add-on image build runs per architecture as `addon-build (amd64)` and `addon-build (aarch64)`. The required check is
 the gate job `addon-build`, which passes only when both do. Requiring the per-arch names breaks when the matrix
 changes.
+
+## 2026-10-23: The exercise library's size (spike, step 2)
+
+Measured at `hasaneyldrm/exercises-dataset` commit `7455efae41b330c265e7cd4b78dfa848e7ce5ebd`. The dataset has 1,324
+exercises. The equipment filter of spec §3.6 (body weight, band, resistance band, dumbbell, kettlebell) keeps **721**:
+**67.5 MB of GIFs** (median 89 kB, largest 233 kB) and **4.6 MB of thumbnails**, 1,442 files. All GIFs together are
+129 MB. `data/exercises.json` is 17 MB with ten languages; the 721 records with English steps only are about 0.5 MB.
+
+From raw.githubusercontent.com to the Mac on the home network: **39 s** with 8 downloads in parallel. One at a time
+takes about 0.25 s per file, so about 6 minutes for the set. The Yellow's time is not measured.

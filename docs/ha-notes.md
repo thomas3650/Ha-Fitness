@@ -15,6 +15,29 @@ fit no doc stay in [`notes.md`](notes.md).
 - Until HA itself answers, the container's port 80 refuses or redirects. The wait in `scripts/full-loop up` treats a
   redirect as not ready.
 
+- The base image's `/init` (s6-overlay) starts the Dockerfile's `CMD` with an **empty environment**: only `PATH`.
+  `SUPERVISOR_TOKEN` and `TZ` reach the server only when `CMD` starts with `/usr/bin/with-contenv` (spike, step 2).
+- The Supervisor passes HA's timezone to every app as `TZ` (e.g. `Europe/Copenhagen`). The add-on can use it for
+  midnight without asking HA.
+- **Ingress:** with `ingress: true` and `ingress_port: 8765` the API port also serves Ingress. HA 2026.10 opens it at
+  `/app/<slug>` (`/app/local_ha_fitness` for the local app). Requests come from the Supervisor with the
+  `X-Ingress-Path` header (`/api/hassio_ingress/<token>`); a page with relative links works under it. The page is not in
+  the sidebar until the user turns on "show in sidebar" (`panel_icon` and `panel_title` set its look).
+- **Discovery:** an app lists its services under `discovery:` in `config.yaml`; the service name is the integration's
+  domain. At start it posts `{"service": "ha_fitness", "config": {...}}` to `http://supervisor/discovery` with
+  `SUPERVISOR_TOKEN`; no extra API flag is needed. HA then starts a config flow with source `hassio`
+  (`async_step_hassio`) and shows it under "Discovered" (Danish "Fundet"). The app's hostname comes from
+  `GET http://supervisor/addons/self/info` (`hostname`): `local-ha-fitness` for the local app, `<repo hash>-ha-fitness`
+  from a repository. HA's container reaches the app at `http://<hostname>:8765`.
+- If HA gets the discovery before the integration is installed, it logs `Cannot find integration ha_fitness`. After the
+  integration is installed and HA restarts, HA reads the stored discovery again and the flow appears.
+- A discovered card shows the integration's domain (`ha_fitness`) as its title unless the flow sets
+  `title_placeholders`.
+- The Supervisor's HA config folder is `/mnt/supervisor/homeassistant` inside the dev container (`/config` in HA's
+  container). Copying `custom_components/ha_fitness` there and running `ha core restart` installs the integration in
+  the full loop.
+- The Supervisor already knows a discovery service named `mcp` (the ESPHome dev and beta apps send it).
+
 ## Testing
 
 - The `frontend` dependency's setup imports `home-assistant-frontend`, which `pytest-homeassistant-custom-component`
