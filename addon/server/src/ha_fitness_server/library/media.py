@@ -80,12 +80,16 @@ class MediaStore:
             ]
             self._present = self._total - len(missing)
             semaphore = asyncio.Semaphore(CONCURRENCY)
-            async with httpx.AsyncClient(
-                transport=self._transport, timeout=TIMEOUT_SECONDS
-            ) as client:
-                await asyncio.gather(
-                    *(self._fetch(client, semaphore, path) for path in missing)
-                )
+            # The task group ends before the client closes; `_fetch` handles its own errors, so one bad file never
+            # stops the others.
+            async with (
+                httpx.AsyncClient(
+                    transport=self._transport, timeout=TIMEOUT_SECONDS
+                ) as client,
+                asyncio.TaskGroup() as group,
+            ):
+                for path in missing:
+                    group.create_task(self._fetch(client, semaphore, path))
         except Exception:
             _LOGGER.exception("The media download stopped")
             self._state = "failed"
@@ -101,19 +105,28 @@ class MediaStore:
     async def _fetch(
         self, client: httpx.AsyncClient, semaphore: asyncio.Semaphore, path: str
     ) -> None:
-        """Download one file to `<name>.part` and rename it once complete; log a failure."""
+        """Download one file to `<name>.part` and rename it once a 200 body is complete; log a failure."""
         target = self._folder / _name(path)
         part = target.with_name(target.name + PART_SUFFIX)
         async with semaphore:
             try:
                 async with client.stream("GET", f"{self._base_url}/{path}") as response:
-                    response.raise_for_status()
+                    if response.status_code != httpx.codes.OK:
+                        _LOGGER.warning(
+                            "Could not download %s: status %d",
+                            path,
+                            response.status_code,
+                        )
+                        return
                     with part.open("wb") as file:
                         async for chunk in response.aiter_bytes():
                             file.write(chunk)
                 part.replace(target)
             except (httpx.HTTPError, OSError) as error:
                 _LOGGER.warning("Could not download %s: %s", path, error)
+                return
+            except Exception:
+                _LOGGER.exception("Could not download %s", path)
                 return
             finally:
                 part.unlink(missing_ok=True)
