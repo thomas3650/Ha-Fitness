@@ -67,10 +67,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: HaFitnessConfigEntry) ->
 
 async def async_unload_entry(hass: HomeAssistant, entry: HaFitnessConfigEntry) -> bool:
     """Unload a config entry; Home Assistant then cancels the connection task."""
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        # The entry stays up, so the connection does too.
+        return False
     coordinator = entry.runtime_data
     coordinator.async_stop()
-    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     async_unregister_cards(hass, coordinator.integration_version)
     # The entry is no longer loaded (it is being unloaded), so the card's subscription sends null.
     async_dispatcher_send(hass, SIGNAL_UPDATE)
-    return unloaded
+    return True

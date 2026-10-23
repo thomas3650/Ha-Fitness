@@ -41,6 +41,7 @@ class FakeAddon:
         # False: never answer the client's pings, as a half-open connection wouldn't.
         self.answer_pings = True
         self.skip_user_agents: list[str] = []
+        self.skip_ids: list[int] = []
         self.connects = 0
         self.connected = asyncio.Event()
         self._sockets: set[web.WebSocketResponse] = set()
@@ -63,6 +64,7 @@ class FakeAddon:
 
     async def _skip(self, request: web.Request) -> web.Response:
         self.skip_user_agents.append(request.headers.get("User-Agent", ""))
+        self.skip_ids.append(int(request.match_info["id"]))
         if self.skip_status != 200:
             return web.json_response({"detail": "error"}, status=self.skip_status)
         day_id = int(request.match_info["id"])

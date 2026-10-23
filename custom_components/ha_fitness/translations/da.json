@@ -67,18 +67,18 @@
   "services": {
     "skip": {
       "name": "Spring træningsdag over",
-      "description": "Springer en åben træningsdag over med vilje. Den tæller ikke som misset.",
+      "description": "Springer en åben træningsdag over med vilje. Den tæller ikke som en misset træningsdag.",
       "fields": {
         "training_day_id": {
-          "name": "Træningsdagens id",
-          "description": "Id'et på en åben træningsdag, som i træningsdagene under Træning i dag."
+          "name": "Træningsdagens ID",
+          "description": "ID'et på en åben træningsdag, som vist i attributten Træningsdage på Træning i dag."
         }
       }
     }
   },
   "exceptions": {
     "not_found": {
-      "message": "Der findes ingen træningsdag med id {training_day_id}."
+      "message": "Der findes ingen træningsdag med ID {training_day_id}."
     },
     "not_open": {
       "message": "Træningsdag {training_day_id} er ikke længere åben."

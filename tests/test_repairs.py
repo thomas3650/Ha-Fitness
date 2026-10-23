@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 from datetime import timedelta
 import logging
+from unittest.mock import patch
 
 from aiohttp import web
 from freezegun.api import FrozenDateTimeFactory
@@ -384,20 +385,25 @@ async def test_heartbeat_notices_a_half_open_connection(
     hass: HomeAssistant,
     fake_addon: FakeAddon,
     config_entry: MockConfigEntry,
-    monkeypatch: pytest.MonkeyPatch,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
     """A connection whose pings go unanswered is dropped: the entities turn unavailable."""
-    monkeypatch.setattr(client, "WS_HEARTBEAT", 0.05)
     fake_addon.answer_pings = False
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: is_open(hass))
+    # Let aiohttp re-arm its heartbeat after the last message it read.
+    await _settle()
 
-    # Real time runs here (no freezer): the ping goes out after 0.05 s, its pong is due 0.025 s later.
-    for _ in range(200):
-        if is_unavailable(hass):
-            break
-        await asyncio.sleep(0.01)
-    assert is_unavailable(hass)
+    # After 30 s the ping goes out; the fake doesn't answer it.
+    freezer.tick(timedelta(seconds=31))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await _settle()
+    assert is_open(hass)
+
+    # The pong was due 15 s after the ping.
+    freezer.tick(timedelta(seconds=16))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await wait_for(hass, lambda: is_unavailable(hass))
     await unload(hass, config_entry)
 
 
@@ -431,3 +437,31 @@ async def test_unexpected_error_does_not_stop_reconnect(
     await wait_for(hass, lambda: is_open(hass), freezer, 1)
     assert fake_addon.connects == 2
     await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_failed_unload_keeps_the_connection(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """When the platforms fail to unload, the entry stays up: the client still reconnects."""
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: is_open(hass))
+
+    with patch.object(
+        hass.config_entries, "async_unload_platforms", return_value=False
+    ):
+        assert not await hass.config_entries.async_unload(config_entry.entry_id)
+    assert config_entry.state is ConfigEntryState.FAILED_UNLOAD
+
+    await fake_addon.close_ws()
+    await wait_for(hass, lambda: fake_addon.connects == 2, freezer, 1)
+    await wait_for(hass, lambda: is_open(hass))
+
+    # Clean up by hand: the entry can't be unloaded from FAILED_UNLOAD.
+    config_entry.runtime_data.async_stop()
+    await fake_addon.close_ws()
+    await wait_for(hass, lambda: not fake_addon.connected.is_set())
+    await hass.async_block_till_done()

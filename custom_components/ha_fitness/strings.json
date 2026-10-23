@@ -67,11 +67,11 @@
   "services": {
     "skip": {
       "name": "Skip training day",
-      "description": "Skips an open training day, on purpose. It doesn't count as missed.",
+      "description": "Skips an open training day on purpose. It doesn't count as a missed training day.",
       "fields": {
         "training_day_id": {
           "name": "Training day ID",
-          "description": "The ID of an open training day, as in the training days of Training today."
+          "description": "The ID of an open training day, as shown in the Training days attribute of Training today."
         }
       }
     }

@@ -2,7 +2,6 @@
 
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import config_validation as cv
 import probatio
 
 from .client import (
@@ -17,8 +16,13 @@ from .coordinator import FitnessCoordinator
 SERVICE_SKIP = "skip"
 ATTR_TRAINING_DAY_ID = "training_day_id"
 
+# Training day ids start at 1, as services.yaml says.
 SKIP_SCHEMA = probatio.Schema(
-    {probatio.Required(ATTR_TRAINING_DAY_ID): cv.positive_int}
+    {
+        probatio.Required(ATTR_TRAINING_DAY_ID): probatio.All(
+            probatio.Coerce(int), probatio.Range(min=1)
+        )
+    }
 )
 
 
@@ -27,10 +31,14 @@ def _unavailable() -> HomeAssistantError:
 
 
 def _coordinator(hass: HomeAssistant) -> FitnessCoordinator:
-    """Return the loaded entry's coordinator, or raise unavailable."""
+    """Return the loaded entry's coordinator, or raise unavailable.
+
+    It is unavailable too while the add-on is disconnected or speaks an unsupported API version.
+    """
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         coordinator: FitnessCoordinator = entry.runtime_data
-        return coordinator
+        if coordinator.available:
+            return coordinator
     raise _unavailable()
 
 
