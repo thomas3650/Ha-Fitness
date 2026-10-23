@@ -131,6 +131,27 @@ async def test_custom_name_taken_case_insensitive(client: httpx.AsyncClient) -> 
     assert len((await client.get("/api/v1/changes")).json()) == 1
 
 
+async def test_custom_name_is_stripped(client: httpx.AsyncClient) -> None:
+    """Surrounding spaces are dropped, so a padded name collides with the plain one."""
+    first = await client.post(EXERCISES, json=_custom("  Garden squat"))
+    assert first.status_code == 201
+    assert first.json()["name"] == "Garden squat"
+    again = await client.post(EXERCISES, json=_custom("Garden squat "))
+    assert again.status_code == 409
+
+
+@pytest.mark.parametrize("alias", ["custom-01", "custom-+1", "custom-\u0661"])
+async def test_custom_id_only_in_canonical_form(
+    client: httpx.AsyncClient, alias: str
+) -> None:
+    """Only `custom-<n>` with ASCII digits and no leading zero names a custom exercise."""
+    assert (
+        await client.post(EXERCISES, json=_custom("Garden squat"))
+    ).status_code == 201
+    assert (await client.get(f"{EXERCISES}/custom-1")).status_code == 200
+    assert (await client.get(f"{EXERCISES}/{alias}")).status_code == 404
+
+
 @pytest.mark.parametrize(
     "body",
     [
@@ -139,8 +160,20 @@ async def test_custom_name_taken_case_insensitive(client: httpx.AsyncClient) -> 
         {"name": "No steps", "steps": []},
         {"name": "Many steps", "steps": [f"Step {n}." for n in range(11)]},
         _custom("Extra field", colour="red"),
+        _custom("   "),
+        {"name": "Blank step", "steps": ["Stand up.", ""]},
+        {"name": "Spaces step", "steps": ["   "]},
     ],
-    ids=["empty-name", "long-name", "no-steps", "eleven-steps", "unknown-field"],
+    ids=[
+        "empty-name",
+        "long-name",
+        "no-steps",
+        "eleven-steps",
+        "unknown-field",
+        "blank-name",
+        "empty-step",
+        "blank-step",
+    ],
 )
 async def test_custom_exercise_limits(
     client: httpx.AsyncClient, body: dict[str, Any]

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class ExerciseSummary(BaseModel):
@@ -44,8 +44,13 @@ class NewCustomExercise(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[str, Field(min_length=1, max_length=80)]
-    steps: Annotated[list[str], Field(min_length=1, max_length=10)]
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)
+    ]
+    steps: Annotated[
+        list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]],
+        Field(min_length=1, max_length=10),
+    ]
     equipment: str | None = None
     body_part: str | None = None
     target: str | None = None

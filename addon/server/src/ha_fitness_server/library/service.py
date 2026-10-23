@@ -7,6 +7,7 @@ with `str.casefold()`.
 import difflib
 from importlib import resources
 import json
+import re
 from typing import Any
 
 from sqlalchemy import Engine, func, select
@@ -23,6 +24,9 @@ from . import ATTRIBUTION
 CUSTOM_PREFIX = "custom-"
 MAX_CLOSE_MATCHES = 5
 CLOSE_MATCH_CUTOFF = 0.5
+# Canonical custom ids only: ASCII digits, no leading zero.
+_CUSTOM_ID = re.compile(rf"{CUSTOM_PREFIX}([1-9][0-9]*)", re.ASCII)
+_NAME_KEY_CLASH = "UNIQUE constraint failed: custom_exercises.name_key"
 _SUMMARY_FIELDS = set(ExerciseSummary.model_fields)
 
 
@@ -132,12 +136,12 @@ class Library:
         return exercise
 
     def _get_custom(self, exercise_id: str) -> Exercise | None:
-        """Return the custom exercise with this id, or `None`."""
-        number = exercise_id.removeprefix(CUSTOM_PREFIX)
-        if number == exercise_id or not number.isdecimal():
+        """Return the custom exercise with this id, or `None`; only the canonical `custom-<n>` counts."""
+        match = _CUSTOM_ID.fullmatch(exercise_id)
+        if match is None:
             return None
         with session(self._engine) as db_session:
-            row = db_session.get(CustomExercise, int(number))
+            row = db_session.get(CustomExercise, int(match[1]))
             return None if row is None else _custom_exercise(row)
 
     def resolve(self, ref: str, station: int) -> Exercise:
@@ -189,11 +193,8 @@ class Library:
             raise taken
         try:
             with session(self._engine) as db_session:
-                number = (
-                    db_session.scalar(select(func.max(CustomExercise.number))) or 0
-                ) + 1
+                # SQLite assigns `number`: v1 has no deletes, so it counts up in the order added.
                 row = CustomExercise(
-                    number=number,
                     name=new.name,
                     name_key=name_key,
                     document=new.model_dump(exclude={"name"}),
@@ -204,11 +205,13 @@ class Library:
                     db_session,
                     client=client,
                     action="exercise.added",
-                    target=f"exercise:{CUSTOM_PREFIX}{number}",
+                    target=f"exercise:{CUSTOM_PREFIX}{row.number}",
                     summary=f"Added custom exercise {new.name}",
                 )
                 return _custom_exercise(row)
         except IntegrityError as error:
+            if _NAME_KEY_CLASH not in str(error.orig):
+                raise
             raise taken from error
 
     def counts(self) -> dict[str, int]:
