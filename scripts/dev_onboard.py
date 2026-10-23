@@ -2,7 +2,8 @@
 
 Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry]`
 
-- Completes onboarding through HA's onboarding API with the user `dev` / password `dev` (dev only).
+- Completes onboarding through HA's onboarding API with the user `dev` / password `dev` (dev only). Once
+  onboarding is done HA answers 404 there; the script then logs in as `dev` and goes on.
 - Sets that user's frontend language to Danish (`frontend/set_user_data`, key `language`); onboarding's
   `language` field only names the default areas.
 - Unless `--no-entry`, creates the HA Fitness config entry.
@@ -83,9 +84,19 @@ async def _onboard(session: aiohttp.ClientSession, base: str) -> str:
     """Finish the onboarding steps that aren't done; return an access token for the dev user."""
     client_id = f"{base}/"
     redirect_uri = f"{base}/?auth_callback=1"
+    done: set[str] | None
     async with session.get("/api/onboarding") as response:
-        done = {step["step"] for step in await _json(response) if step["done"]}
+        if response.status == 404:
+            # Home Assistant drops the onboarding views once onboarding is done.
+            done = None
+        else:
+            done = {step["step"] for step in await _json(response) if step["done"]}
 
+    if done is None:
+        print("onboard: already onboarded")
+        return await _token(
+            session, client_id, await _login(session, client_id, redirect_uri)
+        )
     if "user" in done:
         token = await _token(
             session, client_id, await _login(session, client_id, redirect_uri)
