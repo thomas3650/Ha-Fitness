@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Start dev Home Assistant (config/) with the integration, let the HA Fitness entry set up, and fail on any
+# error from the integration. The full log stays in local/ (never committed); only the integration's error
+# lines are printed. The entry comes from `uv run python scripts/dev_onboard.py` against a running
+# scripts/develop.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+if pgrep -fq "(homeassistant|hass) -c config"; then
+  echo "smoke: Home Assistant is already running with config/; stop it first (scripts/develop stop)." >&2
+  exit 2
+fi
+
+scripts/develop --setup-only
+mkdir -p local
+log=local/smoke.log
+
+# Run in the foreground and stop after a fixed time: started in the background, HA's Bluetooth
+# (CoreBluetooth via PyObjC) crashes the process on macOS before setup finishes.
+# 150 s leaves room for the first start after a `uv sync`, when HA reinstalls its runtime packages.
+seconds="${SMOKE_SECONDS:-150}"
+# --verbose logs the INFO lines checked below; the log goes to local/, not config/.
+rm -f "$log"
+uv run perl -e 'alarm shift; exec @ARGV' "$seconds" hass -c config --verbose --log-file "$log" >/dev/null 2>&1 || true
+initialized=$(grep -c "Home Assistant initialized" "$log" || true)
+
+failed=0
+if [ "$initialized" -eq 0 ]; then
+  echo "smoke: Home Assistant didn't finish starting within $seconds s (see $log)." >&2
+  failed=1
+fi
+# homeassistant.setup logs "Setting up <domain>"; without a config entry ha_fitness isn't loaded at all.
+if ! grep -qE "Setting up ha_fitness( |$)" "$log"; then
+  echo "smoke: ha_fitness wasn't set up; is an HA Fitness entry configured in config/ (scripts/dev_onboard.py)?" >&2
+  failed=1
+fi
+errors=$(grep -E "(ERROR|CRITICAL).*(ha_fitness|custom_components)" "$log" || true)
+if [ -n "$errors" ]; then
+  echo "smoke: errors from the integration:" >&2
+  echo "$errors" >&2
+  failed=1
+fi
+
+if [ "$failed" -eq 0 ]; then
+  echo "smoke: OK (Home Assistant started and ha_fitness set up without errors)"
+fi
+exit "$failed"

@@ -56,6 +56,10 @@ ignore = [
   "PLE0605", "FURB116", "ISC004", "LOG004",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Scripts run by hand, not a package; they print their results.
+"scripts/*.py" = ["INP001", "T201"]
+
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
 "homeassistant.core.DOMAIN" = "HOMEASSISTANT_DOMAIN"
 "homeassistant.helpers.area_registry" = "ar"
