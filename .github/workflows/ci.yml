@@ -1,0 +1,173 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+      - run: uv run pytest --cov=custom_components.ha_fitness --cov-report=term-missing
+
+  addon-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: addon/server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        with:
+          working-directory: addon/server
+      - run: uv sync --locked
+      # ruff reads the root pyproject.toml; mypy and pytest read addon/server's.
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+      - run: uv run pytest --cov=ha_fitness_server --cov-report=term-missing
+
+  cards:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cards
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cards/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      # home-assistant/actions has no current release (1.0.0 is from 2020): pinned to master.
+      - uses: home-assistant/actions/hassfest@cd6f3635a740c84d8a14f6121a90068b8ece6bf6  # master 2026-10-17
+
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a  # 22.5.0
+        with:
+          category: integration
+          comment: false
+          # No repository topics for now (Thomas).
+          ignore: topics
+
+  addon-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: frenck/action-addon-linter@b9cfd1bc62ba60d2c4fc96317b5f7ada5923f4a7  # v2.21.1
+        with:
+          path: ./addon
+
+  # As home-assistant/apps-example's build-app.yaml: one image per arch, each on its own runner.
+  addon-build-prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      version: ${{ steps.info.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - id: info
+        uses: home-assistant/actions/helpers/info@cd6f3635a740c84d8a14f6121a90068b8ece6bf6  # master 2026-10-17
+        with:
+          path: ./addon
+      - id: image
+        env:
+          IMAGE: ${{ steps.info.outputs.image }}
+        run: |
+          {
+            echo "name=${IMAGE##*/}"
+            echo "registry_prefix=${IMAGE%/*}"
+          } >> "$GITHUB_OUTPUT"
+      - id: matrix
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@7412f0023ea9b6e58e8bb5059f1660f51376f49a  # 2026.09.0
+        with:
+          architectures: ${{ steps.info.outputs.architectures }}
+          image-name: ${{ steps.image.outputs.name }}
+          registry-prefix: ${{ steps.image.outputs.registry_prefix }}
+
+  addon-build-arch:
+    name: addon-build (${{ matrix.arch }})
+    needs: addon-build-prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.addon-build-prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: home-assistant/builder/actions/build-image@7412f0023ea9b6e58e8bb5059f1660f51376f49a  # 2026.09.0
+        with:
+          arch: ${{ matrix.arch }}
+          # Required, but not used: nothing is pushed.
+          container-registry-password: ${{ github.token }}
+          context: ./addon
+          image: ${{ matrix.image }}
+          image-tags: ${{ needs.addon-build-prepare.outputs.version }}
+          version: ${{ needs.addon-build-prepare.outputs.version }}
+          push: false
+          # Nothing is signed without a push, and there is no published image to verify yet.
+          cosign: false
+
+  # The one required check for the add-on image: the per-arch checks are named "addon-build (<arch>)".
+  addon-build:
+    needs: addon-build-arch
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULT: ${{ needs.addon-build-arch.result }}
+        run: |
+          echo "Per-arch builds: ${RESULT}"
+          test "$RESULT" = success
+
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+      - run: uv sync --locked
+      - run: uv run actionlint
+      - run: uv run zizmor --offline .github/workflows
