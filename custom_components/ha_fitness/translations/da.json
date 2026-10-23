@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Opsæt HA Fitness",
+        "description": "HA Fitness tilføjer kort til cirkeltræning på dine dashboards. Der er intet at udfylde."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "HA Fitness er allerede sat op. Det kan kun sættes op én gang."
+    }
+  }
+}

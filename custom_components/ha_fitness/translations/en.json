@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up HA Fitness",
+        "description": "HA Fitness adds circuit-training cards to your dashboards. There is nothing to fill in."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "HA Fitness is already set up. Only one setup is possible."
+    }
+  }
+}
