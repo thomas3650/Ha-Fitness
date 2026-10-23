@@ -1,5 +1,6 @@
 """Tests for the database, its migrations and the backup snapshot."""
 
+import asyncio
 import os
 from pathlib import Path
 import sqlite3
@@ -173,6 +174,19 @@ async def test_snapshot_command_runs(make_app: MakeApp, tmp_path: Path) -> None:
     result = _run_snapshot(tmp_path)
     assert result.returncode == 0, result.stderr
     assert "programs" in _tables(tmp_path / "backup" / "snapshot.db")
+
+
+async def test_snapshot_while_the_server_runs(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """A snapshot taken while the server runs holds a program committed just before it."""
+    async with running(make_app()) as client:
+        await _create_program(client)
+        result = await asyncio.to_thread(_run_snapshot, tmp_path)
+        assert result.returncode == 0, result.stderr
+        assert _snapshot_program_names(tmp_path / "backup" / "snapshot.db") == [
+            "Onsdag"
+        ]
 
 
 def test_snapshot_without_database_exits_0(tmp_path: Path) -> None:

@@ -252,3 +252,9 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   restart.
 - **Source:** [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md) §11; Claude, 2026-10-24
   (Thomas's delegation for the night)
+
+### D33: Person ids are never reused
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The `people` table uses `AUTOINCREMENT`, so a removed person's id is never given out again.
+- **Why:** Step 5's history is keyed on the person id. A reused id would hand a removed person's history to someone new.
+- **Source:** the step 3 build (Task 5 review); Claude, 2026-10-24
