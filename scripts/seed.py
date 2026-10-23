@@ -20,15 +20,13 @@ from collections.abc import Sequence
 import sys
 import time
 from typing import Any
-from urllib.parse import urlsplit
 
 import aiohttp
 
-from scripts.dev_onboard import OnboardError, login, websocket
+from scripts.dev_onboard import OnboardError, is_local_url, login, websocket
 
 DEFAULT_HA_URL = "http://localhost:8123"
 DEFAULT_SERVER_URL = "http://localhost:8765"
-LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
 USER_AGENT = "ha-fitness-seed"
 PERSONS = ("Thomas", "Elin")
 WAIT_SECONDS = 10.0
@@ -46,15 +44,6 @@ SAMPLE: dict[str, Any] = {
 
 class SeedError(Exception):
     """Something answered what this script can't continue from."""
-
-
-def _is_local(url: str) -> bool:
-    """Whether the URL's host is exactly `localhost` or `127.0.0.1`."""
-    try:
-        host = urlsplit(url).hostname
-    except ValueError:
-        return False
-    return host in LOCAL_HOSTS
 
 
 async def _json(response: aiohttp.ClientResponse) -> Any:
@@ -173,7 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     for option, url in (("--ha-url", args.ha_url), ("--server-url", args.server_url)):
-        if not _is_local(url):
+        if not is_local_url(url):
             print(
                 f"seed: refusing {option} {url}: the host must be localhost or 127.0.0.1",
                 file=sys.stderr,

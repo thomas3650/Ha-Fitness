@@ -2,6 +2,8 @@
 
 Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry] [--token-file PATH]`
 
+- Refuses, before any request, unless the host of `--url` is `localhost` or `127.0.0.1`: it never talks to a real
+  Home Assistant.
 - Completes onboarding through HA's onboarding API with the user `dev` / password `dev` (dev only). Once
   onboarding is done HA answers 404 there; the script then logs in as `dev` and goes on.
 - Sets that user's frontend language to Danish (`frontend/set_user_data`, key `language`); onboarding's
@@ -25,14 +27,17 @@ import os
 from pathlib import Path
 import sys
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
+import yarl
 
 DEFAULT_URL = "http://localhost:8123"
 NAME = "dev"
 USERNAME = "dev"
 PASSWORD = "dev"  # A local dev instance only; never a real Home Assistant.
 DOMAIN = "ha_fitness"
+LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
 DEFAULT_TOKEN_FILE = Path(__file__).resolve().parents[1] / "local" / "dev-ha-token"
 TOKEN_CLIENT_NAME = "ha-fitness-dev"
 TOKEN_LIFESPAN_DAYS = 3650
@@ -46,6 +51,19 @@ LANGUAGE = {
     "time_zone": "local",
     "first_weekday": "language",
 }
+
+
+def is_local_url(url: str) -> bool:
+    """Whether the URL's host is exactly `localhost` or `127.0.0.1`, as both urllib and yarl (aiohttp) read it.
+
+    Both parsers must agree: they disagree on some odd URLs (for example a backslash before `@`), and either one
+    may raise `ValueError`, which counts as not local.
+    """
+    try:
+        hosts = (urlsplit(url).hostname, yarl.URL(url).host)
+    except ValueError:
+        return False
+    return all(host in LOCAL_HOSTS for host in hosts)
 
 
 class OnboardError(Exception):
@@ -278,7 +296,7 @@ async def _run(base: str, add_entry: bool, token_file: Path) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Parse the arguments and onboard; return 0, or 1 when Home Assistant refuses a step."""
+    """Parse the arguments and onboard; return 0, 1 when Home Assistant refuses a step, or 2 for a host that isn't local."""
     parser = argparse.ArgumentParser(prog="dev_onboard", description=__doc__)
     parser.add_argument(
         "--url", default=DEFAULT_URL, help=f"Home Assistant URL (default {DEFAULT_URL})"
@@ -293,6 +311,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="where to keep the dev user's long-lived token (default local/dev-ha-token in the repo)",
     )
     args = parser.parse_args(argv)
+    if not is_local_url(args.url):
+        print(
+            f"onboard: refusing --url {args.url}: the host must be localhost or 127.0.0.1",
+            file=sys.stderr,
+        )
+        return 2
     try:
         asyncio.run(_run(args.url.rstrip("/"), not args.no_entry, args.token_file))
     except (OnboardError, aiohttp.ClientError, OSError) as err:
