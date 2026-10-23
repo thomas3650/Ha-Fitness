@@ -56,6 +56,48 @@ class NewCustomExercise(BaseModel):
     target: str | None = None
 
 
+class HaPerson(BaseModel):
+    """A `person.*` entity in Home Assistant."""
+
+    entity_id: str
+    friendly_name: str
+
+
+class Person(BaseModel):
+    """A person who trains, linked to an HA person (spec §4)."""
+
+    id: int
+    name: str
+    person_entity_id: str
+
+
+class NewPerson(BaseModel):
+    """A person in a `set_people` list (spec §4)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
+    ]
+    person_entity_id: str
+
+
+class PeopleUpdate(BaseModel):
+    """Body of `PUT /api/v1/people`: the whole list, in colour order."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    people: list[NewPerson]
+
+
+class PeopleView(BaseModel):
+    """Body of `GET /api/v1/people`; `ha_persons` is null and `ha_error` says why when HA can't be read."""
+
+    people: list[Person]
+    ha_persons: list[HaPerson] | None
+    ha_error: str | None
+
+
 class ChangeEntry(BaseModel):
     """One row of the change log (spec §6)."""
 

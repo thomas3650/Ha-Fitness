@@ -55,11 +55,18 @@ async def running(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 def make_app(tmp_path: Path) -> MakeApp:
     """Return a factory that builds a fresh app per call on the test's data folder.
 
-    The media source is a fake unless a test passes its own `media_transport`, so no test touches the network.
+    The media source is a fake unless a test passes its own `media_transport`, so no test touches the network. HA is
+    not configured unless a test passes `ha_url` with `ha_token` or `ha_token_file` (and an `ha_transport` fake).
     """
 
     def _make_app(**overrides: Any) -> FastAPI:
-        settings = Settings(port=0, data_dir=overrides.pop("data_dir", tmp_path))
+        settings = Settings(
+            port=0,
+            data_dir=overrides.pop("data_dir", tmp_path),
+            ha_url=overrides.pop("ha_url", None),
+            ha_token=overrides.pop("ha_token", None),
+            ha_token_file=overrides.pop("ha_token_file", None),
+        )
         overrides.setdefault("media_transport", fake_media_transport())
         return create_app(settings, **overrides)
 

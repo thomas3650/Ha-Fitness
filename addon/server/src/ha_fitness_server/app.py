@@ -11,8 +11,10 @@ import httpx
 from . import __version__
 from .api import add_error_handlers, router as api_router
 from .db import open_database
+from .ha import HaClient
 from .library.media import MediaStore
 from .library.service import Library
+from .people import People
 from .services import Services, ServicesHolder
 from .settings import Settings
 
@@ -30,7 +32,7 @@ class Health(TypedDict):
 def create_app(
     settings: Settings,
     *,
-    ha_transport: httpx.AsyncBaseTransport | None = None,
+    ha_transport: httpx.BaseTransport | None = None,
     media_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """Build the app for the given settings.
@@ -46,7 +48,17 @@ def create_app(
         app.state.engine = engine
         library = Library(engine)
         media = MediaStore(settings.data_dir, settings.media_base_url, media_transport)
-        holder.set(Services(engine=engine, library=library, media=media))
+        ha = HaClient(
+            settings.ha_url, settings.ha_token, settings.ha_token_file, ha_transport
+        )
+        holder.set(
+            Services(
+                engine=engine,
+                library=library,
+                media=media,
+                people=People(engine, ha),
+            )
+        )
         download = asyncio.create_task(media.download_missing(library.media_files()))
         try:
             yield
