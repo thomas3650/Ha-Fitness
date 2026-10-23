@@ -6,6 +6,7 @@ from homeassistant.config_entries import SOURCE_HASSIO, SOURCE_USER, ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
+from homeassistant.helpers.translation import async_get_translations
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_fitness.const import DOMAIN
@@ -127,3 +128,20 @@ async def test_migrate_v1_sets_url_and_unique_id(hass: HomeAssistant) -> None:
     assert entry.version == 2
     assert entry.data == {"url": "http://localhost:8765"}
     assert entry.unique_id == "ha_fitness"
+
+
+async def test_user_step_while_discovery_in_progress(hass: HomeAssistant) -> None:
+    """With a Discovered card waiting, a manual setup aborts with a translated reason."""
+    await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=DISCOVERY
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_in_progress"
+
+    key = f"component.{DOMAIN}.config.abort.already_in_progress"
+    for language in ("en", "da"):
+        texts = await async_get_translations(hass, language, "config", [DOMAIN])
+        assert texts.get(key), f"no {language} text for already_in_progress"

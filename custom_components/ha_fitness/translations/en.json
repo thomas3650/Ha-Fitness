@@ -9,7 +9,7 @@
           "url": "URL"
         },
         "data_description": {
-          "url": "The add-on's address, for example http://localhost:8765."
+          "url": "The add-on's address."
         }
       },
       "hassio_confirm": {
@@ -21,7 +21,8 @@
       "cannot_connect": "The HA Fitness add-on can't be reached at this URL."
     },
     "abort": {
-      "already_configured": "HA Fitness is already set up."
+      "already_configured": "HA Fitness is already set up.",
+      "already_in_progress": "HA Fitness is already being set up. Finish the setup under Discovered."
     }
   }
 }

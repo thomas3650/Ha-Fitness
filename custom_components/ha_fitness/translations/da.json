@@ -9,7 +9,7 @@
           "url": "URL"
         },
         "data_description": {
-          "url": "Tilføjelsens adresse, for eksempel http://localhost:8765."
+          "url": "Tilføjelsens adresse."
         }
       },
       "hassio_confirm": {
@@ -21,7 +21,8 @@
       "cannot_connect": "HA Fitness-tilføjelsen kan ikke nås på denne URL."
     },
     "abort": {
-      "already_configured": "HA Fitness er allerede sat op."
+      "already_configured": "HA Fitness er allerede sat op.",
+      "already_in_progress": "HA Fitness er allerede ved at blive sat op. Gør opsætningen færdig under Fundet."
     }
   }
 }
