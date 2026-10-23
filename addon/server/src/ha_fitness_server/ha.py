@@ -37,17 +37,17 @@ class HaClient:
         states = self._get("/api/states")
         if not isinstance(states, list):
             raise Unavailable("Can't reach Home Assistant: unexpected answer")
-        return [
-            HaPerson(
-                entity_id=state["entity_id"],
-                friendly_name=state.get("attributes", {}).get(
-                    "friendly_name", state["entity_id"]
-                ),
-            )
-            for state in states
-            if isinstance(state, dict)
-            and str(state.get("entity_id", "")).startswith(PERSON_PREFIX)
-        ]
+        persons = []
+        for state in states:
+            entity_id = state.get("entity_id") if isinstance(state, dict) else None
+            if isinstance(entity_id, str) and entity_id.startswith(PERSON_PREFIX):
+                persons.append(
+                    HaPerson(
+                        entity_id=entity_id,
+                        friendly_name=_friendly_name(state) or entity_id,
+                    )
+                )
+        return persons
 
     def _get(self, path: str) -> Any:
         """Return the JSON of `GET <base_url><path>`."""
@@ -60,7 +60,10 @@ class HaClient:
             ) as http_client:
                 response = http_client.get(f"{self._base_url}{path}", headers=headers)
         except httpx.HTTPError as error:
-            raise Unavailable(f"Can't reach Home Assistant: {error}") from error
+            # Never the error's text: it can quote the request, the token included.
+            raise Unavailable(
+                f"Can't reach Home Assistant: {type(error).__name__}"
+            ) from error
         if not response.is_success:
             raise Unavailable(
                 f"Can't reach Home Assistant: HTTP {response.status_code}"
@@ -73,7 +76,14 @@ class HaClient:
             ) from error
 
     def _read_token(self) -> str:
-        """Return the token; raise `Unavailable` when there is none."""
+        """Return the token; raise `Unavailable` when there is none or it can't go in a header."""
+        token = self._find_token()
+        if not _valid_token(token):
+            raise Unavailable("Home Assistant isn't configured: the token is not valid")
+        return token
+
+    def _find_token(self) -> str:
+        """Return `token`, else the token file's stripped contents; raise `Unavailable` when there is none."""
         if self._token:
             return self._token
         if self._token_file is not None:
@@ -87,3 +97,21 @@ class HaClient:
                 "Home Assistant isn't configured: no token in the token file"
             )
         raise Unavailable("Home Assistant isn't configured: no token")
+
+
+def _valid_token(token: str) -> bool:
+    """Tell whether the token is printable ASCII without whitespace, so it can go in a header."""
+    return (
+        token.isascii()
+        and token.isprintable()
+        and not any(character.isspace() for character in token)
+    )
+
+
+def _friendly_name(state: dict[str, Any]) -> str | None:
+    """Return the state's friendly name, or `None` when it is missing or not a text."""
+    attributes = state.get("attributes")
+    if not isinstance(attributes, dict):
+        return None
+    name = attributes.get("friendly_name")
+    return name if isinstance(name, str) and name else None

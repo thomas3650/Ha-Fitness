@@ -292,3 +292,77 @@ async def test_ha_person_without_friendly_name_uses_entity_id(
     assert read["ha_persons"] == [
         {"entity_id": "person.guest", "friendly_name": "person.guest"}
     ]
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["sesame\nopen", "sésame", "sesame open", "sesame\x07open"],
+    ids=["newline", "non-ascii", "space", "control"],
+)
+async def test_bad_token_is_not_configured_and_never_shown(
+    make_app: MakeApp, tmp_path: Path, token: str
+) -> None:
+    """A token with whitespace, control or non-ASCII characters isn't used, and no answer shows it."""
+    token_file = tmp_path / "ha-token"
+    token_file.write_text(token)
+    ha = FakeHa()
+    async with ha_app(make_app, ha, ha_token_file=token_file) as client:
+        read = await client.get(PEOPLE)
+        write = await _put(client, THOMAS)
+    assert read.status_code == 200
+    assert "isn't configured" in read.json()["ha_error"]
+    assert write.status_code == 503
+    # "same" is in every token, also JSON-escaped ("s\\u00e9same"), and in none of the server's texts.
+    assert "same" not in read.text
+    assert "same" not in write.text
+    assert ha.authorizations == []
+
+
+async def test_connection_error_text_is_not_shown(make_app: MakeApp) -> None:
+    """The text of a connection error isn't passed on; it could hold the request's headers."""
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"refused {TOKEN}", request=request)
+
+    app = make_app(
+        ha_url=HA_URL, ha_token=TOKEN, ha_transport=httpx.MockTransport(handle)
+    )
+    async with running(app) as client:
+        read = await client.get(PEOPLE)
+        write = await _put(client, THOMAS)
+    assert "Home Assistant" in read.json()["ha_error"]
+    assert write.status_code == 503
+    assert TOKEN not in read.text
+    assert TOKEN not in write.text
+
+
+async def test_odd_state_shapes_are_tolerated(make_app: MakeApp) -> None:
+    """Bad attributes or names fall back to the entity id; a state without a string entity id is skipped."""
+    states: list[Any] = [
+        {"entity_id": "person.a", "attributes": None},
+        {"entity_id": "person.b", "attributes": "odd"},
+        {"entity_id": "person.c", "attributes": {"friendly_name": 5}},
+        {"entity_id": "person.d"},
+        {"entity_id": 7, "attributes": {"friendly_name": "Seven"}},
+        {"attributes": {"friendly_name": "Nobody"}},
+        "person.e",
+    ]
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, json=states))
+    app = make_app(ha_url=HA_URL, ha_token=TOKEN, ha_transport=transport)
+    async with running(app) as client:
+        read = await client.get(PEOPLE)
+    assert read.status_code == 200
+    assert read.json()["ha_persons"] == [
+        {"entity_id": entity_id, "friendly_name": entity_id}
+        for entity_id in ("person.a", "person.b", "person.c", "person.d")
+    ]
+
+
+async def test_person_ids_are_never_reused(make_app: MakeApp) -> None:
+    """A person removed and added again gets a new, higher id."""
+    async with ha_app(make_app, FakeHa()) as client:
+        first = (await _put(client, THOMAS, ELIN)).json()
+        await _put(client, THOMAS)
+        again = (await _put(client, THOMAS, ELIN)).json()
+    assert again[0]["id"] == first[0]["id"]
+    assert again[1]["id"] > first[1]["id"]

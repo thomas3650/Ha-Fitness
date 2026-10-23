@@ -68,11 +68,12 @@ class Program(Base):
 
 
 class Person(Base):
-    """A person who trains, linked to an HA person."""
+    """A person who trains, linked to an HA person; ids are never reused, so history stays with its person."""
 
     __tablename__ = "people"
+    __table_args__ = {"sqlite_autoincrement": True}
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String)
     person_entity_id: Mapped[str] = mapped_column(String, unique=True)
     position: Mapped[int]

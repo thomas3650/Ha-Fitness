@@ -33,7 +33,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_programs_name_key"), "programs", ["name_key"], unique=True)
     op.create_table(
         "people",
-        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("person_entity_id", sa.String(), nullable=False),
         sa.Column("position", sa.Integer(), nullable=False),
@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "person_entity_id", name=op.f("uq_people_person_entity_id")
         ),
+        sqlite_autoincrement=True,
     )
     op.create_table(
         "custom_exercises",
