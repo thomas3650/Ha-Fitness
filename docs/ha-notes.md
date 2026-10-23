@@ -41,6 +41,10 @@ fit no doc stay in [`notes.md`](notes.md).
   `ha_fitness.db` also leaves out any file of that name in a subfolder. That is why the add-on's snapshot has a name
   none of its patterns matches (`backup/snapshot.db`). A non-zero exit of `backup_pre` fails the add-on's part of the
   backup. The add-on's `backup_pre` starts with `/usr/bin/with-contenv`, the same as its `CMD`.
+- A locally built app's backup also holds its image (`image.tar`, about 80 MB for this add-on), because the Supervisor
+  can't pull it again. An app installed from a repository pulls its image after a restore, so the house's backups don't
+  carry it. Checked in the full loop (2026-10-24): the archive held `data/backup/snapshot.db` and neither the live
+  database nor `library/media/`, and `ha backups restore <slug> --app local_ha_fitness` brought a deleted program back.
 
 ## Testing
 
