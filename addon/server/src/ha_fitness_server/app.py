@@ -8,7 +8,9 @@ from fastapi import FastAPI
 import httpx
 
 from . import __version__
+from .api import add_error_handlers, router as api_router
 from .db import open_database
+from .library.service import Library
 from .services import Services, ServicesHolder
 from .settings import Settings
 
@@ -40,7 +42,7 @@ def create_app(
         """Open the database before requests are served; close it at the end."""
         engine = open_database(settings.data_dir)
         app.state.engine = engine
-        holder.set(Services(engine=engine))
+        holder.set(Services(engine=engine, library=Library(engine)))
         try:
             yield
         finally:
@@ -55,5 +57,8 @@ def create_app(
     @app.get("/api/v1/health")
     async def health() -> Health:
         return {"status": "ok", "version": __version__, "api_version": API_VERSION}
+
+    app.include_router(api_router)
+    add_error_handlers(app)
 
     return app

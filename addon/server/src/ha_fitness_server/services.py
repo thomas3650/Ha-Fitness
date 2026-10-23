@@ -2,8 +2,9 @@
 
 from dataclasses import dataclass
 
-from fastapi import Request
 from sqlalchemy import Engine
+
+from .library.service import Library
 
 
 @dataclass
@@ -11,6 +12,7 @@ class Services:
     """Everything a request needs; later steps add a field per service."""
 
     engine: Engine
+    library: Library
 
 
 class ServicesHolder:
@@ -29,9 +31,3 @@ class ServicesHolder:
         if self._services is None:
             raise RuntimeError("not started")
         return self._services
-
-
-def get_services(request: Request) -> Services:
-    """FastAPI dependency: the services of the running app."""
-    holder: ServicesHolder = request.app.state.services
-    return holder.get()
