@@ -1,0 +1,44 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    commit-message:
+      prefix: chore
+      include: scope
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+  - package-ecosystem: uv
+    directories:
+      - /
+      - /addon/server
+    commit-message:
+      prefix: chore
+      include: scope
+    schedule:
+      interval: monthly
+    groups:
+      uv:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /cards
+    commit-message:
+      prefix: chore
+      include: scope
+    schedule:
+      interval: monthly
+    groups:
+      npm:
+        patterns: ["*"]
+  - package-ecosystem: pre-commit
+    directory: /
+    commit-message:
+      prefix: chore
+      include: scope
+    schedule:
+      interval: monthly
+    groups:
+      pre-commit:
+        patterns: ["*"]

@@ -1,0 +1,16 @@
+{
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push * main:*)",
+      "Bash(git push *:main)",
+      "Bash(git push *:refs/heads/main)",
+      "Bash(git commit *--no-verify*)",
+      "Bash(git push *--no-verify*)"
+    ]
+  }
+}

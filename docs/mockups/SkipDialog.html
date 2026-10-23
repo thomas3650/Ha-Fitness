@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workout – skip with reason</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#FF8A3D}a:hover{color:#FFB07A}
+</style>
+</head>
+<body>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: #0A0C0F; color: #F3F5F7; font-family: Inter, system-ui, sans-serif; display: flex; align-items: center; justify-content: center">
+  <div role="dialog" aria-labelledby="skip-title" style="width: 560px; box-sizing: border-box; padding: 36px; border-radius: 28px; background: #1A1F25; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; align-items: center; gap: 18px">
+      <img src="gifs/burpee.gif" alt="" style="width: 80px; height: 80px; border-radius: 14px; background: #FFFFFF; object-fit: contain">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h2 id="skip-title" style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700">Skip today's circuit?</h2>
+        <span style="font-size: 16px; color: #A3ADB8">Skipping keeps your 6-day streak</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <span style="font-size: 15px; font-weight: 600; color: #A3ADB8">Reason (optional)</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px">
+        <button style="height: 52px; padding: 0 20px; border-radius: 999px; border: 2px solid #FF8A3D; background: #2A2018; color: #F3F5F7; font: 600 16px Inter, sans-serif">No equipment here</button>
+        <button style="height: 52px; padding: 0 20px; border-radius: 999px; border: 1px solid #2E363F; background: transparent; color: #F3F5F7; font: 500 16px Inter, sans-serif">Sore / injured</button>
+        <button style="height: 52px; padding: 0 20px; border-radius: 999px; border: 1px solid #2E363F; background: transparent; color: #F3F5F7; font: 500 16px Inter, sans-serif">No time</button>
+        <button style="height: 52px; padding: 0 20px; border-radius: 999px; border: 1px solid #2E363F; background: transparent; color: #F3F5F7; font: 500 16px Inter, sans-serif">Too hard</button>
+        <button style="height: 52px; padding: 0 20px; border-radius: 999px; border: 1px solid #2E363F; background: transparent; color: #F3F5F7; font: 500 16px Inter, sans-serif">Other</button>
+      </div>
+      <span style="font-size: 14px; color: #A3ADB8">Claude can read skip reasons and adjust the program</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+      <a href="Main.html" style="height: 64px; border-radius: 16px; background: #232A31; color: #F3F5F7; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600; text-decoration: none">Cancel</a>
+      <a href="Main.html" style="height: 64px; border-radius: 16px; background: #F3F5F7; color: #101317; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; text-decoration: none">Skip circuit</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>
