@@ -1,13 +1,27 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "Set up HA Fitness",
-        "description": "HA Fitness adds circuit-training cards to your dashboards. There is nothing to fill in."
+        "description": "Enter the address of the HA Fitness add-on. Under the Supervisor you don't need this: the add-on is found by itself and shows under Discovered.",
+        "data": {
+          "url": "URL"
+        },
+        "data_description": {
+          "url": "The add-on's address, for example http://localhost:8765."
+        }
+      },
+      "hassio_confirm": {
+        "title": "HA Fitness add-on found",
+        "description": "Set up HA Fitness with the add-on the Supervisor found?"
       }
     },
+    "error": {
+      "cannot_connect": "The HA Fitness add-on can't be reached at this URL."
+    },
     "abort": {
-      "single_instance_allowed": "HA Fitness is already set up. Only one setup is possible."
+      "already_configured": "HA Fitness is already set up."
     }
   }
 }

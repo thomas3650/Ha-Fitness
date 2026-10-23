@@ -1,13 +1,27 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "Opsæt HA Fitness",
-        "description": "HA Fitness tilføjer kort til cirkeltræning på dine dashboards. Der er intet at udfylde."
+        "description": "Angiv adressen på HA Fitness-tilføjelsen. Under Supervisor er det ikke nødvendigt: tilføjelsen findes af sig selv og vises under Fundet.",
+        "data": {
+          "url": "URL"
+        },
+        "data_description": {
+          "url": "Tilføjelsens adresse, for eksempel http://localhost:8765."
+        }
+      },
+      "hassio_confirm": {
+        "title": "HA Fitness-tilføjelse fundet",
+        "description": "Vil du opsætte HA Fitness med den tilføjelse, Supervisor har fundet?"
       }
     },
+    "error": {
+      "cannot_connect": "HA Fitness-tilføjelsen kan ikke nås på denne URL."
+    },
     "abort": {
-      "single_instance_allowed": "HA Fitness er allerede sat op. Det kan kun sættes op én gang."
+      "already_configured": "HA Fitness er allerede sat op."
     }
   }
 }
