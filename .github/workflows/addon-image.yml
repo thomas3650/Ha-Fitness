@@ -1,0 +1,121 @@
+name: addon-image
+# Builds and pushes the add-on image when a merge to main changes the version in addon/config.yaml
+# (the add-on's release PR). Steps follow home-assistant/apps-example's build-app.yaml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - addon/config.yaml
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: addon-image-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY_PREFIX: ghcr.io/thomas3650
+  IMAGE_NAME: ha-fitness-addon
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      version: ${{ steps.version.outputs.version }}
+      architectures: ${{ steps.version.outputs.architectures }}
+      name: ${{ steps.version.outputs.name }}
+      description: ${{ steps.version.outputs.description }}
+      url: ${{ steps.version.outputs.url }}
+      build_matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Did the version change?
+        id: version
+        run: |
+          # yq (mikefarah) is preinstalled on GitHub's Ubuntu runners.
+          version="$(yq -r '.version' addon/config.yaml)"
+          previous="$(git show HEAD^:addon/config.yaml 2>/dev/null | yq -r '.version' || true)"
+          echo "version ${previous:-none} -> ${version}"
+          if [ "${version}" = "${previous}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          {
+            echo "changed=true"
+            echo "version=${version}"
+            echo "architectures=$(yq -o=json -I=0 '.arch' addon/config.yaml)"
+            echo "name=$(yq -r '.name' addon/config.yaml)"
+            echo "description=$(yq -r '.description' addon/config.yaml)"
+            echo "url=$(yq -r '.url' addon/config.yaml)"
+          } >> "$GITHUB_OUTPUT"
+      - name: Prepare build matrix
+        id: matrix
+        if: steps.version.outputs.changed == 'true'
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@7412f0023ea9b6e58e8bb5059f1660f51376f49a  # 2026.09.0
+        with:
+          architectures: ${{ steps.version.outputs.architectures }}
+          image-name: ${{ env.IMAGE_NAME }}
+          registry-prefix: ${{ env.REGISTRY_PREFIX }}
+
+  build:
+    name: Build ${{ matrix.arch }} image
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build image
+        uses: home-assistant/builder/actions/build-image@7412f0023ea9b6e58e8bb5059f1660f51376f49a  # 2026.09.0
+        with:
+          arch: ${{ matrix.arch }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: ./addon
+          image: ${{ matrix.image }}
+          image-tags: |
+            ${{ needs.prepare.outputs.version }}
+            latest
+          labels: |
+            io.hass.type=app
+            io.hass.name=${{ needs.prepare.outputs.name }}
+            io.hass.description=${{ needs.prepare.outputs.description }}
+            io.hass.url=${{ needs.prepare.outputs.url }}
+          push: true
+          version: ${{ needs.prepare.outputs.version }}
+
+  manifest:
+    name: Publish multi-arch manifest
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - name: Publish multi-arch manifest
+        uses: home-assistant/builder/actions/publish-multi-arch-manifest@7412f0023ea9b6e58e8bb5059f1660f51376f49a  # 2026.09.0
+        with:
+          architectures: ${{ needs.prepare.outputs.architectures }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+          image-tags: |
+            ${{ needs.prepare.outputs.version }}
+            latest
+          registry-prefix: ${{ env.REGISTRY_PREFIX }}

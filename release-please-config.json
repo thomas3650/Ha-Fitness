@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/v17.11.2/schemas/config.json",
+  "separate-pull-requests": true,
+  "bump-minor-pre-major": true,
+  "include-component-in-tag": true,
+  "packages": {
+    "addon": {
+      "component": "ha-fitness-addon",
+      "release-type": "simple",
+      "initial-version": "0.1.0",
+      "changelog-path": "CHANGELOG.md",
+      "draft": true,
+      "force-tag-creation": true,
+      "extra-files": [
+        {"type": "generic", "path": "config.yaml"},
+        {"type": "generic", "path": "server/src/ha_fitness_server/__init__.py"}
+      ]
+    },
+    ".": {
+      "component": "ha-fitness",
+      "release-type": "simple",
+      "initial-version": "0.1.0",
+      "exclude-paths": ["addon"],
+      "include-component-in-tag": false,
+      "draft": true,
+      "force-tag-creation": true,
+      "extra-files": [
+        {"type": "json", "path": "custom_components/ha_fitness/manifest.json", "jsonpath": "$.version"}
+      ]
+    }
+  }
+}
