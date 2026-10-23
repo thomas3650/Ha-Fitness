@@ -1,10 +1,9 @@
 {
   "picker": {
     "name": "HA Fitness – today",
-    "description": "Today's training, with a button to skip it. Hidden when nothing is open."
+    "description": "Today's training, with a button to skip it. Hidden when there's no training."
   },
   "today": {
-    "title": "Today's training",
     "stations_one": "{count} exercise",
     "stations_other": "{count} exercises",
     "rounds_one": "{count} round",
@@ -30,7 +29,7 @@
   },
   "error": {
     "not_found": "This training day no longer exists.",
-    "not_open": "This training day is already closed.",
+    "not_open": "This training day is already finished.",
     "unavailable": "HA Fitness can't be reached. Try again later.",
     "general": "Something went wrong. Try again."
   }

@@ -148,6 +148,11 @@ export class TodayCard extends LitElement {
       font-weight: 500;
       cursor: pointer;
     }
+    /* Spring over and Nej share one place and width, wide enough for either text in both languages. */
+    button.slot {
+      width: 9em;
+      padding: 0 12px;
+    }
     button.yes {
       background: var(--primary-color);
       color: var(--text-primary-color);
@@ -177,6 +182,8 @@ export class TodayCard extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    // Hidden before the first render, so a day with no training never shows an empty cell.
+    this.syncHidden();
     this.subscription.connect(this.hass?.connection);
   }
 
@@ -186,6 +193,8 @@ export class TodayCard extends LitElement {
     for (const id of [...this.confirming.keys()]) this.endConfirm(id);
     clearTimeout(this.errorTimer);
     this.error = undefined;
+    // Put back on the page, the card waits for fresh data from a new subscription.
+    this.today = undefined;
   }
 
   protected override willUpdate(changed: PropertyValues<this>): void {
@@ -193,7 +202,12 @@ export class TodayCard extends LitElement {
   }
 
   protected override updated(): void {
-    const hide = !this.inPreview && this.today?.open.length === 0;
+    this.syncHidden();
+  }
+
+  /** Hidden, outside preview, until the first message and whenever nothing is open. */
+  private syncHidden(): void {
+    const hide = !this.inPreview && (this.today === undefined || this.today?.open.length === 0);
     if (hide === this.hidden) return;
     // As HA's own cards do: hui-card hides a card that sets `hidden` and says so.
     this.toggleAttribute("hidden", hide);
@@ -279,15 +293,17 @@ export class TodayCard extends LitElement {
   private renderActions(day: OpenDay) {
     const confirming = this.confirming.get(day.id);
     if (!confirming) {
-      return html`<button @click=${() => this.ask(day.id)}>${this.t("today.skip")}</button>`;
+      return html`<button class="slot" @click=${() => this.ask(day.id)}>${this.t("today.skip")}</button>`;
     }
-    // Nej is last, where Spring over was, so a double tap lands on Nej.
+    // Nej is last and as wide as Spring over (the "slot"), so a double tap lands on Nej.
     return html`
       <span class="question">${this.t("today.skip_confirm")}</span>
       <button class="yes" ?disabled=${confirming.busy} @click=${() => this.skip(day.id)}>
         ${this.t("today.yes")}
       </button>
-      <button ?disabled=${confirming.busy} @click=${() => this.endConfirm(day.id)}>${this.t("today.no")}</button>
+      <button class="slot" ?disabled=${confirming.busy} @click=${() => this.endConfirm(day.id)}>
+        ${this.t("today.no")}
+      </button>
     `;
   }
 

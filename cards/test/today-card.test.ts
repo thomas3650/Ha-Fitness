@@ -1,5 +1,5 @@
 import { getAllByRole, getByRole, queryAllByRole, queryByRole } from "@testing-library/dom";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
 import "../src/index";
@@ -53,32 +53,62 @@ function today(open: Day[], date = "2026-10-28") {
   return { date, open, next: { date: "2026-10-31", programs: ["Lørdag"] } };
 }
 
-/** A fake `hass`: a spy for `callService` and a subscription the test pushes messages into. */
-function fakeHass(language = "da") {
-  let listener: ((message: unknown) => void) | undefined;
-  const unsubscribe = vi.fn();
-  const callService = vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve({}));
-  const subscribeMessage = vi.fn<
-    (callback: (message: unknown) => void, message: unknown) => Promise<() => void>
-  >((callback) => {
-    listener = callback;
-    return Promise.resolve(unsubscribe);
-  });
-  const hass = {
-    locale: { language },
-    callService,
-    connection: { subscribeMessage },
+type Listener = (message: unknown) => void;
+
+/**
+ * A fake of home-assistant-js-websocket's connection: each subscription keeps its own listener and
+ * unsubscribe spy, and `fire` sends a connection event such as `ready` (sent after a reconnect).
+ */
+function fakeConnection() {
+  const listeners: Listener[] = [];
+  const unsubscribes: ReturnType<typeof vi.fn>[] = [];
+  const events = new Map<string, Set<(...args: unknown[]) => void>>();
+  const subscribeMessage = vi.fn<(callback: Listener, message: unknown) => Promise<() => void>>(
+    (callback) => {
+      listeners.push(callback);
+      const unsubscribe = vi.fn();
+      unsubscribes.push(unsubscribe);
+      return Promise.resolve(unsubscribe);
+    },
+  );
+  const connection = {
+    subscribeMessage,
+    addEventListener(type: string, callback: (...args: unknown[]) => void) {
+      if (!events.has(type)) events.set(type, new Set());
+      events.get(type)!.add(callback);
+    },
+    removeEventListener(type: string, callback: (...args: unknown[]) => void) {
+      events.get(type)?.delete(callback);
+    },
   };
   return {
-    hass,
-    callService,
+    connection,
     subscribeMessage,
-    unsubscribe,
+    listeners,
+    unsubscribes,
+    listenerCount: (type: string) => events.get(type)?.size ?? 0,
+    fire(type: string) {
+      for (const callback of events.get(type) ?? []) callback(connection);
+    },
+    /** Send a message on the newest subscription. */
     push(message: unknown) {
+      const listener = listeners.at(-1);
       if (!listener) throw new Error("the card has not subscribed");
       listener(message);
     },
   };
+}
+
+/** A fake `hass`: a spy for `callService` and a fake connection the test pushes messages into. */
+function fakeHass(language = "da") {
+  const socket = fakeConnection();
+  const callService = vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve({}));
+  const hass = {
+    locale: { language },
+    callService,
+    connection: socket.connection,
+  };
+  return { ...socket, hass, callService };
 }
 
 type Fake = ReturnType<typeof fakeHass>;
@@ -175,15 +205,44 @@ test("due and late rows in da and en", async () => {
   ]);
 });
 
-test("hides when nothing open and returns when a day opens", async () => {
-  const fake = fakeHass();
-  const card = await mount(fake);
+/** Record every `card-visibility-changed` that reaches the document. */
+function visibilityEvents() {
   const events: { value: unknown; bubbles: boolean; composed: boolean }[] = [];
   const listener = (event: Event) => {
     const { detail, bubbles, composed } = event as CustomEvent<{ value: unknown }>;
     events.push({ value: detail.value, bubbles, composed });
   };
   document.addEventListener("card-visibility-changed", listener);
+  onTestFinished(() => document.removeEventListener("card-visibility-changed", listener));
+  return events;
+}
+
+const HIDE = { value: false, bubbles: true, composed: true };
+const SHOW = { value: true, bubbles: true, composed: true };
+
+test("starts hidden until the first message", async () => {
+  const events = visibilityEvents();
+  const fake = fakeHass();
+  const card = document.createElement("ha-fitness-today-card") as unknown as CardElement;
+  card.setConfig({ type: "custom:ha-fitness-today-card" });
+  card.hass = fake.hass;
+  document.body.append(card);
+  // Hidden at once, before the first render, so no empty cell shows on a day with no training.
+  expect(card.hidden).toBe(true);
+  expect(card.style.display).toBe("none");
+  await card.updateComplete;
+  expect(events).toEqual([HIDE]);
+
+  await push(card, fake, today([wednesday]));
+  expect(card.hidden).toBe(false);
+  expect(events).toEqual([HIDE, SHOW]);
+});
+
+test("hides when nothing open and returns when a day opens", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+  const events = visibilityEvents();
 
   // hui-card removes a hidden card from the DOM unless it asks to stay, and the card must stay subscribed.
   expect(card.connectedWhileHidden).toBe(true);
@@ -191,20 +250,16 @@ test("hides when nothing open and returns when a day opens", async () => {
   await push(card, fake, today([]));
   expect(card.hidden).toBe(true);
   expect(card.style.display).toBe("none");
-  expect(events).toEqual([{ value: false, bubbles: true, composed: true }]);
+  expect(events).toEqual([HIDE]);
 
   await push(card, fake, today([]));
-  expect(events).toHaveLength(1);
+  expect(events).toEqual([HIDE]);
 
   await push(card, fake, today([wednesday]));
   expect(card.hidden).toBe(false);
   expect(card.style.display).toBe("");
-  expect(events).toEqual([
-    { value: false, bubbles: true, composed: true },
-    { value: true, bubbles: true, composed: true },
-  ]);
+  expect(events).toEqual([HIDE, SHOW]);
   expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
-  document.removeEventListener("card-visibility-changed", listener);
 });
 
 test("subscribes once and unsubscribes when removed", async () => {
@@ -217,7 +272,7 @@ test("subscribes once and unsubscribes when removed", async () => {
 
   card.remove();
   await vi.advanceTimersByTimeAsync(0);
-  expect(fake.unsubscribe).toHaveBeenCalledTimes(1);
+  expect(fake.unsubscribes[0]).toHaveBeenCalledTimes(1);
 });
 
 test("in preview never hides and shows the note", async () => {
@@ -338,7 +393,7 @@ test("10 s timeout cancels", async () => {
 test("error text from translation_key for 5 s", async () => {
   const cases: [unknown, string][] = [
     [{ code: "service_validation_error", translation_key: "not_found" }, "Træningsdagen findes ikke længere."],
-    [{ code: "service_validation_error", translation_key: "not_open" }, "Træningsdagen er allerede lukket."],
+    [{ code: "service_validation_error", translation_key: "not_open" }, "Træningsdagen er allerede afsluttet."],
     [{ code: "home_assistant_error", translation_key: "unavailable" }, "HA Fitness kan ikke nås. Prøv igen senere."],
     [{ code: "home_assistant_error", translation_key: "something_else" }, "Noget gik galt. Prøv igen."],
     [new Error("boom"), "Noget gik galt. Prøv igen."],
@@ -390,6 +445,126 @@ test("a subscription the integration refuses shows the unreachable line", async 
   expect(text(root(card))).toBe("HA Fitness kan ikke nås");
 });
 
+test("retries a refused subscription after 5, 10 and 30 s, then every 30 s", async () => {
+  const fake = fakeHass();
+  for (let i = 0; i < 4; i++) fake.subscribeMessage.mockRejectedValueOnce({ code: "unknown_command" });
+  const card = await mount(fake);
+  await wait(card, 0);
+  expect(text(root(card))).toBe("HA Fitness kan ikke nås");
+
+  // The n-th retry comes this many ms after the refusal before it.
+  for (const [delay, calls] of [
+    [5_000, 2],
+    [10_000, 3],
+    [30_000, 4],
+    [30_000, 5],
+  ]) {
+    await wait(card, delay - 1);
+    expect(fake.subscribeMessage).toHaveBeenCalledTimes(calls - 1);
+    await wait(card, 1);
+    expect(fake.subscribeMessage).toHaveBeenCalledTimes(calls);
+  }
+
+  await push(card, fake, today([wednesday]));
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+  await wait(card, 120_000);
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(5);
+});
+
+test("a reconnect subscribes at once and starts the waits over", async () => {
+  const fake = fakeHass();
+  for (let i = 0; i < 4; i++) fake.subscribeMessage.mockRejectedValueOnce({ code: "unknown_command" });
+  const card = await mount(fake);
+  await wait(card, 15_000);
+  // Refused at 0, 5 and 15 s; the next wait would be 30 s.
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(3);
+
+  fake.fire("ready");
+  await wait(card, 0);
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(4);
+  await wait(card, 4_999);
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(4);
+  await wait(card, 1);
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(5);
+
+  await push(card, fake, today([wednesday]));
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+});
+
+test("stops retrying and listening when removed", async () => {
+  const fake = fakeHass();
+  fake.subscribeMessage.mockRejectedValue({ code: "unknown_command" });
+  const card = await mount(fake);
+  await wait(card, 0);
+  expect(fake.listenerCount("ready")).toBe(1);
+
+  card.remove();
+  expect(fake.listenerCount("ready")).toBe(0);
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(1);
+});
+
+test("subscribes again when the connection is ready after a reconnect", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+
+  fake.fire("ready");
+  await wait(card, 0);
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(2);
+  expect(fake.unsubscribes[0]).toHaveBeenCalledTimes(1);
+
+  // A late message on the old subscription is ignored.
+  fake.listeners[0](today([]));
+  await card.updateComplete;
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+
+  await push(card, fake, today([strength]));
+  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Spring over"]);
+});
+
+test("a new connection replaces the old subscription", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+
+  const other = fakeConnection();
+  card.hass = { ...fake.hass, connection: other.connection };
+  await wait(card, 0);
+  expect(fake.unsubscribes[0]).toHaveBeenCalledTimes(1);
+  expect(fake.listenerCount("ready")).toBe(0);
+  expect(other.subscribeMessage).toHaveBeenCalledTimes(1);
+
+  // A late message on the old connection is ignored.
+  fake.push(today([]));
+  await card.updateComplete;
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+
+  other.push(today([strength]));
+  await card.updateComplete;
+  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Spring over"]);
+});
+
+test("subscribes again when put back on the page", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+
+  card.remove();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fake.unsubscribes[0]).toHaveBeenCalledTimes(1);
+
+  document.body.append(card);
+  await card.updateComplete;
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(2);
+  // The old data is dropped: hidden until the new subscription answers.
+  expect(card.hidden).toBe(true);
+
+  await push(card, fake, today([strength]));
+  expect(card.hidden).toBe(false);
+  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Spring over"]);
+});
+
 test("a day that closes while asking drops its question", async () => {
   const fake = fakeHass();
   const card = await mount(fake);
@@ -416,7 +591,7 @@ test("language option wins", async () => {
   await wait(card, 500);
   await tap(card, getByRole(rows(card)[0], "button", { name: "Ja" }));
   await wait(card, 0);
-  expect(text(getByRole(root(card), "alert"))).toBe("Træningsdagen er allerede lukket.");
+  expect(text(getByRole(root(card), "alert"))).toBe("Træningsdagen er allerede afsluttet.");
 });
 
 test("grid options 2 rows per day", async () => {

@@ -1,10 +1,9 @@
 {
   "picker": {
     "name": "HA Fitness – i dag",
-    "description": "Dagens træning, med en knap til at springe den over. Skjult, når der ikke er noget åbent."
+    "description": "Dagens træning, med en knap til at springe den over. Skjult, når der ikke er nogen træning."
   },
   "today": {
-    "title": "Træning i dag",
     "stations_one": "{count} øvelse",
     "stations_other": "{count} øvelser",
     "rounds_one": "{count} runde",
@@ -30,7 +29,7 @@
   },
   "error": {
     "not_found": "Træningsdagen findes ikke længere.",
-    "not_open": "Træningsdagen er allerede lukket.",
+    "not_open": "Træningsdagen er allerede afsluttet.",
     "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
     "general": "Noget gik galt. Prøv igen."
   }

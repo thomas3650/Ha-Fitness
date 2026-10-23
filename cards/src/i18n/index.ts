@@ -8,7 +8,7 @@ export type Vars = Record<string, string | number>;
 
 const languages: Record<string, Strings> = { da, en };
 
-/** Find a dotted key such as "today.title" in a language file. */
+/** Find a dotted key such as "today.skip" in a language file. */
 function lookup(strings: Strings | undefined, key: string): string | undefined {
   let node: string | Strings | undefined = strings;
   for (const part of key.split(".")) {
@@ -32,7 +32,7 @@ function find(strings: Strings | undefined, key: string, count: number | undefin
 /** Fill in the `{name}` placeholders; one with no value stays as it is. */
 function fill(text: string, vars: Vars): string {
   return text.replace(/\{(\w+)\}/g, (placeholder, name: string) =>
-    name in vars ? String(vars[name]) : placeholder,
+    Object.hasOwn(vars, name) ? String(vars[name]) : placeholder,
   );
 }
 

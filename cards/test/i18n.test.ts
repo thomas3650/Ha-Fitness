@@ -25,13 +25,13 @@ function placeholdersOf(text: string): string[] {
 }
 
 test("Danish for da and da-DK", () => {
-  expect(localize("da", "today.title")).toBe("Træning i dag");
-  expect(localize("da-DK", "today.title")).toBe("Træning i dag");
+  expect(localize("da", "today.skip")).toBe("Spring over");
+  expect(localize("da-DK", "today.skip")).toBe("Spring over");
 });
 
 test("falls back to English, then to the key", () => {
-  expect(localize("fr", "today.title")).toBe("Today's training");
-  expect(localize(undefined, "today.title")).toBe("Today's training");
+  expect(localize("fr", "today.skip")).toBe("Skip");
+  expect(localize(undefined, "today.skip")).toBe("Skip");
   expect(localize("da", "no.such.key")).toBe("no.such.key");
 });
 
