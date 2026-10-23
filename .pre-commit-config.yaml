@@ -14,7 +14,7 @@ repos:
       - id: trailing-whitespace
       - id: detect-private-key
       - id: check-added-large-files
-        exclude: ^(uv\.lock|docs/mockups/)
+        exclude: ^(uv\.lock|docs/mockups/|addon/server/src/ha_fitness_server/library/exercises\.json$)
   # ruff runs through uv, so its version is the one in uv.lock, as in CI. The hooks also cover
   # addon/server/ (ruff reads the root pyproject.toml).
   - repo: local
