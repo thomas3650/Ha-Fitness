@@ -4,25 +4,24 @@
     "step": {
       "user": {
         "title": "Opsæt HA Fitness",
-        "description": "Angiv adressen på HA Fitness-tilføjelsen. Under Supervisor er det ikke nødvendigt: tilføjelsen findes af sig selv og vises under Fundet.",
+        "description": "Angiv adressen på HA Fitness-appen. Under Supervisor er det ikke nødvendigt: appen findes af sig selv og vises under Fundet.",
         "data": {
           "url": "URL"
         },
         "data_description": {
-          "url": "Tilføjelsens adresse."
+          "url": "Appens adresse."
         }
       },
       "hassio_confirm": {
-        "title": "HA Fitness-tilføjelse fundet",
-        "description": "Vil du opsætte HA Fitness med den tilføjelse, Supervisor har fundet?"
+        "title": "HA Fitness-app fundet",
+        "description": "Vil du opsætte HA Fitness med den app, Supervisor har fundet?"
       }
     },
     "error": {
-      "cannot_connect": "HA Fitness-tilføjelsen kan ikke nås på denne URL."
+      "cannot_connect": "HA Fitness-appen kan ikke nås på denne URL."
     },
     "abort": {
-      "already_configured": "HA Fitness er allerede sat op.",
-      "already_in_progress": "HA Fitness er allerede ved at blive sat op. Gør opsætningen færdig under Fundet."
+      "already_configured": "HA Fitness er allerede sat op."
     }
   }
 }

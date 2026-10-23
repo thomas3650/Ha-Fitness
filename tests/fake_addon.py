@@ -62,11 +62,15 @@ class FakeAddon:
         if self.skip_status != 200:
             return web.json_response({"detail": "error"}, status=self.skip_status)
         day_id = int(request.match_info["id"])
-        day = next(
+        open_day = next(
             (day for day in self.today["open"] if day["id"] == day_id),
             {"id": day_id, "program_id": None, "program_name": "", "date": ""},
         )
-        return web.json_response({**day, "status": "skipped"})
+        # The training day as stored (spec §3.1), not the /today row with its program fields.
+        fields = ("id", "program_id", "program_name", "date")
+        return web.json_response(
+            {**{key: open_day[key] for key in fields}, "status": "skipped"}
+        )
 
     async def _ws(self, request: web.Request) -> web.WebSocketResponse:
         if self.old_addon:

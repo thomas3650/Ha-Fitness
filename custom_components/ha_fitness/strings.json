@@ -4,25 +4,24 @@
     "step": {
       "user": {
         "title": "Set up HA Fitness",
-        "description": "Enter the address of the HA Fitness add-on. Under the Supervisor you don't need this: the add-on is found by itself and shows under Discovered.",
+        "description": "Enter the address of the HA Fitness app. Under the Supervisor you don't need this: the app is found by itself and shows under Discovered.",
         "data": {
           "url": "URL"
         },
         "data_description": {
-          "url": "The add-on's address."
+          "url": "The app's address."
         }
       },
       "hassio_confirm": {
-        "title": "HA Fitness add-on found",
-        "description": "Set up HA Fitness with the add-on the Supervisor found?"
+        "title": "HA Fitness app found",
+        "description": "Set up HA Fitness with the app the Supervisor found?"
       }
     },
     "error": {
-      "cannot_connect": "The HA Fitness add-on can't be reached at this URL."
+      "cannot_connect": "The HA Fitness app can't be reached at this URL."
     },
     "abort": {
-      "already_configured": "HA Fitness is already set up.",
-      "already_in_progress": "HA Fitness is already being set up. Finish the setup under Discovered."
+      "already_configured": "HA Fitness is already set up."
     }
   }
 }

@@ -6,7 +6,6 @@ from homeassistant.config_entries import SOURCE_HASSIO, SOURCE_USER, ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
-from homeassistant.helpers.translation import async_get_translations
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_fitness.const import DOMAIN
@@ -71,6 +70,20 @@ async def test_user_step_cannot_connect(
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
 
+async def test_user_step_health_not_found(
+    hass: HomeAssistant, fake_addon: FakeAddon
+) -> None:
+    """A URL where something answers, but health gives 404, shows cannot_connect."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"url": f"{fake_addon.url}/nope"}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
 async def test_second_entry_already_configured(
     hass: HomeAssistant, config_entry: MockConfigEntry
 ) -> None:
@@ -131,7 +144,7 @@ async def test_migrate_v1_sets_url_and_unique_id(hass: HomeAssistant) -> None:
 
 
 async def test_user_step_while_discovery_in_progress(hass: HomeAssistant) -> None:
-    """With a Discovered card waiting, a manual setup aborts with a translated reason."""
+    """With a Discovered card waiting, a manual setup aborts with Home Assistant's own text."""
     await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_HASSIO}, data=DISCOVERY
     )
@@ -140,8 +153,4 @@ async def test_user_step_while_discovery_in_progress(hass: HomeAssistant) -> Non
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_in_progress"
-
-    key = f"component.{DOMAIN}.config.abort.already_in_progress"
-    for language in ("en", "da"):
-        texts = await async_get_translations(hass, language, "config", [DOMAIN])
-        assert texts.get(key), f"no {language} text for already_in_progress"
+    assert result["translation_domain"] == "homeassistant"
