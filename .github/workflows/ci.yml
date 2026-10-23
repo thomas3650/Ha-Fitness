@@ -177,3 +177,4 @@ jobs:
       - run: uv sync --locked
       - run: uv run actionlint
       - run: uv run zizmor --offline .github/workflows
+      - run: uv run python scripts/check_links.py

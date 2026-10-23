@@ -22,6 +22,11 @@ updates:
     groups:
       uv:
         patterns: ["*"]
+    # Bumped by hand, together with the Home Assistant version (docs/ha-notes.md, Bumping Home Assistant).
+    ignore:
+      - dependency-name: pytest-homeassistant-custom-component
+      - dependency-name: home-assistant-frontend
+      - dependency-name: homeassistant
   - package-ecosystem: npm
     directory: /cards
     commit-message:
@@ -32,6 +37,10 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    # Held at 6.0.x until typescript-eslint supports newer (docs/notes.md).
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
   - package-ecosystem: pre-commit
     directory: /
     commit-message:
