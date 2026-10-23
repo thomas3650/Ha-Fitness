@@ -211,7 +211,7 @@ async def test_unreachable_addon_warns_once_per_outage(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """An add-on that is down is retried after 1, 2 and 5 s; that is logged once, at WARNING, never ERROR."""
+    """An add-on that is down is retried after 1, 2, 5 and then 10 s; that is logged once, at WARNING, never ERROR."""
     attempts = 0
     health_checks = 0
 
@@ -236,18 +236,32 @@ async def test_unreachable_addon_warns_once_per_outage(
     entry.add_to_hass(hass)
 
     await _set_up(hass, entry)
+
+    async def _retry_is_pending(attempt: int, too_early: float) -> None:
+        """Let the client arm its next retry, and check that it doesn't fire `too_early` seconds on."""
+        await _wait_for(hass, lambda: health_checks == attempt)
+        for _ in range(1000):
+            await asyncio.sleep(0)
+        for _ in range(1000):
+            async_fire_time_changed(
+                hass, dt_util.utcnow() + timedelta(seconds=too_early)
+            )
+            await asyncio.sleep(0)
+        assert attempts == attempt
+
     await _wait_for(hass, lambda: attempts == 1)
     await _wait_for(hass, lambda: attempts == 2, freezer, 1)
+    # async_fire_time_changed reaches 0.5 s past the time it is given.
+    await _retry_is_pending(2, 1)
     await _wait_for(hass, lambda: attempts == 3, freezer, 2)
+    await _retry_is_pending(3, 4)
     await _wait_for(hass, lambda: attempts == 4, freezer, 5)
 
     assert _levels(caplog) == [logging.WARNING]
 
     # Each rejected handshake is followed by a health check; once the fourth is answered, the
-    # next retry is pending. Unloaded, it never fires.
-    await _wait_for(hass, lambda: health_checks == 4)
-    for _ in range(1000):
-        await asyncio.sleep(0)
+    # 10 s retry is pending. Unloaded, it never fires.
+    await _retry_is_pending(4, 9)
     await _unload(hass, entry)
     for _ in range(1000):
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=60))
