@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# The full loop: a real Supervisor and Home Assistant in the home-assistant/apps-example dev container
+# (.devcontainer/supervisor/devcontainer.json), with the add-on built from the working tree.
+#
+#   scripts/full-loop up       start the container and the Supervisor, wait for Home Assistant on
+#                              http://localhost:7123, then onboard it (user dev / dev, Danish)
+#   scripts/full-loop install  stage addon/ for the Supervisor, then install and start the add-on
+#                              (rebuild and start when it is installed already)
+#   scripts/full-loop check    print the add-on's health (http://localhost:8765/api/v1/health)
+#   scripts/full-loop down     stop and remove the container (and its anonymous volumes)
+#
+# Only local/full-loop/ (git-ignored) is mounted at the Supervisor's local apps folder
+# (/mnt/supervisor/apps/local), not the repo: the Supervisor's local scan globs **/config.* and would walk
+# cards/node_modules, config/ and local/. `install` copies addon/ to local/full-loop/ha_fitness/ and
+# removes the `image:` line from the copy, because the Supervisor builds a local app only when its
+# config.yaml has no `image:` (with one, it pulls the published image instead). The devcontainer.json
+# leaves out the example's `postStartCommand: devcontainer_bootstrap` and `WORKSPACE_DIRECTORY`: the
+# bootstrap bind-mounts the workspace (the whole repo) into the Supervisor's data folder.
+#
+# Under the Supervisor, Home Assistant listens on port 80 (since 2026.10; 8123 only redirects to it until
+# onboarding is done), so the devcontainer.json maps http://localhost:7123 to the container's port 80.
+#
+# The first `up` pulls a large image and the first Supervisor start takes several minutes. The supervisor
+# log is /tmp/supervisor_run.log inside the container.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+root="$(pwd)"
+
+config=.devcontainer/supervisor/devcontainer.json
+devcontainer=(npx --yes @devcontainers/cli@0.89.0)
+slug=local_ha_fitness
+stage=local/full-loop
+ha_url=http://localhost:7123
+health_url=http://localhost:8765/api/v1/health
+
+# The container the devcontainer CLI started for this repo and config (empty when there is none).
+container_id() {
+  docker ps -aq \
+    --filter "label=devcontainer.local_folder=$root" \
+    --filter "label=devcontainer.config_file=$root/$config"
+}
+
+# Run a command in the running container as its user (vscode). Plain docker exec: no TTY, and no shell
+# start-up output mixed into what the command prints.
+in_container() {
+  docker exec -u vscode "$(container_id)" "$@"
+}
+
+# The ha CLI in the container (talks to the Supervisor).
+ha() {
+  in_container ha "$@"
+}
+
+require_container() {
+  if [ -z "$(container_id)" ]; then
+    echo "full-loop: the container isn't running; start it with scripts/full-loop up." >&2
+    exit 2
+  fi
+}
+
+up() {
+  # A bind mount needs its source.
+  mkdir -p "$stage"
+  "${devcontainer[@]}" up --workspace-folder "$root" --config "$root/$config"
+  if in_container pgrep -f '[s]upervisor_run' >/dev/null; then
+    echo "full-loop: the Supervisor is already running."
+  else
+    # Detached: supervisor_run stays in the foreground for as long as the Supervisor runs.
+    docker exec -d -u vscode "$(container_id)" bash -c 'supervisor_run >/tmp/supervisor_run.log 2>&1'
+    echo "full-loop: started the Supervisor; waiting for Home Assistant on $ha_url (several minutes the first time)."
+  fi
+  # Until Home Assistant itself answers, port 80 refuses connections or redirects (the Supervisor's
+  # landing page, the 8123 transition); -L --max-redirs 0 makes a redirect an error, so it is retried.
+  # 180 tries of up to 10 s: up to about 30 min for a first start.
+  curl -sf -o /dev/null -L --max-redirs 0 --retry 180 --retry-delay 10 --retry-connrefused \
+    --retry-all-errors --max-time 10 "$ha_url/api/onboarding"
+  uv run python scripts/dev_onboard.py --url "$ha_url" --no-entry
+  echo "full-loop: Home Assistant runs on $ha_url (user dev / dev)."
+}
+
+install() {
+  require_container
+  mkdir -p "$stage"
+  rsync -a --delete \
+    --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude .mypy_cache \
+    --exclude .ruff_cache --exclude .coverage --exclude .DS_Store \
+    addon/ "$stage/ha_fitness/"
+  # Without `image:` the Supervisor builds the app from the staged Dockerfile instead of pulling it.
+  sed -i.bak '/^image:/d' "$stage/ha_fitness/config.yaml"
+  rm -f "$stage/ha_fitness/config.yaml.bak"
+  ha store reload
+  if [ "$(ha apps info "$slug" --raw-json | jq -r '.data.version // empty')" = "" ]; then
+    ha apps install "$slug"
+  else
+    ha apps rebuild --force "$slug"
+  fi
+  if [ "$(ha apps info "$slug" --raw-json | jq -r '.data.state')" != "started" ]; then
+    ha apps start "$slug"
+  fi
+  ha apps info "$slug" --raw-json | jq -r '.data | "state: \(.state)\nversion: \(.version)"'
+}
+
+check() {
+  # The add-on may still be starting right after install.
+  curl -s --retry 30 --retry-delay 2 --retry-connrefused --retry-all-errors --max-time 5 "$health_url"
+  echo
+}
+
+down() {
+  local id
+  id="$(container_id)"
+  if [ -z "$id" ]; then
+    echo "full-loop: no container to remove."
+    return
+  fi
+  # -v: the anonymous volumes (/var/lib/docker, /mnt/supervisor, ...) can't be reused by a new container.
+  docker rm -f -v "$id" >/dev/null
+  echo "full-loop: container removed."
+}
+
+case "${1:-}" in
+  up) up ;;
+  install) install ;;
+  check) check ;;
+  down) down ;;
+  *)
+    echo "usage: scripts/full-loop up|install|check|down" >&2
+    exit 2
+    ;;
+esac
