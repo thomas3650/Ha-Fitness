@@ -22,7 +22,7 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.ha_fitness import client
 from custom_components.ha_fitness.const import DOMAIN
 
-from .common import set_up, unload, wait_for
+from .common import is_open, is_unavailable, set_up, unload, wait_for
 from .fake_addon import FakeAddon
 
 UNSUPPORTED = "unsupported_api_version"
@@ -301,7 +301,7 @@ async def test_raising_listener_does_not_stop_reconnect(
 ) -> None:
     """A listener that raises doesn't end the reconnect loop: the client still reconnects."""
     await set_up(hass, config_entry)
-    await wait_for(hass, lambda: config_entry.runtime_data.today is not None)
+    await wait_for(hass, lambda: is_open(hass))
 
     def _raise() -> None:
         raise RuntimeError("listener failed")
@@ -318,7 +318,7 @@ async def test_raising_listener_does_not_block_other_listeners(
 ) -> None:
     """A listener that raises doesn't keep the listeners after it from hearing a change."""
     await set_up(hass, config_entry)
-    await wait_for(hass, lambda: config_entry.runtime_data.today is not None)
+    await wait_for(hass, lambda: is_open(hass))
     calls: list[None] = []
 
     def _raise() -> None:
@@ -365,9 +365,9 @@ async def test_heartbeat_keeps_a_live_connection(
     config_entry: MockConfigEntry,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """Minutes pass on a live connection: the heartbeat doesn't drop it."""
+    """Minutes pass on a live connection: each 31 s tick sends a ping, the pong comes, and it stays up."""
     await set_up(hass, config_entry)
-    await wait_for(hass, lambda: config_entry.runtime_data.connected)
+    await wait_for(hass, lambda: is_open(hass))
 
     for _ in range(10):
         freezer.tick(timedelta(seconds=31))
@@ -375,7 +375,7 @@ async def test_heartbeat_keeps_a_live_connection(
         await _settle()
 
     assert fake_addon.connects == 1
-    assert config_entry.runtime_data.connected
+    assert is_open(hass)
     await unload(hass, config_entry)
 
 
@@ -390,15 +390,14 @@ async def test_heartbeat_notices_a_half_open_connection(
     monkeypatch.setattr(client, "WS_HEARTBEAT", 0.05)
     fake_addon.answer_pings = False
     await set_up(hass, config_entry)
-    await wait_for(hass, lambda: config_entry.runtime_data.connected)
+    await wait_for(hass, lambda: is_open(hass))
 
     # Real time runs here (no freezer): the ping goes out after 0.05 s, its pong is due 0.025 s later.
     for _ in range(200):
-        if not config_entry.runtime_data.connected:
+        if is_unavailable(hass):
             break
         await asyncio.sleep(0.01)
-    assert not config_entry.runtime_data.connected
-    assert hass.states.get("sensor.ha_fitness_today").state == "unavailable"  # type: ignore[union-attr]
+    assert is_unavailable(hass)
     await unload(hass, config_entry)
 
 
@@ -429,6 +428,6 @@ async def test_unexpected_error_does_not_stop_reconnect(
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: _levels(caplog) == [logging.WARNING])
 
-    await wait_for(hass, lambda: config_entry.runtime_data.connected, freezer, 1)
+    await wait_for(hass, lambda: is_open(hass), freezer, 1)
     assert fake_addon.connects == 2
     await unload(hass, config_entry)

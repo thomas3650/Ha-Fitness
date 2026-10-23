@@ -7,7 +7,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from .common import set_up, unload, wait_for
+from .common import is_open, set_up, unload, wait_for
 from .fake_addon import TODAY_DUE, FakeAddon
 
 SUBSCRIBE = {"type": "ha_fitness/today/subscribe"}
@@ -22,7 +22,7 @@ async def test_subscription_sends_data_and_null(
 ) -> None:
     """The subscription sends today at once and after each change, and null on a disconnect."""
     await set_up(hass, config_entry)
-    await wait_for(hass, lambda: config_entry.runtime_data.today is not None)
+    await wait_for(hass, lambda: is_open(hass))
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id(SUBSCRIBE)

@@ -9,7 +9,7 @@ from pytest_homeassistant_custom_component.common import (
     async_capture_events,
 )
 
-from .common import set_up, unload, wait_for
+from .common import is_open, set_up, unload, wait_for
 from .fake_addon import FakeAddon
 
 DAY: dict[str, Any] = {
@@ -30,7 +30,7 @@ async def test_events_fired_with_data(
         for name in ("due", "skipped", "missed", "done")
     }
     await set_up(hass, config_entry)
-    await wait_for(hass, lambda: config_entry.runtime_data.today is not None)
+    await wait_for(hass, lambda: is_open(hass))
 
     # An event name this version doesn't know (done arrives in step 5) fires nothing.
     await fake_addon.push({"type": "event", "event": "done", "training_day": DAY})
