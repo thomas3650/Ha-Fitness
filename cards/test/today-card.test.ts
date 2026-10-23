@@ -381,6 +381,27 @@ test("unreachable line", async () => {
   expect(text(root(englishCard))).toBe("HA Fitness can't be reached");
 });
 
+test("a subscription the integration refuses shows the unreachable line", async () => {
+  const fake = fakeHass();
+  fake.subscribeMessage.mockRejectedValue({ code: "unknown_command" });
+  const card = await mount(fake);
+  await wait(card, 0);
+  expect(card.hidden).toBe(false);
+  expect(text(root(card))).toBe("HA Fitness kan ikke nås");
+});
+
+test("a day that closes while asking drops its question", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday, strength]));
+  await tap(card, getByRole(rows(card)[1], "button", { name: "Spring over" }));
+
+  // Skipped from elsewhere, then open again: the row starts over at Spring over.
+  await push(card, fake, today([wednesday]));
+  await push(card, fake, today([wednesday, strength]));
+  expect(buttonNames(rows(card)[1])).toEqual(["Spring over"]);
+});
+
 test("language option wins", async () => {
   const fake = fakeHass("en");
   const card = await mount(fake, { language: "da" });
