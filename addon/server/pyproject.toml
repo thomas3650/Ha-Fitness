@@ -1,0 +1,41 @@
+[project]
+name = "ha-fitness-server"
+# release-please bumps __version__ (x-release-please-version); hatchling reads it from there.
+dynamic = ["version"]
+description = "The HA Fitness add-on server: REST API for workouts, programs and stats."
+license = "MIT"
+requires-python = ">=3.14"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "pytest-cov",
+  "httpx",
+  "mypy",
+  "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/ha_fitness_server/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ha_fitness_server"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+# mypy does not read the root pyproject.toml; ruff does (this file has no [tool.ruff]).
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["src", "tests"]

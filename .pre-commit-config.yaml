@@ -1,0 +1,59 @@
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: check-added-large-files
+        exclude: ^(uv\.lock|docs/mockups/)
+  # ruff runs through uv, so its version is the one in uv.lock, as in CI. The hooks also cover
+  # addon/server/ (ruff reads the root pyproject.toml).
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude
+        args: [--fix]
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter, markdown]
+        # Plan snippets are fragments, not whole programs.
+        exclude: ^docs/superpowers/
+        require_serial: true
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: actionlint
+        name: actionlint (GitHub workflows)
+        entry: uv run actionlint
+        language: system
+        files: ^\.github/workflows/
+      - id: zizmor
+        name: zizmor (GitHub workflows)
+        entry: uv run zizmor --offline
+        language: system
+        files: ^\.github/workflows/
+      - id: no-push-to-main
+        name: refuse pushing to main (open a PR)
+        entry: sh -c 'if [ "$PRE_COMMIT_REMOTE_BRANCH" = "refs/heads/main" ]; then echo "Pushing to main is not allowed - open a PR."; exit 1; fi'
+        language: system
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false

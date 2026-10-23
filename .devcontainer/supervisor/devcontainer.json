@@ -1,0 +1,20 @@
+{
+  "name": "HA Fitness full loop (Supervisor)",
+  "image": "ghcr.io/home-assistant/devcontainer:5-apps",
+  "overrideCommand": false,
+  "remoteUser": "vscode",
+  "appPort": ["7123:80", "7357:4357", "8765:8765"],
+  "runArgs": ["--privileged"],
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "workspaceMount": "source=${localWorkspaceFolder},target=${containerWorkspaceFolder},type=bind,consistency=cached",
+  "containerEnv": {
+    "SUPERVISOR_CHANNEL": "beta"
+  },
+  "mounts": [
+    "type=volume,target=/var/lib/docker",
+    "type=volume,target=/var/lib/containerd",
+    "type=volume,target=/mnt/supervisor",
+    "type=tmpfs,target=/tmp",
+    "source=${localWorkspaceFolder}/local/full-loop,target=/mnt/supervisor/apps/local,type=bind"
+  ]
+}

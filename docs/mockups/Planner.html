@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workout – Program</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#FF8A3D}a:hover{color:#FFB07A}
+</style>
+</head>
+<body>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: #101317; color: #F3F5F7; font-family: Inter, system-ui, sans-serif; display: flex">
+  <nav aria-label="Workout sections" style="width: 210px; flex-shrink: 0; box-sizing: border-box; padding: 32px 16px; background: #15191E; display: flex; flex-direction: column; gap: 6px">
+    <div style="padding: 0 12px 20px; font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700">Workout</div>
+    <a href="Main.html" style="height: 48px; padding: 0 14px; border-radius: 12px; display: flex; align-items: center; color: #A3ADB8; text-decoration: none; font-size: 16px; font-weight: 500">Today</a>
+    <a href="#" aria-current="page" style="height: 48px; padding: 0 14px; border-radius: 12px; display: flex; align-items: center; background: #232A31; color: #F3F5F7; text-decoration: none; font-size: 16px; font-weight: 600">Program</a>
+    <a href="Library.html" style="height: 48px; padding: 0 14px; border-radius: 12px; display: flex; align-items: center; color: #A3ADB8; text-decoration: none; font-size: 16px; font-weight: 500">Library</a>
+    <a href="History.html" style="height: 48px; padding: 0 14px; border-radius: 12px; display: flex; align-items: center; color: #A3ADB8; text-decoration: none; font-size: 16px; font-weight: 500">History</a>
+  </nav>
+
+  <main style="flex-grow: 1; min-width: 0; box-sizing: border-box; padding: 32px 40px; display: flex; flex-direction: column; gap: 22px">
+    <div style="display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-radius: 18px; background: #1E2A38; border: 1px solid #2F4A66">
+      <div style="width: 40px; height: 40px; border-radius: 12px; background: #4DA8FF; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#101317" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>
+      </div>
+      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 16px; font-weight: 600">Draft from Claude Code (laptop)</span>
+        <span style="font-size: 14px; color: #B8C7D6">Full body: 8 → 10 stations · work 40 → 45 s · Saturday circuit moved to Sunday</span>
+      </div>
+      <button style="height: 48px; padding: 0 16px; border-radius: 12px; border: 0; background: transparent; color: #F3F5F7; font: 600 15px Inter, sans-serif">View changes</button>
+      <button style="height: 48px; padding: 0 16px; border-radius: 12px; border: 1px solid #2F4A66; background: transparent; color: #F3F5F7; font: 600 15px Inter, sans-serif">Discard</button>
+      <button style="height: 48px; padding: 0 20px; border-radius: 12px; border: 0; background: #4DA8FF; color: #101317; font: 700 15px Inter, sans-serif">Apply</button>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: flex-end">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 14px; color: #A3ADB8">Program</span>
+        <h1 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 32px; font-weight: 700">Home circuits</h1>
+      </div>
+      <span style="font-size: 15px; color: #A3ADB8">View only · ask Claude to create or change circuits</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px">
+      <div style="padding: 12px; border-radius: 14px; background: #1A1F25; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #A3ADB8">Mon</span><span style="font-size: 15px; font-weight: 600">Full body</span></div>
+      <div style="padding: 12px; border-radius: 14px; background: #1A1F25; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #A3ADB8">Tue</span><span style="font-size: 15px; font-weight: 600">Core</span></div>
+      <div style="padding: 12px; border-radius: 14px; background: #1A1F25; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #A3ADB8">Wed</span><span style="font-size: 15px; color: #A3ADB8">Rest</span></div>
+      <div style="padding: 12px; border-radius: 14px; background: #2A2018; border: 2px solid #FF8A3D; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #A3ADB8">Thu</span><span style="font-size: 15px; font-weight: 600">Full body</span></div>
+      <div style="padding: 12px; border-radius: 14px; background: #1A1F25; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #A3ADB8">Fri</span><span style="font-size: 15px; color: #A3ADB8">Rest</span></div>
+      <div style="padding: 12px; border-radius: 14px; background: #1A1F25; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #A3ADB8">Sat</span><span style="font-size: 15px; font-weight: 600">Legs &amp; core</span></div>
+      <div style="padding: 12px; border-radius: 14px; background: #1A1F25; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #A3ADB8">Sun</span><span style="font-size: 15px; color: #A3ADB8">Rest</span></div>
+    </div>
+
+    <section style="flex-grow: 1; min-height: 0; background: #1A1F25; border-radius: 20px; padding: 22px 24px; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <h2 style="margin: 0; font-size: 22px; font-weight: 600">Full body circuit</h2>
+        <div style="display: flex; gap: 8px">
+          <span style="padding: 8px 14px; border-radius: 999px; background: #232A31; font-size: 14px">Mon, Thu · 18:00</span>
+          <span style="padding: 8px 14px; border-radius: 999px; background: #232A31; font-size: 14px">5 rounds · 45 / 15 s</span>
+          <span style="padding: 8px 14px; border-radius: 999px; background: #232A31; font-size: 14px">≈ 44 min</span>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #232A31"><span style="width: 28px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #A3ADB8">1</span><img src="gifs/push_up.gif" alt="" style="width: 52px; height: 52px; border-radius: 8px; background: #FFFFFF; object-fit: contain"><span style="font-size: 15px; font-weight: 600">Push-up</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #232A31"><span style="width: 28px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #A3ADB8">2</span><img src="gifs/dumbbell_row.gif" alt="" style="width: 52px; height: 52px; border-radius: 8px; background: #FFFFFF; object-fit: contain"><span style="font-size: 15px; font-weight: 600">Dumbbell row</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #232A31"><span style="width: 28px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #A3ADB8">3</span><img src="gifs/goblet_squat.gif" alt="" style="width: 52px; height: 52px; border-radius: 8px; background: #FFFFFF; object-fit: contain"><span style="font-size: 15px; font-weight: 600">Goblet squat</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #232A31"><span style="width: 28px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #A3ADB8">4</span><img src="gifs/burpee.gif" alt="" style="width: 52px; height: 52px; border-radius: 8px; background: #FFFFFF; object-fit: contain"><span style="font-size: 15px; font-weight: 600">Burpee</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #232A31"><span style="width: 28px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #A3ADB8">5</span><img src="gifs/jump_squat.gif" alt="" style="width: 52px; height: 52px; border-radius: 8px; background: #FFFFFF; object-fit: contain"><span style="font-size: 15px; font-weight: 600">Jump squat</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #232A31"><span style="width: 28px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #A3ADB8">6</span><img src="gifs/plank_shoulder_taps.gif" alt="" style="width: 52px; height: 52px; border-radius: 8px; background: #FFFFFF; object-fit: contain"><span style="font-size: 15px; font-weight: 600">Shoulder taps</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #232A31"><span style="width: 28px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #A3ADB8">7</span><img src="gifs/kettlebell_swing.gif" alt="" style="width: 52px; height: 52px; border-radius: 8px; background: #FFFFFF; object-fit: contain"><span style="font-size: 15px; font-weight: 600">Kettlebell swing</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: #232A31"><span style="width: 28px; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; color: #A3ADB8">8</span><img src="gifs/mountain_climber.gif" alt="" style="width: 52px; height: 52px; border-radius: 8px; background: #FFFFFF; object-fit: contain"><span style="font-size: 15px; font-weight: 600">Mountain climber</span></div>
+      </div>
+      <div style="display: flex; gap: 24px; font-size: 14px; color: #A3ADB8; margin-top: auto">
+        <span>Default participants: 1 (choose 1–4 at start)</span>
+        <span>Music: Workout Mix · Living room</span>
+        <span>Needs: mat, dumbbell, kettlebell</span>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

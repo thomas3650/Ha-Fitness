@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# The fast loop: dev Home Assistant on http://localhost:8123 with the ha_fitness integration, the add-on
+# server on http://localhost:8765, and the cards rebuilt on every change.
+#
+#   scripts/develop               build the cards once, start the cards watch and the add-on server in the
+#                                 background, then Home Assistant in the foreground
+#   scripts/develop stop          stop all three (from another shell)
+#   scripts/develop --setup-only  prepare config/ and stop (scripts/smoke uses it)
+#
+# config/ and local/ are git-ignored and hold only dev data: never commit them. The watch and the server
+# log to local/ and have pidfiles there. Stopping Home Assistant (`pkill -f "hass -c config"`) stops the
+# other two as well (the EXIT trap below).
+# macOS: started with `&` in a non-interactive shell, hass crashes in Bluetooth. Run this script in a
+# terminal, or with Claude Code's Bash `run_in_background`.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+root="$(pwd)"
+
+mkdir -p local
+watch_pidfile=local/cards-watch.pid
+server_pidfile=local/addon-server.pid
+
+# Stop the process in a pidfile, if it still runs, and remove the pidfile.
+stop_pidfile() {
+  local pidfile="$1"
+  if [ -f "$pidfile" ]; then
+    kill "$(cat "$pidfile")" 2>/dev/null || true
+    rm -f "$pidfile"
+  fi
+}
+
+stop_background() {
+  stop_pidfile "$watch_pidfile"
+  stop_pidfile "$server_pidfile"
+}
+
+if [ "${1:-}" = "stop" ]; then
+  stop_background
+  pkill -f "hass -c config" 2>/dev/null || true
+  # Wait (up to 60 s) until Home Assistant has stopped, so its port is free when this returns.
+  for _ in $(seq 60); do
+    pgrep -fq "hass -c config" || exit 0
+    sleep 1
+  done
+  echo "develop: Home Assistant is still stopping after 60 s." >&2
+  exit 1
+fi
+
+mkdir -p config/custom_components
+if [ ! -f config/configuration.yaml ]; then
+  printf 'default_config:\n' > config/configuration.yaml
+fi
+ln -sfn "$root/custom_components/ha_fitness" config/custom_components/ha_fitness
+
+if [ "${1:-}" = "--setup-only" ]; then
+  exit 0
+fi
+
+if pgrep -fq "hass -c config"; then
+  echo "develop: Home Assistant is already running with config/; stop it first (scripts/develop stop)." >&2
+  exit 2
+fi
+
+npm run build --prefix cards
+
+trap stop_background EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# The real processes run with exec, so the pidfiles hold their PIDs (not those of npm or uv wrappers).
+(cd cards && exec ./node_modules/.bin/vite build --watch) >local/cards-watch.log 2>&1 &
+echo $! > "$watch_pidfile"
+(
+  export HA_FITNESS_PORT=8765 HA_FITNESS_DATA_DIR="$root/local/addon-data"
+  exec addon/server/.venv/bin/python -m ha_fitness_server
+) >local/addon-server.log 2>&1 &
+echo $! > "$server_pidfile"
+echo "develop: cards watch and add-on server (http://localhost:8765) started; logs in local/."
+
+# Not exec: the EXIT trap must run when Home Assistant stops.
+uv run hass -c config
