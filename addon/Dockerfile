@@ -25,7 +25,9 @@ COPY server/ ./
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     uv sync --frozen --no-dev --no-editable
 
-CMD ["/opt/venv/bin/python", "-m", "ha_fitness_server"]
+# s6-overlay (the base image's /init) starts CMD with an empty environment; with-contenv restores the
+# container's (SUPERVISOR_TOKEN, TZ).
+CMD ["/usr/bin/with-contenv", "/opt/venv/bin/python", "-m", "ha_fitness_server"]
 
 LABEL \
     io.hass.type="app" \

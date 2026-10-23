@@ -4,6 +4,10 @@
       "user": {
         "title": "Set up HA Fitness",
         "description": "HA Fitness adds circuit-training cards to your dashboards. There is nothing to fill in."
+      },
+      "hassio_confirm": {
+        "title": "HA Fitness add-on found",
+        "description": "Set up HA Fitness with the add-on at {url}?"
       }
     },
     "abort": {
