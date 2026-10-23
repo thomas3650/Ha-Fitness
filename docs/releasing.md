@@ -16,15 +16,17 @@ by itself: it updates a **release PR**, and merging that release PR makes the re
 | | Add-on | Integration + cards |
 | --- | --- | --- |
 | Component | `ha-fitness-addon` | `ha-fitness` |
-| Released by changes in | `addon/` | everything else (`exclude-paths: addon`) |
+| Released by changes in | `addon/` | `custom_components/`, `cards/`, `tests/` and the root files (D29) |
 | Version in | `addon/config.yaml`, `addon/server/src/ha_fitness_server/__init__.py` | `custom_components/ha_fitness/manifest.json` |
 | Changelog | `addon/CHANGELOG.md` | `CHANGELOG.md` |
 | Tag | `ha-fitness-addon-vX.Y.Z` | `vX.Y.Z` (what HACS reads) |
 | GitHub release | a draft that stays a draft (D16) | a draft, published once the zip is attached (D17) |
 | What users get | the image `ghcr.io/thomas3650/ha-fitness-addon:X.Y.Z`; HA offers the update | the HACS zip `ha_fitness.zip`; HACS offers the update |
 
-"Everything else" means a `fix:` that touches only `scripts/` or `.github/` releases the integration. Give such a PR a
-non-releasing type.
+The root component's `exclude-paths` leaves out `addon`, `docs`, `scripts`, `tools`, `.github`, `.devcontainer` and
+`.claude`, so a PR that changes the add-on and its docs releases only the add-on. A change to a root file
+(`pyproject.toml`, `hacs.json`, `repository.yaml`, the release-please files …) still counts for the integration: give
+such a PR a non-releasing type unless the integration should release.
 
 ## PR titles
 

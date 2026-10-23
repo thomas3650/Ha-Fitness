@@ -20,7 +20,7 @@
       "component": "ha-fitness",
       "release-type": "simple",
       "initial-version": "0.1.0",
-      "exclude-paths": ["addon"],
+      "exclude-paths": ["addon", "docs", "scripts", "tools", ".github", ".devcontainer", ".claude"],
       "include-component-in-tag": false,
       "draft": true,
       "force-tag-creation": true,
