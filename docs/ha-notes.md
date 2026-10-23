@@ -37,6 +37,10 @@ fit no doc stay in [`notes.md`](notes.md).
   container). Copying `custom_components/ha_fitness` there and running `ha core restart` installs the integration in
   the full loop.
 - The Supervisor already knows a discovery service named `mcp` (the ESPHome dev and beta apps send it).
+- **Backups:** `backup_exclude` patterns are matched against the end of each path (`PurePath.match`), so
+  `ha_fitness.db` also leaves out any file of that name in a subfolder. That is why the add-on's snapshot has a name
+  none of its patterns matches (`backup/snapshot.db`). A non-zero exit of `backup_pre` fails the add-on's part of the
+  backup. The add-on's `backup_pre` starts with `/usr/bin/with-contenv`, the same as its `CMD`.
 
 ## Testing
 
@@ -46,6 +50,9 @@ fit no doc stay in [`notes.md`](notes.md).
   import carries `# type: ignore[attr-defined]`.
 - `uv run` and `uv sync` remove the packages HA installed into `.venv` at runtime. HA reinstalls them on the next start,
   which is then slower.
+- HA allows one long-lived access token per client name: a second `auth/long_lived_access_token` with the same
+  `client_name` fails with "already exists" (checked in HA's `auth/__init__.py`). So `scripts/dev_onboard.py` deletes
+  the old `ha-fitness-dev` token (`auth/refresh_tokens`, `auth/delete_refresh_token`) before it makes a new one.
 
 ## Bumping Home Assistant
 
