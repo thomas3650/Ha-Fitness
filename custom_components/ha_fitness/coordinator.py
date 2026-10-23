@@ -8,7 +8,8 @@ from typing import Any
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
 
 from .client import (
@@ -21,7 +22,7 @@ from .client import (
     async_listen,
     async_today_missing,
 )
-from .const import DOMAIN
+from .const import DOMAIN, EVENT_PREFIX, SIGNAL_UPDATE, TRAINING_DAY_EVENTS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,7 +41,8 @@ class FitnessCoordinator:
     """Keep the push channel to the add-on open, and tell listeners when what it holds changes.
 
     `connected` is true while a supported add-on is connected. `today` is the add-on's last
-    `today` message, and None while not connected.
+    `today` message, and None while not connected. Each change is also sent on the dispatcher
+    (`SIGNAL_UPDATE`), which the card's subscription follows across entry reloads.
     """
 
     def __init__(
@@ -91,10 +93,17 @@ class FitnessCoordinator:
             self._cancel_retry()
             self._cancel_retry = None
 
+    @property
+    def available(self) -> bool:
+        """Return whether a supported add-on is connected and has sent what it holds."""
+        return self.connected and self.today is not None
+
     async def _async_connect(self) -> None:
         """Hold one connection until it ends, then schedule the next attempt."""
         try:
-            await async_listen(self.session, self.url, self._handle_message)
+            await async_listen(
+                self.session, self.url, self._handle_connect, self._handle_message
+            )
         except AddonHandshakeRejectedError:
             if await self._async_check_too_old():
                 self._log_outage("The HA Fitness add-on at %s is too old; retrying")
@@ -102,6 +111,13 @@ class FitnessCoordinator:
                 self._log_outage(UNREACHABLE)
         except AddonConnectionError:
             self._log_outage(UNREACHABLE)
+        except Exception:
+            # A bug in a message handler or a listener must not end the reconnect loop.
+            # CancelledError isn't an Exception, so unload still cancels the task.
+            _LOGGER.warning(
+                "Unexpected error on the HA Fitness push channel; reconnecting",
+                exc_info=True,
+            )
         else:
             _LOGGER.info("The HA Fitness add-on closed the connection")
         self._set_disconnected()
@@ -126,12 +142,21 @@ class FitnessCoordinator:
         return too_old
 
     @callback
+    def _handle_connect(self) -> None:
+        """The ws handshake succeeded: the add-on is reachable, so the outage is over."""
+        self._outage_logged = False
+
+    @callback
     def _handle_message(self, message: Message) -> None:
         if isinstance(message, Hello):
             self._handle_hello(message)
-        elif isinstance(message, Today) and self.connected:
+        elif not self.connected:
+            return
+        elif isinstance(message, Today):
             self.today = message.data
             self._notify()
+        elif message.event in TRAINING_DAY_EVENTS:
+            self.hass.bus.async_fire(EVENT_PREFIX + message.event, message.training_day)
 
     @callback
     def _handle_hello(self, hello: Hello) -> None:
@@ -153,15 +178,26 @@ class FitnessCoordinator:
                     "supported": ", ".join(map(str, SUPPORTED_API_VERSIONS)),
                 },
             )
+            self._set_disconnected()
             return
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_UNSUPPORTED_API_VERSION)
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_ADDON_TOO_OLD)
         _LOGGER.info("Connected to the HA Fitness add-on %s", hello.version)
         self._attempt = 0
-        self._outage_logged = False
         self.addon_version = hello.version
+        self._update_sw_version(hello.version)
         self.connected = True
         self._notify()
+
+    @callback
+    def _update_sw_version(self, version: str) -> None:
+        """Set the device's software version to the add-on's (the device is made at setup)."""
+        device_registry = dr.async_get(self.hass)
+        device = device_registry.async_get_device_by_identifier(
+            (DOMAIN, self.entry.entry_id), self.entry.entry_id
+        )
+        if device is not None:
+            device_registry.async_update_device(device.id, sw_version=version)
 
     @callback
     def _log_outage(self, message: str) -> None:
@@ -197,5 +233,11 @@ class FitnessCoordinator:
 
     @callback
     def _notify(self) -> None:
+        """Tell each listener, and the dispatcher; one failing listener doesn't stop the rest."""
         for update_callback in list(self._listeners):
-            update_callback()
+            try:
+                update_callback()
+            except Exception:
+                # One failing listener doesn't keep the change from the others.
+                _LOGGER.warning("Error in an HA Fitness listener", exc_info=True)
+        async_dispatcher_send(self.hass, SIGNAL_UPDATE)

@@ -33,5 +33,58 @@
       "title": "The HA Fitness app is too old",
       "description": "This version of the HA Fitness integration needs a newer HA Fitness app. Update the HA Fitness app. The integration connects again by itself."
     }
+  },
+  "entity": {
+    "sensor": {
+      "today": {
+        "name": "Training today",
+        "state": {
+          "none": "None",
+          "due": "Due",
+          "late": "Late"
+        },
+        "state_attributes": {
+          "training_days": {
+            "name": "Training days"
+          }
+        }
+      },
+      "next_training_day": {
+        "name": "Next training day",
+        "state_attributes": {
+          "programs": {
+            "name": "Programs"
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "training_open": {
+        "name": "Training open"
+      }
+    }
+  },
+  "services": {
+    "skip": {
+      "name": "Skip training day",
+      "description": "Skips an open training day, on purpose. It doesn't count as missed.",
+      "fields": {
+        "training_day_id": {
+          "name": "Training day ID",
+          "description": "The ID of an open training day, as in the training days of Training today."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_found": {
+      "message": "There is no training day with ID {training_day_id}."
+    },
+    "not_open": {
+      "message": "Training day {training_day_id} is no longer open."
+    },
+    "unavailable": {
+      "message": "The HA Fitness app can't be reached."
+    }
   }
 }

@@ -19,38 +19,15 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
+from custom_components.ha_fitness import client
 from custom_components.ha_fitness.const import DOMAIN
 
+from .common import set_up, unload, wait_for
 from .fake_addon import FakeAddon
 
 UNSUPPORTED = "unsupported_api_version"
 TOO_OLD = "addon_too_old"
 LOGGER_NAME = "custom_components.ha_fitness"
-POLL_ROUNDS = 100_000
-
-
-async def _wait_for(
-    hass: HomeAssistant,
-    condition: Callable[[], bool],
-    freezer: FrozenDateTimeFactory | None = None,
-    seconds: float = 0,
-) -> None:
-    """Wait until the condition holds; with a freezer, first move the clock on by the given seconds.
-
-    The connection runs in a background task over a real socket, so the test polls. The freezer
-    freezes the event loop's clock too, so the poll yields with `sleep(0)` and gives up after a
-    number of rounds (about two seconds), not after a time. A retry timer may be armed just after
-    the tick, so every round also fires the time changes of the same span after the frozen now.
-    """
-    if freezer is not None:
-        freezer.tick(timedelta(seconds=seconds))
-    for _ in range(POLL_ROUNDS):
-        if condition():
-            return
-        if freezer is not None:
-            async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=seconds))
-        await asyncio.sleep(0)
-    pytest.fail("the condition did not come true")
 
 
 def _has_issue(issue_registry: ir.IssueRegistry, issue_id: str) -> Callable[[], bool]:
@@ -66,16 +43,6 @@ def _levels(caplog: pytest.LogCaptureFixture) -> list[int]:
     ]
 
 
-async def _set_up(hass: HomeAssistant, entry: MockConfigEntry) -> None:
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-
-async def _unload(hass: HomeAssistant, entry: MockConfigEntry) -> None:
-    assert await hass.config_entries.async_unload(entry.entry_id)
-    await hass.async_block_till_done()
-
-
 @pytest.mark.usefixtures("cards_bundle")
 async def test_api_version_3_raises_issue(
     hass: HomeAssistant,
@@ -85,9 +52,9 @@ async def test_api_version_3_raises_issue(
 ) -> None:
     """An add-on that says API version 3 in its hello raises unsupported_api_version."""
     fake_addon.api_version = 3
-    await _set_up(hass, config_entry)
+    await set_up(hass, config_entry)
 
-    await _wait_for(hass, _has_issue(issue_registry, UNSUPPORTED))
+    await wait_for(hass, _has_issue(issue_registry, UNSUPPORTED))
 
     issue = issue_registry.async_get_issue(DOMAIN, UNSUPPORTED)
     assert issue is not None
@@ -97,7 +64,7 @@ async def test_api_version_3_raises_issue(
     assert not issue.is_fixable
     assert issue_registry.async_get_issue(DOMAIN, TOO_OLD) is None
     assert config_entry.state is ConfigEntryState.LOADED
-    await _unload(hass, config_entry)
+    await unload(hass, config_entry)
 
 
 @pytest.mark.usefixtures("cards_bundle")
@@ -108,8 +75,8 @@ async def test_unknown_and_malformed_messages_are_ignored(
     issue_registry: ir.IssueRegistry,
 ) -> None:
     """Unknown types and malformed messages leave the connection up: a later hello still counts."""
-    await _set_up(hass, config_entry)
-    await _wait_for(hass, lambda: fake_addon.connects == 1)
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: fake_addon.connects == 1)
 
     await fake_addon.push({"type": "session", "data": {}})
     await fake_addon.push({"type": "hello", "api_version": "3"})
@@ -118,9 +85,9 @@ async def test_unknown_and_malformed_messages_are_ignored(
     await fake_addon.push({"no_type": True})
     await fake_addon.push({"type": "hello", "version": "0.3.0", "api_version": 3})
 
-    await _wait_for(hass, _has_issue(issue_registry, UNSUPPORTED))
+    await wait_for(hass, _has_issue(issue_registry, UNSUPPORTED))
     assert fake_addon.connects == 1
-    await _unload(hass, config_entry)
+    await unload(hass, config_entry)
 
 
 @pytest.mark.usefixtures("cards_bundle")
@@ -132,9 +99,9 @@ async def test_old_addon_raises_addon_too_old(
 ) -> None:
     """A rejected handshake, while health answers and /today gives 404, raises addon_too_old."""
     fake_addon.old_addon = True
-    await _set_up(hass, config_entry)
+    await set_up(hass, config_entry)
 
-    await _wait_for(hass, _has_issue(issue_registry, TOO_OLD))
+    await wait_for(hass, _has_issue(issue_registry, TOO_OLD))
 
     issue = issue_registry.async_get_issue(DOMAIN, TOO_OLD)
     assert issue is not None
@@ -143,7 +110,7 @@ async def test_old_addon_raises_addon_too_old(
     assert not issue.is_fixable
     assert issue_registry.async_get_issue(DOMAIN, UNSUPPORTED) is None
     assert config_entry.state is ConfigEntryState.LOADED
-    await _unload(hass, config_entry)
+    await unload(hass, config_entry)
 
 
 @pytest.mark.usefixtures("cards_bundle")
@@ -156,19 +123,19 @@ async def test_supported_connect_deletes_issues(
 ) -> None:
     """Both issues are raised in turn as the client retries, and a supported connect deletes both."""
     fake_addon.api_version = 3
-    await _set_up(hass, config_entry)
-    await _wait_for(hass, _has_issue(issue_registry, UNSUPPORTED))
+    await set_up(hass, config_entry)
+    await wait_for(hass, _has_issue(issue_registry, UNSUPPORTED))
 
     # The add-on restarts as an old one: the client retries after 1 s and is rejected.
     fake_addon.api_version = 1
     fake_addon.old_addon = True
     await fake_addon.close_ws()
-    await _wait_for(hass, _has_issue(issue_registry, TOO_OLD), freezer, 1)
+    await wait_for(hass, _has_issue(issue_registry, TOO_OLD), freezer, 1)
     assert issue_registry.async_get_issue(DOMAIN, UNSUPPORTED) is not None
 
     # The add-on is updated: the next retry, 2 s later, connects with API version 1.
     fake_addon.old_addon = False
-    await _wait_for(
+    await wait_for(
         hass,
         lambda: (
             issue_registry.async_get_issue(DOMAIN, UNSUPPORTED) is None
@@ -178,7 +145,7 @@ async def test_supported_connect_deletes_issues(
         2,
     )
     assert fake_addon.connects == 2
-    await _unload(hass, config_entry)
+    await unload(hass, config_entry)
 
 
 @pytest.mark.usefixtures("cards_bundle", "socket_enabled")
@@ -195,12 +162,12 @@ async def test_setup_does_not_wait_for_addon(
     )
     entry.add_to_hass(hass)
 
-    await _set_up(hass, entry)
+    await set_up(hass, entry)
 
     assert entry.state is ConfigEntryState.LOADED
-    await _wait_for(hass, lambda: bool(_levels(caplog)))
+    await wait_for(hass, lambda: bool(_levels(caplog)))
     assert _levels(caplog) == [logging.WARNING]
-    await _unload(hass, entry)
+    await unload(hass, entry)
 
 
 @pytest.mark.usefixtures("cards_bundle")
@@ -211,7 +178,7 @@ async def test_unreachable_addon_warns_once_per_outage(
     freezer: FrozenDateTimeFactory,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """An add-on that is down is retried after 1, 2, 5 and then 10 s; that is logged once, at WARNING, never ERROR."""
+    """An add-on that is down is retried after 1, 2, 5, 10 and then every 30 s; logged once, at WARNING, never ERROR."""
     attempts = 0
     health_checks = 0
 
@@ -235,11 +202,11 @@ async def test_unreachable_addon_warns_once_per_outage(
     )
     entry.add_to_hass(hass)
 
-    await _set_up(hass, entry)
+    await set_up(hass, entry)
 
     async def _retry_is_pending(attempt: int, too_early: float) -> None:
         """Let the client arm its next retry, and check that it doesn't fire `too_early` seconds on."""
-        await _wait_for(hass, lambda: health_checks == attempt)
+        await wait_for(hass, lambda: health_checks == attempt)
         for _ in range(1000):
             await asyncio.sleep(0)
         for _ in range(1000):
@@ -249,24 +216,40 @@ async def test_unreachable_addon_warns_once_per_outage(
             await asyncio.sleep(0)
         assert attempts == attempt
 
-    await _wait_for(hass, lambda: attempts == 1)
-    await _wait_for(hass, lambda: attempts == 2, freezer, 1)
+    await wait_for(hass, lambda: attempts == 1)
+    await wait_for(hass, lambda: attempts == 2, freezer, 1)
     # async_fire_time_changed reaches 0.5 s past the time it is given.
     await _retry_is_pending(2, 1)
-    await _wait_for(hass, lambda: attempts == 3, freezer, 2)
+    await wait_for(hass, lambda: attempts == 3, freezer, 2)
     await _retry_is_pending(3, 4)
-    await _wait_for(hass, lambda: attempts == 4, freezer, 5)
+    await wait_for(hass, lambda: attempts == 4, freezer, 5)
 
     assert _levels(caplog) == [logging.WARNING]
 
     # Each rejected handshake is followed by a health check; once the fourth is answered, the
-    # 10 s retry is pending. Unloaded, it never fires.
+    # 10 s retry is pending. After it, the client retries every 30 s.
     await _retry_is_pending(4, 9)
-    await _unload(hass, entry)
+    await wait_for(hass, lambda: attempts == 5, freezer, 10)
+
+    async def _fire_pending_retry(seconds: float) -> None:
+        """Fire the pending retry once: firing 30 s ahead on every poll would also fire aiohttp's connect timeout."""
+        freezer.tick(timedelta(seconds=seconds))
+        async_fire_time_changed(hass, dt_util.utcnow())
+
+    for attempt in (6, 7):
+        await _retry_is_pending(attempt - 1, 29)
+        await _fire_pending_retry(30)
+        await wait_for(hass, lambda: attempts == attempt)  # noqa: B023
+
+    assert _levels(caplog) == [logging.WARNING]
+
+    # Unloaded, the pending retry never fires.
+    await _retry_is_pending(7, 29)
+    await unload(hass, entry)
     for _ in range(1000):
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=60))
         await asyncio.sleep(0)
-    assert attempts == 4
+    assert attempts == 7
 
 
 @pytest.mark.usefixtures("cards_bundle")
@@ -277,8 +260,8 @@ async def test_discovery_reloads_entry_onto_new_url(
     aiohttp_server: AiohttpServer,
 ) -> None:
     """A discovery with a new address updates the loaded entry, which reloads and connects there."""
-    await _set_up(hass, config_entry)
-    await _wait_for(hass, lambda: fake_addon.connects == 1)
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: fake_addon.connects == 1)
 
     moved = FakeAddon()
     server = await aiohttp_server(moved.app)
@@ -298,6 +281,154 @@ async def test_discovery_reloads_entry_onto_new_url(
     assert result["reason"] == "already_configured"
     assert config_entry.data == {"url": moved.url}
     assert config_entry.state is ConfigEntryState.LOADED
-    await _wait_for(hass, lambda: moved.connects == 1)
-    await _wait_for(hass, lambda: not fake_addon.connected.is_set())
-    await _unload(hass, config_entry)
+    await wait_for(hass, lambda: moved.connects == 1)
+    await wait_for(hass, lambda: not fake_addon.connected.is_set())
+    await unload(hass, config_entry)
+
+
+async def _settle() -> None:
+    """Give the background connection a fair chance to act, where no signal says it is done."""
+    for _ in range(1000):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_raising_listener_does_not_stop_reconnect(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A listener that raises doesn't end the reconnect loop: the client still reconnects."""
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: config_entry.runtime_data.today is not None)
+
+    def _raise() -> None:
+        raise RuntimeError("listener failed")
+
+    config_entry.runtime_data.async_add_listener(_raise)
+    await fake_addon.close_ws()
+    await wait_for(hass, lambda: fake_addon.connects == 2, freezer, 1)
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_raising_listener_does_not_block_other_listeners(
+    hass: HomeAssistant, fake_addon: FakeAddon, config_entry: MockConfigEntry
+) -> None:
+    """A listener that raises doesn't keep the listeners after it from hearing a change."""
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: config_entry.runtime_data.today is not None)
+    calls: list[None] = []
+
+    def _raise() -> None:
+        raise RuntimeError("listener failed")
+
+    config_entry.runtime_data.async_add_listener(_raise)
+    config_entry.runtime_data.async_add_listener(lambda: calls.append(None))
+    await fake_addon.push({"type": "today", "data": {**fake_addon.today, "open": []}})
+
+    await wait_for(hass, lambda: len(calls) == 1)
+    assert fake_addon.connects == 1
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_handshake_without_hello_ends_the_outage(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A ws that opens, even without a hello, ends an outage: the next outage warns again."""
+    fake_addon.old_addon = True
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: _levels(caplog) == [logging.WARNING])
+
+    fake_addon.old_addon = False
+    fake_addon.send_hello = False
+    await wait_for(hass, lambda: fake_addon.connects == 1, freezer, 1)
+
+    fake_addon.old_addon = True
+    await fake_addon.close_ws()
+    await wait_for(
+        hass, lambda: _levels(caplog) == [logging.WARNING, logging.WARNING], freezer, 2
+    )
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_heartbeat_keeps_a_live_connection(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Minutes pass on a live connection: the heartbeat doesn't drop it."""
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: config_entry.runtime_data.connected)
+
+    for _ in range(10):
+        freezer.tick(timedelta(seconds=31))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await _settle()
+
+    assert fake_addon.connects == 1
+    assert config_entry.runtime_data.connected
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_heartbeat_notices_a_half_open_connection(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A connection whose pings go unanswered is dropped: the entities turn unavailable."""
+    monkeypatch.setattr(client, "WS_HEARTBEAT", 0.05)
+    fake_addon.answer_pings = False
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: config_entry.runtime_data.connected)
+
+    # Real time runs here (no freezer): the ping goes out after 0.05 s, its pong is due 0.025 s later.
+    for _ in range(200):
+        if not config_entry.runtime_data.connected:
+            break
+        await asyncio.sleep(0.01)
+    assert not config_entry.runtime_data.connected
+    assert hass.states.get("sensor.ha_fitness_today").state == "unavailable"  # type: ignore[union-attr]
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+# The client closes this ws itself; aiohttp 3.14 then re-arms its heartbeat timer as the add-on's
+# close frame arrives, so one 30 s timer outlives the closed socket.
+@pytest.mark.parametrize("expected_lingering_timers", [True])
+async def test_unexpected_error_does_not_stop_reconnect(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    freezer: FrozenDateTimeFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A bug while reading a message drops the connection, warns, and the client reconnects."""
+    real_parse = client.parse_message
+    calls = 0
+
+    def _parse_fails_once(raw: object) -> client.Message | None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("bug")
+        return real_parse(raw)
+
+    monkeypatch.setattr(client, "parse_message", _parse_fails_once)
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: _levels(caplog) == [logging.WARNING])
+
+    await wait_for(hass, lambda: config_entry.runtime_data.connected, freezer, 1)
+    assert fake_addon.connects == 2
+    await unload(hass, config_entry)

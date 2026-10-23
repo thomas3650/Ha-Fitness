@@ -33,5 +33,58 @@
       "title": "HA Fitness-appen er for gammel",
       "description": "Denne version af HA Fitness-integrationen kræver en nyere HA Fitness-app. Opdater HA Fitness-appen. Integrationen forbinder igen af sig selv."
     }
+  },
+  "entity": {
+    "sensor": {
+      "today": {
+        "name": "Træning i dag",
+        "state": {
+          "none": "Ingen",
+          "due": "Skal trænes",
+          "late": "Forfalden"
+        },
+        "state_attributes": {
+          "training_days": {
+            "name": "Træningsdage"
+          }
+        }
+      },
+      "next_training_day": {
+        "name": "Næste træningsdag",
+        "state_attributes": {
+          "programs": {
+            "name": "Programmer"
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "training_open": {
+        "name": "Træning åben"
+      }
+    }
+  },
+  "services": {
+    "skip": {
+      "name": "Spring træningsdag over",
+      "description": "Springer en åben træningsdag over med vilje. Den tæller ikke som misset.",
+      "fields": {
+        "training_day_id": {
+          "name": "Træningsdagens id",
+          "description": "Id'et på en åben træningsdag, som i træningsdagene under Træning i dag."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_found": {
+      "message": "Der findes ingen træningsdag med id {training_day_id}."
+    },
+    "not_open": {
+      "message": "Træningsdag {training_day_id} er ikke længere åben."
+    },
+    "unavailable": {
+      "message": "HA Fitness-appen kan ikke nås."
+    }
   }
 }

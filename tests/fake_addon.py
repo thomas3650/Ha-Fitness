@@ -36,6 +36,10 @@ class FakeAddon:
         self.today: dict[str, Any] = copy.deepcopy(TODAY_DUE)
         self.skip_status = 200
         self.old_addon = False
+        # False: accept the ws but send nothing (no hello, no today).
+        self.send_hello = True
+        # False: never answer the client's pings, as a half-open connection wouldn't.
+        self.answer_pings = True
         self.skip_user_agents: list[str] = []
         self.connects = 0
         self.connected = asyncio.Event()
@@ -76,20 +80,21 @@ class FakeAddon:
         if self.old_addon:
             # An older add-on has no ws route: the handshake is rejected with an HTTP status.
             raise web.HTTPForbidden
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(autoping=self.answer_pings)
         await ws.prepare(request)
         self._sockets.add(ws)
         self.connects += 1
         self.connected.set()
         try:
-            await ws.send_json(
-                {
-                    "type": "hello",
-                    "version": self.version,
-                    "api_version": self.api_version,
-                }
-            )
-            await ws.send_json({"type": "today", "data": self.today})
+            if self.send_hello:
+                await ws.send_json(
+                    {
+                        "type": "hello",
+                        "version": self.version,
+                        "api_version": self.api_version,
+                    }
+                )
+                await ws.send_json({"type": "today", "data": self.today})
             async for _ in ws:  # the client sends nothing; wait for the close
                 pass
         finally:

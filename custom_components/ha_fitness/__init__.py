@@ -1,17 +1,32 @@
 """The HA Fitness integration."""
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_URL
+from homeassistant.const import CONF_URL, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
 from .cards import async_register_cards, async_unregister_cards
-from .const import DEFAULT_URL, DOMAIN, UNIQUE_ID
+from .const import DEFAULT_URL, DEVICE_NAME, DOMAIN, SIGNAL_UPDATE, UNIQUE_ID
 from .coordinator import FitnessCoordinator
+from .services import async_setup_services
+from .websocket_api import async_setup_websocket_api
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 type HaFitnessConfigEntry = ConfigEntry[FitnessCoordinator]
 """The entry's runtime data is its coordinator, which also knows the integration's version."""
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the service and the card's subscription, which exist without a loaded entry."""
+    async_setup_services(hass)
+    async_setup_websocket_api(hass)
+    return True
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -38,6 +53,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: HaFitnessConfigEntry) ->
         hass, entry, async_get_clientsession(hass), entry.data[CONF_URL], version
     )
     entry.runtime_data = coordinator
+    # The device exists before the first hello, which sets its software version.
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        name=DEVICE_NAME,
+        entry_type=dr.DeviceEntryType.SERVICE,
+    )
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     coordinator.async_start()
     return True
 
@@ -46,5 +69,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: HaFitnessConfigEntry) -
     """Unload a config entry; Home Assistant then cancels the connection task."""
     coordinator = entry.runtime_data
     coordinator.async_stop()
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     async_unregister_cards(hass, coordinator.integration_version)
-    return True
+    # The entry is no longer loaded (it is being unloaded), so the card's subscription sends null.
+    async_dispatcher_send(hass, SIGNAL_UPDATE)
+    return unloaded
