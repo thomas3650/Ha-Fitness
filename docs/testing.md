@@ -68,10 +68,15 @@ For every UI change, in the fast loop (and in the full loop before a release):
 
 From step 2 on, when the add-on serves MCP at `/mcp`:
 
-1. Add the endpoint: `claude mcp add --transport http ha-fitness http://localhost:8765/mcp`.
-2. List the tools.
+1. Add the endpoint: `claude mcp add --transport http ha-fitness http://localhost:8765/mcp` (local scope: it goes in
+   `~/.claude.json`, not the repo). `claude mcp get ha-fitness` shows `Connected`.
+2. List the tools and call one from a headless session, for example `claude -p "List the ha-fitness tools and call
+   <tool>" --allowedTools "mcp__ha-fitness__<tool>"`.
 3. Create a program through a tool.
 4. See it on the card in the dev HA.
+5. `claude mcp remove ha-fitness -s local` when done.
+
+The same works against the full loop: the add-on's port 8765 is mapped to the Mac.
 
 ## Waiting for a server
 

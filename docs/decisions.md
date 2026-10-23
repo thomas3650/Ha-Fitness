@@ -180,3 +180,36 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   `ha_fitness_server/__init__.py`.
 - **Why:** release-please bumps the server's version in one place (with `addon/config.yaml`).
 - **Source:** [ground-structure plan](superpowers/plans/2026-10-23-ground-structure.md), Task 9
+
+### D25: A breaking change during 0.x stays a minor bump
+- **Date:** 2026-10-23 · **Status:** active
+- **Decision:** `bump-minor-pre-major` stays on (D17): a breaking change during 0.x releases the next minor, which the
+  house installs on its own (D19). The `fitness` issue calls it breaking.
+- **Why:** The contract rule (the integration supports the current and the previous API version) and the house's
+  refusal to install during a workout already protect the house. Jumping to 1.0.0 early would make every later 1.x
+  install itself anyway.
+- **Source:** Thomas, 2026-10-23
+
+### D26: MCP is mounted at the root and serves `/mcp` itself
+- **Date:** 2026-10-23 · **Status:** active
+- **Decision:** The add-on builds FastMCP's app with `http_app(path="/mcp")` and mounts it at `/`, after all FastAPI
+  routes. FastMCP's lifespan is combined with the app's (`combine_lifespans`).
+- **Why:** Mounted at `/mcp`, the endpoint is `/mcp/` and `/mcp` answers with a 307 redirect. Without its lifespan
+  every MCP call fails.
+- **Source:** step 2 spike (#2), FastMCP 4.1.3
+
+### D27: Ingress uses the API port
+- **Date:** 2026-10-23 · **Status:** active
+- **Decision:** `ingress_port` is 8765, the API's port. The add-on's web page is served at `/` with relative links
+  only.
+- **Why:** One server and one port; Ingress requests reach the same app under `X-Ingress-Path`. The v2 program editor
+  lives at the same place.
+- **Source:** step 2 spike (#2)
+
+### D28: The add-on announces itself through Supervisor discovery
+- **Date:** 2026-10-23 · **Status:** active
+- **Decision:** `config.yaml` lists `discovery: [ha_fitness]`. At each start the add-on posts the service `ha_fitness`
+  with `{"host": <its hostname>, "port": 8765}`; the integration takes it in `async_step_hassio`. The fast loop uses a
+  configured URL instead (spec §4).
+- **Why:** HA offers the integration as soon as the add-on runs, with the right address, and nobody types a URL.
+- **Source:** step 2 spike (#2); spec §4
