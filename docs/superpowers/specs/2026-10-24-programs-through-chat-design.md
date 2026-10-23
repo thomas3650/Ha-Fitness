@@ -218,8 +218,11 @@ Names fixed here (design §3.7). Each tool's description is written for an LLM: 
 ("5 stations" as the usual choice), and for writes: **"Show the program (or people) to the user and get a yes before
 calling."** Annotations: read tools `readOnlyHint: true`; `update_program`, `delete_program` and `set_people`
 `destructiveHint: true`; `create_program`, `add_custom_exercise` and `set_program_active` `readOnlyHint: false`,
-`destructiveHint: false` (they add or are reversible). Errors come back as MCP tool errors with the same content as
-REST's `detail` (a dict as JSON text).
+`destructiveHint: false` (they add or are reversible). Errors from the services (unknown exercise with close
+matches, name taken, not found, HA unavailable) come back as MCP tool errors with the same content as REST's `detail` (a
+dict as JSON text). Argument validation that FastMCP does before a tool runs (ranges, unknown fields) comes back as
+FastMCP's validation text, which names the field: the tools keep the API's Pydantic types, so REST and MCP share one
+JSON schema.
 
 | Tool | Arguments | Returns |
 | --- | --- | --- |
