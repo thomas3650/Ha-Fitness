@@ -1,8 +1,37 @@
 {
-  "today": {
-    "title": "Træning i dag"
+  "picker": {
+    "name": "HA Fitness – i dag",
+    "description": "Dagens træning, med en knap til at springe den over. Skjult, når der ikke er noget åbent."
   },
-  "common": {
-    "coming_soon": "Kommer snart"
+  "today": {
+    "title": "Træning i dag",
+    "stations_one": "{count} øvelse",
+    "stations_other": "{count} øvelser",
+    "rounds_one": "{count} runde",
+    "rounds_other": "{count} runder",
+    "minutes": "ca. {count} min",
+    "summary": "{stations} · {rounds} · {minutes}",
+    "late": "Forfalden · {weekday} · {summary}",
+    "skip": "Spring over",
+    "skip_confirm": "Spring over?",
+    "yes": "Ja",
+    "no": "Nej",
+    "nothing_open": "Ingen træning i dag",
+    "unreachable": "HA Fitness kan ikke nås"
+  },
+  "weekday": {
+    "monday": "mandag",
+    "tuesday": "tirsdag",
+    "wednesday": "onsdag",
+    "thursday": "torsdag",
+    "friday": "fredag",
+    "saturday": "lørdag",
+    "sunday": "søndag"
+  },
+  "error": {
+    "not_found": "Træningsdagen findes ikke længere.",
+    "not_open": "Træningsdagen er allerede lukket.",
+    "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
+    "general": "Noget gik galt. Prøv igen."
   }
 }

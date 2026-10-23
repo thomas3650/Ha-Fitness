@@ -1,13 +1,12 @@
 import { LitElement, css, html } from "lit";
 
 import { localize } from "./i18n";
+import { type LanguageConfig, type LanguageHass, cardLanguage } from "./language";
 
 /** The part of Home Assistant's `hass` object this card reads. */
-interface Hass {
-  language?: string;
-}
+type Hass = LanguageHass;
 
-interface TodayCardConfig {
+interface TodayCardConfig extends LanguageConfig {
   type: string;
 }
 
@@ -47,13 +46,9 @@ export class TodayCard extends LitElement {
       padding: 16px;
     }
     h2 {
-      margin: 0 0 8px;
+      margin: 0;
       font-size: 1.25em;
       font-weight: 500;
-    }
-    p {
-      margin: 0;
-      color: var(--secondary-text-color);
     }
   `;
 
@@ -66,7 +61,7 @@ export class TodayCard extends LitElement {
   }
 
   private t(key: string): string {
-    return localize(this.hass?.language, key);
+    return localize(cardLanguage(this.config, this.hass), key);
   }
 
   protected override render() {
@@ -74,7 +69,6 @@ export class TodayCard extends LitElement {
       <ha-card>
         <div class="content">
           <h2>${this.t("today.title")}</h2>
-          <p>${this.t("common.coming_soon")}</p>
         </div>
       </ha-card>
     `;
@@ -86,7 +80,8 @@ if (!customElements.get(TAG)) {
   window.customCards = window.customCards ?? [];
   window.customCards.push({
     type: TAG,
-    name: "HA Fitness – today",
-    description: localize("en", "today.title"),
+    // There is no `hass` at module load, so the picker shows the English texts.
+    name: localize("en", "picker.name"),
+    description: localize("en", "picker.description"),
   });
 }
