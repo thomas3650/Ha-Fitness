@@ -1,6 +1,7 @@
 [project]
 name = "ha-fitness-server"
-version = "0.0.0"
+# release-please bumps __version__ (x-release-please-version); hatchling reads it from there.
+dynamic = ["version"]
 description = "The HA Fitness add-on server: REST API for workouts, programs and stats."
 license = "MIT"
 requires-python = ">=3.14"
@@ -22,6 +23,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/ha_fitness_server/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ha_fitness_server"]
