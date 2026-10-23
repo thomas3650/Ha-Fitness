@@ -28,7 +28,7 @@ fit no doc stay in [`notes.md`](notes.md).
 
 The HA version is pinned in three places that move together, by hand, in one PR: `pytest-homeassistant-custom-component`
 (the release for that HA version) and `home-assistant-frontend` (HA's frontend pin) in the root `pyproject.toml`, and
-`homeassistant` in `hacs.json`. Dependabot ignores the two packages for that reason.
+`homeassistant` in `hacs.json`. Dependabot ignores these packages (and `homeassistant`) for that reason.
 
 ## CI
 

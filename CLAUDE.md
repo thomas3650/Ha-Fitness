@@ -61,7 +61,8 @@ uv run actionlint && uv run zizmor --offline .github/workflows && uv run python 
    anything time-based.
 6. Every UI text comes from a language file. English is the base and Danish ships too. Exercise names and
    instructions are never translated.
-7. Never bypass a hook (`--no-verify`, `-n`, `SKIP=`). Never read `.env`, or anything under `config/` or `local/`.
+7. Never bypass a hook (`--no-verify`, `-n`, `SKIP=`). Never read `.env`. Subagents also never read anything under
+   `config/` or `local/`.
 8. GitHub Actions: every `uses:` pinned to a full commit SHA with a version comment, least permissions per job,
    `persist-credentials: false` unless the job pushes.
 

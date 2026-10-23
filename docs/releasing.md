@@ -100,8 +100,10 @@ Issues: read and write (D18). release-please needs it so that its release PRs tr
 
 - **Renewing (Thomas):** create a new fine-grained token with the same repository and permissions, then run
   `gh secret set RELEASE_PLEASE_TOKEN -R thomas3650/Ha-Fitness` and paste it. Update the date in `notes.md`.
-- **If it is missing or expired,** the workflow falls back to `github.token`. Release PRs still open, but CI doesn't
-  run on them by itself: push an empty commit to the release PR's branch to start it.
+- **If it expires,** the `release-please` job fails with bad credentials, and no release PR or release moves until
+  Thomas renews it. The workflow doesn't fall back: an expired token is still set.
+- **If the secret is deleted,** the workflow falls back to `github.token`. Release PRs still open, but CI doesn't run
+  on them by itself: push an empty commit to the release PR's branch to start it.
 
 ## When a release fails
 

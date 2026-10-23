@@ -39,7 +39,7 @@ spec already names.
 | **Due** | | Today's training day, not done yet. |
 | **Late** | Forfalden | A due day that has passed untouched. It stays visible until the next training day of any program begins. |
 | **Missed** | | A late day closed because the next training day began. |
-| **Skipped** | Spring over | A training day closed on purpose (one confirmation, no reason). |
+| **Skipped** | | A training day closed on purpose with Spring over (one confirmation, no reason). |
 | **Done** | | A training day closed by a session (done late, if it was late). |
 | **Open** | | Due or late. |
 | **Closed** | | Done, missed or skipped. |
@@ -60,6 +60,7 @@ spec already names.
 | **Today card** | Træning i dag | The small card that shows the open training days, with Start and Spring over. Hidden when nothing is open. |
 | **Workout tab** | | The dashboard tab with all active programs and the stats. |
 | **Workout flow** | | Details → Get ready → Timer → Done, full screen. |
+| **Skip** | Spring over | The today card's button that skips a training day. |
 | **End** | Slut | Ends the session early. |
 | **Music unavailable** | Musik utilgængelig | Shown in the header when the speaker can't be reached. |
 
