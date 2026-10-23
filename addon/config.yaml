@@ -10,7 +10,6 @@ arch:
 image: ghcr.io/thomas3650/ha-fitness-addon
 init: false
 homeassistant_api: true
-backup: hot
 ports:
   8765/tcp: 8765
 ports_description:
