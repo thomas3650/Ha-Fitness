@@ -60,6 +60,14 @@ def _restore_snapshot(data_dir: Path, database: Path) -> None:
     if database.exists() or not snapshot.exists():
         return
     _LOGGER.info("The database is missing; restoring it from %s", snapshot)
+    # A WAL left by a crashed run belongs to the lost database; SQLite would replay it onto the snapshot.
+    for suffix in ("-wal", "-shm"):
+        leftover = database.with_name(f"{DATABASE_NAME}{suffix}")
+        if leftover.exists():
+            _LOGGER.warning(
+                "Removing %s, left over from the missing database", leftover
+            )
+        leftover.unlink(missing_ok=True)
     partial = database.with_name(f"{DATABASE_NAME}.restoring")
     shutil.copyfile(snapshot, partial)
     partial.replace(database)

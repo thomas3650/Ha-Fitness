@@ -105,6 +105,37 @@ async def test_start_uses_the_snapshot_not_a_new_database(
             pass
 
 
+_LEAVE_A_WAL = """
+import os, sqlite3, sys
+connection = sqlite3.connect(sys.argv[1])
+connection.execute("PRAGMA journal_mode=WAL")
+connection.execute("PRAGMA wal_autocheckpoint=0")
+connection.execute("UPDATE alembic_version SET version_num = '9999_future'")
+connection.commit()
+os._exit(0)
+"""
+
+
+def _leave_a_wal(database: Path) -> None:
+    """Commit an unknown revision into the WAL only, and exit without a checkpoint, as a crashed run would."""
+    subprocess.run([sys.executable, "-c", _LEAVE_A_WAL, str(database)], check=True)
+
+
+async def test_restore_ignores_a_leftover_wal(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """A WAL left behind by a crashed run is not replayed onto the restored snapshot."""
+    async with running(make_app()):
+        pass
+    assert _run_snapshot(tmp_path).returncode == 0
+    database = tmp_path / "ha_fitness.db"
+    _leave_a_wal(database)
+    assert (tmp_path / "ha_fitness.db-wal").exists()
+    database.unlink()
+    async with running(make_app()) as client:
+        assert (await client.get("/api/v1/health")).status_code == 200
+
+
 async def test_snapshot_command_runs(make_app: MakeApp, tmp_path: Path) -> None:
     """The snapshot command writes a consistent copy that holds the tables."""
     async with running(make_app()):
