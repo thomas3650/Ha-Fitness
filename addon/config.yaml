@@ -1,6 +1,6 @@
 # https://contributors.home-assistant.io/apps/reference/configuration/
 name: HA Fitness
-version: "0.0.0"  # x-release-please-version
+version: "0.1.0"  # x-release-please-version
 slug: ha_fitness
 description: Circuit training at home - the server behind the HA Fitness integration.
 url: https://github.com/thomas3650/Ha-Fitness/tree/main/addon
