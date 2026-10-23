@@ -1,0 +1,232 @@
+"""The MCP tools (spec §8): thin, sync tools over the services, with the API's Pydantic types as arguments."""
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+import json
+from typing import TypedDict
+
+from fastmcp import Context, FastMCP
+from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
+
+from . import changes
+from .errors import Conflict, Invalid, NotFound, Unavailable
+from .schemas import (
+    ChangeEntry,
+    ChangeLogLimit,
+    CustomExerciseName,
+    CustomExerciseSteps,
+    Exercise,
+    ExerciseSearch,
+    NewCustomExercise,
+    NewPerson,
+    PeopleView,
+    Person,
+    ProgramDocument,
+    ProgramOut,
+    ProgramSummary,
+    SearchLimit,
+)
+from .services import ServicesHolder
+
+_READ = ToolAnnotations(read_only_hint=True)
+# Replaces or removes what is stored.
+_DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True)
+# Adds, or changes something that can be changed back.
+_ADDS = ToolAnnotations(read_only_hint=False, destructive_hint=False)
+
+_PROGRAM_RULES = """\
+The program document:
+- name: 1-60 characters, unique ignoring case.
+- weekdays: the days it is due, from mon, tue, wed, thu, fri, sat, sun; each day once. An active program needs at
+  least one.
+- active: true by default; false keeps the program but takes it off the schedule.
+- stations: 1-15, each {"exercise": <exercise id, or a name only one exercise has>}; 5 stations is the usual choice.
+  Find exercises with search_exercises. An exercise that can't be resolved fails with the station number and
+  close_matches to pick from.
+- rounds: 1-10, default 5.
+- work_seconds: 10-120, default 45. switch_seconds: 0-60, default 15. round_rest_seconds: 0-180, default 60.
+- countdown_seconds: 0, 5 or 10, default 5.
+- music: optional {"playlist", "speaker": "media_player.<name>", "volume": 0-100, "shuffle": false}.
+Omitted fields get their defaults."""
+
+_YES_PROGRAM = "Show the program to the user and get a yes before calling."
+
+
+class Deleted(TypedDict):
+    """The answer of `delete_program`."""
+
+    deleted: int
+
+
+def _client(ctx: Context) -> str:
+    """Return the change-log client: `mcp:<clientInfo name>` (`mcp:unknown`), at most 100 characters."""
+    params = ctx.session.client_params
+    name = params.client_info.name if params is not None else None
+    return f"mcp:{name or 'unknown'}"[: changes.MAX_CLIENT_LENGTH]
+
+
+@contextmanager
+def _tool_errors() -> Iterator[None]:
+    """Turn the services' errors into a `ToolError` with REST's `detail`: a text as it is, a dict as JSON."""
+    try:
+        yield
+    except Invalid as error:
+        detail = error.detail
+        text = (
+            detail
+            if isinstance(detail, str)
+            else json.dumps(detail, ensure_ascii=False)
+        )
+        raise ToolError(text) from error
+    except (NotFound, Conflict, Unavailable) as error:
+        raise ToolError(str(error)) from error
+
+
+def build_mcp(holder: ServicesHolder) -> FastMCP:
+    """Build the MCP server; its tools read the services from `holder` at call time."""
+    mcp = FastMCP("HA Fitness")
+
+    @mcp.tool(annotations=_READ)
+    def search_exercises(
+        query: str,
+        equipment: str | None = None,
+        body_part: str | None = None,
+        limit: SearchLimit = 20,
+    ) -> ExerciseSearch:
+        """Search the exercise library and the custom exercises by name.
+
+        Every word of `query` must be in the name; names that start with it come first. `equipment` and `body_part`
+        filter by an exact value. `limit` is 1-100, default 20. With an empty query and no filters the answer also
+        has `facets`: the equipment and body-part values to filter by.
+        """
+        with _tool_errors():
+            return holder.get().library.search_with_facets(
+                query, equipment, body_part, limit
+            )
+
+    @mcp.tool(annotations=_READ)
+    def get_exercise(exercise_id: str) -> Exercise:
+        """Return one exercise by id, with its steps, secondary muscles and attribution."""
+        with _tool_errors():
+            return holder.get().library.get(exercise_id)
+
+    @mcp.tool(annotations=_ADDS)
+    def add_custom_exercise(
+        ctx: Context,
+        name: CustomExerciseName,
+        steps: CustomExerciseSteps,
+        equipment: str | None = None,
+        body_part: str | None = None,
+        target: str | None = None,
+    ) -> Exercise:
+        """Add a custom exercise for one the library doesn't have; it gets the id custom-<n>.
+
+        `name` is 1-80 characters and must not be any exercise's name, ignoring case. `steps` are 1-10 short
+        instructions. `equipment`, `body_part` and `target` are optional; use the library's values (see
+        search_exercises' facets) so filters find it. Search first: add only what the library lacks. Show the
+        exercise to the user and get a yes before calling.
+        """
+        new = NewCustomExercise(
+            name=name,
+            steps=steps,
+            equipment=equipment,
+            body_part=body_part,
+            target=target,
+        )
+        with _tool_errors():
+            return holder.get().library.add_custom(new, _client(ctx))
+
+    @mcp.tool(annotations=_READ)
+    def list_programs() -> list[ProgramSummary]:
+        """List every program, by name, with its weekdays, station count, rounds and length in whole minutes."""
+        with _tool_errors():
+            return holder.get().programs.summaries()
+
+    @mcp.tool(annotations=_READ)
+    def get_program(program_id: int) -> ProgramOut:
+        """Return one program: its document (station exercise ids), the station names and its length in seconds.
+
+        The `program` field is a valid document as it stands: change it and pass it to update_program.
+        """
+        with _tool_errors():
+            return holder.get().programs.get(program_id)
+
+    @mcp.tool(
+        annotations=_ADDS,
+        description=f"""Create a training program.
+
+{_PROGRAM_RULES}
+
+{_YES_PROGRAM}""",
+    )
+    def create_program(ctx: Context, program: ProgramDocument) -> ProgramOut:
+        with _tool_errors():
+            return holder.get().programs.create(program, _client(ctx))
+
+    @mcp.tool(
+        annotations=_DESTRUCTIVE,
+        description=f"""Replace a program's whole document.
+
+Start from get_program's `program` and change what the user asked for; fields left out get their defaults, not the
+old values.
+
+{_PROGRAM_RULES}
+
+{_YES_PROGRAM}""",
+    )
+    def update_program(
+        ctx: Context, program_id: int, program: ProgramDocument
+    ) -> ProgramOut:
+        with _tool_errors():
+            return holder.get().programs.replace(program_id, program, _client(ctx))
+
+    @mcp.tool(annotations=_ADDS)
+    def set_program_active(ctx: Context, program_id: int, active: bool) -> ProgramOut:
+        """Switch a program on (on the schedule) or off (kept, but never due); switching on needs a weekday.
+
+        Show the program to the user and get a yes before calling.
+        """
+        with _tool_errors():
+            return holder.get().programs.set_active(program_id, active, _client(ctx))
+
+    @mcp.tool(annotations=_DESTRUCTIVE)
+    def delete_program(ctx: Context, program_id: int) -> Deleted:
+        """Delete a program for good; set_program_active with false keeps it instead.
+
+        Show the program to the user and get a yes before calling.
+        """
+        with _tool_errors():
+            holder.get().programs.delete(program_id, _client(ctx))
+        return {"deleted": program_id}
+
+    @mcp.tool(annotations=_READ)
+    def list_people() -> PeopleView:
+        """List the people who train, in colour order, and Home Assistant's persons to link them to.
+
+        When Home Assistant can't be read, `ha_persons` is null and `ha_error` says why.
+        """
+        with _tool_errors():
+            return holder.get().people.list()
+
+    @mcp.tool(annotations=_DESTRUCTIVE)
+    def set_people(ctx: Context, people: list[NewPerson]) -> list[Person]:
+        """Replace the people who train: 0-2, in colour order, each {"name", "person_entity_id"}.
+
+        `name` is 1-40 characters. `person_entity_id` is a person.* entity from list_people's `ha_persons`, each one
+        used once. A person whose entity id stays keeps their id and stats; one left out is removed. Show the people
+        to the user and get a yes before calling.
+        """
+        with _tool_errors():
+            return holder.get().people.set(people, _client(ctx))
+
+    @mcp.tool(annotations=_READ)
+    def get_change_log(limit: ChangeLogLimit = 20) -> list[ChangeEntry]:
+        """Return the newest writes, newest first: when, by which client, what and a one-line summary.
+
+        `limit` is 1-200, default 20.
+        """
+        with _tool_errors():
+            return changes.recent(holder.get().engine, limit)
+
+    return mcp

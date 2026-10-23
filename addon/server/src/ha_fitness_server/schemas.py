@@ -46,18 +46,27 @@ class ExerciseSearch(BaseModel):
     facets: Facets | None
 
 
+# The limits of a search and of the change log; REST's query and MCP's argument share them.
+SearchLimit = Annotated[int, Field(ge=1, le=100)]
+ChangeLogLimit = Annotated[int, Field(ge=1, le=200)]
+
+# A custom exercise's name and steps; the REST body and MCP's flat arguments share them.
+CustomExerciseName = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)
+]
+CustomExerciseSteps = Annotated[
+    list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]],
+    Field(min_length=1, max_length=10),
+]
+
+
 class NewCustomExercise(BaseModel):
     """A custom exercise to add (spec §3.4)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    name: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)
-    ]
-    steps: Annotated[
-        list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]],
-        Field(min_length=1, max_length=10),
-    ]
+    name: CustomExerciseName
+    steps: CustomExerciseSteps
     equipment: str | None = None
     body_part: str | None = None
     target: str | None = None

@@ -10,8 +10,8 @@ from ha_fitness_server.library.media import MediaKind
 from ha_fitness_server.schemas import (
     Exercise,
     ExerciseSearch,
-    Facets,
     NewCustomExercise,
+    SearchLimit,
 )
 from ha_fitness_server.services import Services
 
@@ -30,14 +30,10 @@ def search_exercises(
     q: str = "",
     equipment: str | None = None,
     body_part: str | None = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    limit: Annotated[SearchLimit, Query()] = 20,
 ) -> ExerciseSearch:
     """Search the library and custom exercises; the facets come with an empty search."""
-    library = services.library
-    results = library.search(q, equipment, body_part, limit)
-    empty = not q.strip() and equipment is None and body_part is None
-    facets = Facets.model_validate(library.facets()) if empty else None
-    return ExerciseSearch(results=results, facets=facets)
+    return services.library.search_with_facets(q, equipment, body_part, limit)
 
 
 @router.get("/{exercise_id}")

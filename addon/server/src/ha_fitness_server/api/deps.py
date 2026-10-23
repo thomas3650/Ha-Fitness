@@ -2,9 +2,8 @@
 
 from fastapi import Request
 
+from ha_fitness_server.changes import MAX_CLIENT_LENGTH
 from ha_fitness_server.services import Services, ServicesHolder
-
-MAX_CLIENT_LENGTH = 100
 
 
 def get_services(request: Request) -> Services:

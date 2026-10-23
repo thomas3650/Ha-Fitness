@@ -9,6 +9,9 @@ from .db import session as open_session
 from .models import ChangeLogEntry
 from .schemas import ChangeEntry
 
+# A change-log client (`rest:<User-Agent>`, `mcp:<clientInfo name>`) is cut to this many characters (spec §6).
+MAX_CLIENT_LENGTH = 100
+
 
 def record(
     db_session: Session, *, client: str, action: str, target: str, summary: str

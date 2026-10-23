@@ -1,5 +1,6 @@
 """Shared fixtures for the server tests."""
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -75,6 +76,27 @@ def make_app(tmp_path: Path) -> MakeApp:
 
 @pytest.fixture
 async def client(make_app: MakeApp) -> AsyncIterator[httpx.AsyncClient]:
-    """Return an HTTP client talking to a running app."""
-    async with running(make_app()) as http_client:
-        yield http_client
+    """Return an HTTP client talking to a running app.
+
+    pytest-asyncio sets a fixture up and tears it down in two tasks, but the MCP lifespan's task group must end in
+    the task that started it; so one task of our own runs the whole lifespan.
+    """
+    started: asyncio.Future[httpx.AsyncClient] = (
+        asyncio.get_running_loop().create_future()
+    )
+    stop = asyncio.Event()
+
+    async def run() -> None:
+        async with running(make_app()) as http_client:
+            started.set_result(http_client)
+            await stop.wait()
+
+    task = asyncio.create_task(run())
+    either: set[asyncio.Future[Any]] = {task, started}
+    await asyncio.wait(either, return_when=asyncio.FIRST_COMPLETED)
+    if not started.done():
+        # The lifespan failed to start: raise its error.
+        await task
+    yield started.result()
+    stop.set()
+    await task

@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager, suppress
 from typing import TypedDict
 
 from fastapi import FastAPI
+from fastmcp.utilities.lifespan import combine_lifespans
 import httpx
 
 from . import __version__
@@ -14,6 +15,7 @@ from .db import open_database
 from .ha import HaClient
 from .library.media import MediaStore
 from .library.service import Library
+from .mcp_tools import build_mcp
 from .people import People
 from .programs import Programs
 from .services import Services, ServicesHolder
@@ -41,6 +43,8 @@ def create_app(
     The transports replace the network to HA and to the media source; tests pass fakes.
     """
     holder = ServicesHolder()
+    mcp = build_mcp(holder)
+    mcp_app = mcp.http_app(path="/mcp")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -70,9 +74,14 @@ def create_app(
                 await download
             engine.dispose()
 
-    app = FastAPI(title="HA Fitness", version=__version__, lifespan=lifespan)
+    app = FastAPI(
+        title="HA Fitness",
+        version=__version__,
+        lifespan=combine_lifespans(lifespan, mcp_app.lifespan),
+    )
     app.state.settings = settings
     app.state.services = holder
+    app.state.mcp = mcp
     app.state.ha_transport = ha_transport
     app.state.media_transport = media_transport
 
@@ -83,4 +92,6 @@ def create_app(
     app.include_router(api_router)
     add_error_handlers(app)
 
+    # Mounted at the root and last, after every route: the MCP app serves `/mcp` itself, with no redirect (D26).
+    app.mount("/", mcp_app)
     return app

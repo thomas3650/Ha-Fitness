@@ -17,7 +17,13 @@ from ha_fitness_server import changes
 from ha_fitness_server.db import session
 from ha_fitness_server.errors import Conflict, Invalid, NotFound
 from ha_fitness_server.models import CustomExercise
-from ha_fitness_server.schemas import Exercise, ExerciseSummary, NewCustomExercise
+from ha_fitness_server.schemas import (
+    Exercise,
+    ExerciseSearch,
+    ExerciseSummary,
+    Facets,
+    NewCustomExercise,
+)
 
 from . import ATTRIBUTION
 from .media import MediaFiles
@@ -131,6 +137,19 @@ class Library:
             ExerciseSummary.model_validate(exercise.model_dump(include=_SUMMARY_FIELDS))
             for exercise in found[:limit]
         ]
+
+    def search_with_facets(
+        self,
+        query: str = "",
+        equipment: str | None = None,
+        body_part: str | None = None,
+        limit: int = 20,
+    ) -> ExerciseSearch:
+        """Return `search`'s results, with the facets when the query and the filters are empty."""
+        results = self.search(query, equipment, body_part, limit)
+        empty = not query.strip() and equipment is None and body_part is None
+        facets = Facets.model_validate(self.facets()) if empty else None
+        return ExerciseSearch(results=results, facets=facets)
 
     def facets(self) -> dict[str, list[str]]:
         """Return the equipment and body-part values to filter by, sorted."""
