@@ -1,13 +1,18 @@
 {
   "domain": "ha_fitness",
   "name": "HA Fitness",
-  "codeowners": ["@thomas3650"],
+  "codeowners": [
+    "@thomas3650"
+  ],
   "config_flow": true,
-  "dependencies": ["frontend", "http"],
+  "dependencies": [
+    "frontend",
+    "http"
+  ],
   "documentation": "https://github.com/thomas3650/Ha-Fitness",
   "integration_type": "service",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/thomas3650/Ha-Fitness/issues",
   "single_config_entry": true,
-  "version": "0.0.0"
+  "version": "0.1.0"
 }
