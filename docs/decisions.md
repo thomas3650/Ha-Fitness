@@ -213,3 +213,12 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   configured URL instead (spec §4).
 - **Why:** HA offers the integration as soon as the add-on runs, with the right address, and nobody types a URL.
 - **Source:** step 2 spike (#2); spec §4
+
+### D29: Only integration paths release the integration
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The root release-please component excludes `addon`, `docs`, `scripts`, `tools`, `.github`,
+  `.devcontainer` and `.claude`.
+- **Why:** A feature PR changes code and its docs together (`way-of-working.md` §5). With only `addon` excluded, an
+  add-on feature with docs also released an unchanged integration.
+- **Source:** the step 3 spec (programs through chat) §12; Claude, 2026-10-24
+  (Thomas's delegation for the night)
