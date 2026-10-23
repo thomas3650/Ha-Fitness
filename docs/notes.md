@@ -7,7 +7,7 @@ entries, move it to its own doc. Home Assistant facts live in [`ha-notes.md`](ha
 
 | What | Expires | How to renew |
 | --- | --- | --- |
-| Interaction limit (collaborators only) | not set yet (set in the ground-structure PR, then six months) | `gh api -X PUT repos/thomas3650/Ha-Fitness/interaction-limits -f limit=collaborators_only -f expiry=six_months`; check with `gh api repos/thomas3650/Ha-Fitness/interaction-limits` |
+| Interaction limit (collaborators only) | set 2026-10-23, **expires 2027-04-23** — renew before then | `gh api -X PUT repos/thomas3650/Ha-Fitness/interaction-limits -f limit=collaborators_only -f expiry=six_months`; check with `gh api repos/thomas3650/Ha-Fitness/interaction-limits` |
 | `RELEASE_PLEASE_TOKEN` | 2027-10-23 (created 2026-10-23) | Thomas, see [`releasing.md`](releasing.md#the-release-please-token) |
 
 Update the row when you renew.
