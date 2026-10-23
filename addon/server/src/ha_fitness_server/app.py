@@ -5,7 +5,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import TypedDict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from fastmcp.utilities.lifespan import combine_lifespans
 import httpx
 
@@ -13,6 +14,7 @@ from . import __version__
 from .api import add_error_handlers, router as api_router
 from .db import open_database
 from .ha import HaClient
+from .ingress import render as render_ingress
 from .library.media import MediaStore
 from .library.service import Library
 from .mcp_tools import build_mcp
@@ -97,6 +99,12 @@ def create_app(
     async def unknown_api_path(path: str) -> None:
         """Answer an unknown `/api` path with FastAPI's JSON 404, so the MCP mount below never answers it."""
         raise HTTPException(status_code=404)
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def ingress_page(request: Request) -> HTMLResponse:
+        """The Ingress page (spec §9); before the MCP mount, which would answer `/` otherwise."""
+        page = render_ingress(holder.get(), request.headers.get("accept-language"))
+        return HTMLResponse(page)
 
     # Mounted at the root and last, after every route: the MCP app serves `/mcp` itself, with no redirect (D26).
     app.mount("/", mcp_app)

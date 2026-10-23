@@ -28,15 +28,15 @@ class People:
         self._engine = engine
         self._ha = ha
 
-    def _stored(self) -> builtins.list[Person]:
-        """Return the stored people in colour order."""
+    def stored(self) -> builtins.list[Person]:
+        """Return the stored people in colour order, without asking HA."""
         with session(self._engine) as db_session:
             rows = db_session.scalars(select(PersonRow).order_by(PersonRow.position))
             return [_person(row) for row in rows]
 
     def list(self) -> PeopleView:
         """Return the people and HA's persons; when HA can't be read, `ha_persons` is null and `ha_error` says why."""
-        people = self._stored()
+        people = self.stored()
         try:
             ha_persons = self._ha.persons()
         except Unavailable as error:
