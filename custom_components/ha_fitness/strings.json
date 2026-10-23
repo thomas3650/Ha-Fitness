@@ -23,5 +23,15 @@
     "abort": {
       "already_configured": "HA Fitness is already set up."
     }
+  },
+  "issues": {
+    "unsupported_api_version": {
+      "title": "The HA Fitness app and integration don't match",
+      "description": "The HA Fitness app speaks API version {api_version}, and this version of the integration supports API version {supported}. Update the HA Fitness integration in HACS, then restart Home Assistant. Until then, HA Fitness is unavailable."
+    },
+    "addon_too_old": {
+      "title": "The HA Fitness app is too old",
+      "description": "This version of the HA Fitness integration needs a newer HA Fitness app. Update the HA Fitness app. The integration connects again by itself."
+    }
   }
 }

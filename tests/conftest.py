@@ -1,7 +1,9 @@
 """Fixtures for the HA Fitness tests."""
 
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 import pytest
 from pytest_aiohttp import AiohttpServer
@@ -58,8 +60,14 @@ def config_entry(hass: HomeAssistant, fake_addon: FakeAddon) -> MockConfigEntry:
 @pytest.fixture
 async def setup_entry(
     hass: HomeAssistant, config_entry: MockConfigEntry, cards_bundle: Path
-) -> MockConfigEntry:
-    """The config entry, set up (with the cards served from the temporary bundle)."""
+) -> AsyncGenerator[MockConfigEntry]:
+    """The config entry, set up (with the cards served from the temporary bundle).
+
+    It is unloaded afterwards, so its connection to the fake add-on leaves no task or timer behind.
+    """
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
-    return config_entry
+    yield config_entry
+    if config_entry.state is ConfigEntryState.LOADED:
+        assert await hass.config_entries.async_unload(config_entry.entry_id)
+        await hass.async_block_till_done()
