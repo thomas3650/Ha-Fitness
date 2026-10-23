@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import TypedDict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastmcp.utilities.lifespan import combine_lifespans
 import httpx
 
@@ -22,6 +22,7 @@ from .services import Services, ServicesHolder
 from .settings import Settings
 
 API_VERSION: int = 1
+_ALL_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 
 class Health(TypedDict):
@@ -91,6 +92,11 @@ def create_app(
 
     app.include_router(api_router)
     add_error_handlers(app)
+
+    @app.api_route("/api/{path:path}", methods=_ALL_METHODS, include_in_schema=False)
+    async def unknown_api_path(path: str) -> None:
+        """Answer an unknown `/api` path with FastAPI's JSON 404, so the MCP mount below never answers it."""
+        raise HTTPException(status_code=404)
 
     # Mounted at the root and last, after every route: the MCP app serves `/mcp` itself, with no redirect (D26).
     app.mount("/", mcp_app)

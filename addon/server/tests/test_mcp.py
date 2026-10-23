@@ -136,22 +136,22 @@ async def test_create_and_list_programs_via_mcp(make_app: MakeApp) -> None:
 @pytest.mark.parametrize(
     ("stations", "work_seconds", "switch_seconds", "minutes"),
     [
-        # 150 s is 2.5 min: Python's round() goes to the even 2, not up to 3.
-        (1, 120, 30, 2),
-        # 210 s is 3.5 min: to the even 4.
+        # 150 s is 2.5 min: half a minute rounds up, to 3.
+        (1, 120, 30, 3),
+        # 210 s is 3.5 min: up to 4.
         (2, 90, 15, 4),
         # 100 s is 1.67 min.
         (1, 100, 0, 2),
     ],
 )
-async def test_total_minutes_rounds_half_to_even(
+async def test_total_minutes_rounds_half_up(
     make_app: MakeApp,
     stations: int,
     work_seconds: int,
     switch_seconds: int,
     minutes: int,
 ) -> None:
-    """`total_minutes` is `round(total_seconds / 60)`, so a half minute rounds to the even number."""
+    """`total_minutes` is the length in whole minutes, a half minute rounded up."""
     document = _program(
         stations=[{"exercise": "0001"}] * stations,
         rounds=1,
@@ -377,3 +377,17 @@ async def test_http_mcp_endpoint_answers_initialize(make_app: MakeApp) -> None:
     assert response.status_code == 200, response.text
     assert "HA Fitness" in response.text
     assert health.status_code == 200
+
+
+@pytest.mark.parametrize("method", ["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def test_unknown_api_path_is_fastapis_json_404(
+    make_app: MakeApp, method: str
+) -> None:
+    """The root MCP mount never answers under `/api`: an unknown path there is FastAPI's JSON 404."""
+    async with running(make_app()) as http_client:
+        response = await http_client.request(method, "/api/v1/nope")
+        nested = await http_client.get("/api/v2/programs/1")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Not Found"}
+    assert nested.status_code == 404
+    assert nested.json() == {"detail": "Not Found"}

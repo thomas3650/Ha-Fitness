@@ -225,7 +225,7 @@ class ProgramOut(BaseModel):
 
 
 class ProgramSummary(BaseModel):
-    """A program in a list (spec §8 `list_programs`); `total_minutes` is rounded."""
+    """A program in a list (spec §8 `list_programs`); `total_minutes` is rounded, a half minute up."""
 
     id: int
     name: str

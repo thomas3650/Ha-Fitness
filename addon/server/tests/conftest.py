@@ -97,6 +97,8 @@ async def client(make_app: MakeApp) -> AsyncIterator[httpx.AsyncClient]:
     if not started.done():
         # The lifespan failed to start: raise its error.
         await task
-    yield started.result()
-    stop.set()
-    await task
+    try:
+        yield started.result()
+    finally:
+        stop.set()
+        await task

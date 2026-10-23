@@ -94,7 +94,7 @@ class Programs:
             return [self._out(row) for row in rows]
 
     def summaries(self) -> builtins.list[ProgramSummary]:
-        """Return every program as a summary, by name; `total_minutes` is rounded."""
+        """Return every program as a summary, by name; `total_minutes` is rounded, a half minute up."""
         return [
             ProgramSummary(
                 id=out.id,
@@ -103,7 +103,7 @@ class Programs:
                 weekdays=out.program.weekdays,
                 station_count=len(out.program.stations),
                 rounds=out.program.rounds,
-                total_minutes=round(out.total_seconds / 60),
+                total_minutes=(out.total_seconds + 30) // 60,
             )
             for out in self.list()
         ]
