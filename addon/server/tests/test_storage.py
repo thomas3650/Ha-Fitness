@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from ha_fitness_server.errors import DatabaseTooNew
+import httpx
 import pytest
 
 from tests.conftest import MakeApp, running
@@ -36,6 +37,31 @@ def _delete_database(data_dir: Path) -> None:
         path.unlink()
 
 
+PROGRAMS = "/api/v1/programs"
+PROGRAM = {"name": "Onsdag", "weekdays": ["wed"], "stations": [{"exercise": "0001"}]}
+
+
+async def _create_program(client: httpx.AsyncClient) -> None:
+    """Create the test program; it must succeed."""
+    response = await client.post(PROGRAMS, json=PROGRAM)
+    assert response.status_code == 201, response.text
+
+
+async def _program_names(client: httpx.AsyncClient) -> list[str]:
+    """Return the names of the stored programs."""
+    response = await client.get(PROGRAMS)
+    assert response.status_code == 200
+    return [body["program"]["name"] for body in response.json()]
+
+
+def _snapshot_program_names(snapshot: Path) -> list[str]:
+    """Return the program names in a snapshot file, read with `sqlite3`."""
+    with sqlite3.connect(snapshot) as connection:
+        rows = connection.execute("SELECT name FROM programs").fetchall()
+    connection.close()
+    return [name for (name,) in rows]
+
+
 def _tables(database: Path) -> set[str]:
     """Return the table names of a database file."""
     with sqlite3.connect(database) as connection:
@@ -57,11 +83,13 @@ async def test_fresh_start_migrates_and_serves(
 
 
 async def test_second_start_is_a_noop(make_app: MakeApp) -> None:
-    """A second start on the same data folder finds the database migrated."""
+    """A second start on the same data folder finds the database migrated and keeps the data."""
     async with running(make_app()) as client:
         assert (await client.get("/api/v1/health")).status_code == 200
+        await _create_program(client)
     async with running(make_app()) as client:
         assert (await client.get("/api/v1/health")).status_code == 200
+        assert await _program_names(client) == ["Onsdag"]
 
 
 async def test_unknown_revision_stops_the_start(
@@ -80,13 +108,15 @@ async def test_unknown_revision_stops_the_start(
 async def test_start_restores_snapshot_when_database_missing(
     make_app: MakeApp, tmp_path: Path
 ) -> None:
-    """A missing database is restored from the backup snapshot before migrating."""
-    async with running(make_app()):
-        pass
+    """A missing database is restored from the backup snapshot before migrating, with its programs."""
+    async with running(make_app()) as client:
+        await _create_program(client)
     assert _run_snapshot(tmp_path).returncode == 0
+    assert _snapshot_program_names(tmp_path / "backup" / "snapshot.db") == ["Onsdag"]
     _delete_database(tmp_path)
     async with running(make_app()) as client:
         assert (await client.get("/api/v1/health")).status_code == 200
+        assert await _program_names(client) == ["Onsdag"]
     assert (tmp_path / "ha_fitness.db").exists()
 
 

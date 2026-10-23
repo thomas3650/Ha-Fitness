@@ -1,0 +1,221 @@
+"""The training programs (spec §5): stored as one document each, stations resolved to exercise ids."""
+
+import builtins
+from datetime import UTC, datetime
+import json
+from typing import Any
+
+from sqlalchemy import Engine, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from . import changes
+from .db import session
+from .errors import Conflict, Invalid, NotFound
+from .library.service import Library
+from .models import Program as ProgramRow
+from .schemas import ProgramDocument, ProgramOut, ProgramSummary, StationIn
+
+_NAME_KEY_CLASH = "UNIQUE constraint failed: programs.name_key"
+# Fields an update summary names without their values.
+_NAMED_ONLY = frozenset({"stations", "music", "weekdays"})
+
+
+def total_seconds(document: ProgramDocument) -> int:
+    """Return the length of a program: S * R * (W + switch) + (R - 1) * round rest (design §3.1)."""
+    stations = len(document.stations)
+    rounds = document.rounds
+    per_station = document.work_seconds + document.switch_seconds
+    return stations * rounds * per_station + (rounds - 1) * document.round_rest_seconds
+
+
+def _change(field: str, old: Any, new: Any) -> str:
+    """Describe one changed top-level field: `rounds 5 → 4`, or only the name for lists and music."""
+    if field in _NAMED_ONLY:
+        return field
+    return f"{field} {_value(old)} → {_value(new)}"
+
+
+def _value(value: Any) -> str:
+    """Show a field value in a summary: strings as they are, other values as JSON."""
+    return value if isinstance(value, str) else json.dumps(value)
+
+
+def _update_summary(name: str, old: dict[str, Any], new: dict[str, Any]) -> str:
+    """Return `Updated program <name>`, then the top-level fields that differ.
+
+    The fields shown with values come first, then the ones only named, each in document order (spec §6's
+    `rounds 5 → 4, stations`).
+    """
+    differ = [field for field, value in new.items() if old.get(field) != value]
+    differ.sort(key=lambda field: field in _NAMED_ONLY)
+    changed = [_change(field, old.get(field), new[field]) for field in differ]
+    summary = f"Updated program {name}"
+    return f"{summary}: {', '.join(changed)}" if changed else summary
+
+
+class Programs:
+    """Lists, stores and changes programs; the library resolves and names the stations."""
+
+    def __init__(self, engine: Engine, library: Library) -> None:
+        """Use `engine` for the programs and `library` for their exercises."""
+        self._engine = engine
+        self._library = library
+
+    def _out(self, row: ProgramRow) -> ProgramOut:
+        """Turn a row into a `ProgramOut`, with the station names looked up now."""
+        document = ProgramDocument.model_validate(row.document)
+        return ProgramOut(
+            id=row.id,
+            program=document,
+            station_names=[
+                self._library.get(station.exercise).name
+                for station in document.stations
+            ],
+            total_seconds=total_seconds(document),
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    def _resolved(self, document: ProgramDocument) -> dict[str, Any]:
+        """Return the document to store, each station's exercise resolved to its id; raise `Invalid` if one can't be."""
+        stations = [
+            StationIn(exercise=self._library.resolve(station.exercise, index).id)
+            for index, station in enumerate(document.stations, start=1)
+        ]
+        return document.model_copy(update={"stations": stations}).model_dump(
+            mode="json"
+        )
+
+    def list(self) -> builtins.list[ProgramOut]:
+        """Return every program, by name, ignoring case."""
+        with session(self._engine) as db_session:
+            rows = db_session.scalars(select(ProgramRow).order_by(ProgramRow.name_key))
+            return [self._out(row) for row in rows]
+
+    def summaries(self) -> builtins.list[ProgramSummary]:
+        """Return every program as a summary, by name; `total_minutes` is rounded."""
+        return [
+            ProgramSummary(
+                id=out.id,
+                name=out.program.name,
+                active=out.program.active,
+                weekdays=out.program.weekdays,
+                station_count=len(out.program.stations),
+                rounds=out.program.rounds,
+                total_minutes=round(out.total_seconds / 60),
+            )
+            for out in self.list()
+        ]
+
+    def get(self, program_id: int) -> ProgramOut:
+        """Return one program; raise `NotFound` if there is none."""
+        with session(self._engine) as db_session:
+            return self._out(self._row(db_session, program_id))
+
+    @staticmethod
+    def _row(db_session: Session, program_id: int) -> ProgramRow:
+        """Return the program's row; raise `NotFound` if there is none."""
+        row = db_session.get(ProgramRow, program_id)
+        if row is None:
+            raise NotFound(f"Program {program_id} not found")
+        return row
+
+    @staticmethod
+    def _taken(name: str) -> Conflict:
+        """Return the error for a name already in use."""
+        return Conflict(f"Program name '{name}' is taken")
+
+    def create(self, document: ProgramDocument, client: str) -> ProgramOut:
+        """Store a new program and log it; raise `Invalid` for a station that can't be resolved, `Conflict` for a taken name."""
+        stored = self._resolved(document)
+        now = datetime.now(UTC)
+        try:
+            with session(self._engine) as db_session:
+                row = ProgramRow(
+                    name=document.name,
+                    name_key=document.name.casefold(),
+                    active=document.active,
+                    document=stored,
+                    created_at=now,
+                    updated_at=now,
+                )
+                db_session.add(row)
+                db_session.flush()
+                changes.record(
+                    db_session,
+                    client=client,
+                    action="program.created",
+                    target=f"program:{row.id}",
+                    summary=f"Created program {document.name}",
+                )
+                return self._out(row)
+        except IntegrityError as error:
+            if _NAME_KEY_CLASH not in str(error.orig):
+                raise
+            raise self._taken(document.name) from error
+
+    def replace(
+        self, program_id: int, document: ProgramDocument, client: str
+    ) -> ProgramOut:
+        """Replace a program's whole document and log the fields that changed.
+
+        Raise `NotFound`, `Invalid` for a station that can't be resolved, or `Conflict` for a name another program has.
+        """
+        stored = self._resolved(document)
+        try:
+            with session(self._engine) as db_session:
+                row = self._row(db_session, program_id)
+                # The change is logged before the name clash can show up at the flush, so a clash rolls back both.
+                changes.record(
+                    db_session,
+                    client=client,
+                    action="program.updated",
+                    target=f"program:{program_id}",
+                    summary=_update_summary(document.name, row.document, stored),
+                )
+                row.name = document.name
+                row.name_key = document.name.casefold()
+                row.active = document.active
+                row.document = stored
+                row.updated_at = datetime.now(UTC)
+                db_session.flush()
+                return self._out(row)
+        except IntegrityError as error:
+            if _NAME_KEY_CLASH not in str(error.orig):
+                raise
+            raise self._taken(document.name) from error
+
+    def set_active(self, program_id: int, active: bool, client: str) -> ProgramOut:
+        """Switch a program on or off; raise `NotFound`, or `Invalid` when switching on one without weekdays."""
+        with session(self._engine) as db_session:
+            row = self._row(db_session, program_id)
+            if active and not row.document["weekdays"]:
+                raise Invalid(
+                    f"Program {program_id} has no weekdays; give it one before switching it on"
+                )
+            # A new dict, as the JSON column doesn't track changes inside the old one.
+            row.document = {**row.document, "active": active}
+            row.active = active
+            row.updated_at = datetime.now(UTC)
+            changes.record(
+                db_session,
+                client=client,
+                action="program.activated" if active else "program.deactivated",
+                target=f"program:{program_id}",
+                summary=f"{'Activated' if active else 'Deactivated'} program {row.name}",
+            )
+            return self._out(row)
+
+    def delete(self, program_id: int, client: str) -> None:
+        """Delete a program for good and log it; raise `NotFound` if there is none."""
+        with session(self._engine) as db_session:
+            row = self._row(db_session, program_id)
+            db_session.delete(row)
+            changes.record(
+                db_session,
+                client=client,
+                action="program.deleted",
+                target=f"program:{program_id}",
+                summary=f"Deleted program {row.name}",
+            )

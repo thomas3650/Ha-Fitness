@@ -1,9 +1,16 @@
 """The Pydantic models REST and MCP share, so both expose one JSON schema."""
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 
 class ExerciseSummary(BaseModel):
@@ -128,3 +135,93 @@ class LibraryStatus(BaseModel):
 
     exercises: ExerciseCounts
     media: MediaState
+
+
+Weekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+WEEK_ORDER: tuple[Weekday, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+class StationIn(BaseModel):
+    """A station: the exercise by id or by a name only one exercise has; stored as the id."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    exercise: str
+
+
+class Music(BaseModel):
+    """A program's music (spec §5.1), stored now and used in step 7; not checked against HA."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    playlist: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]
+    speaker: Annotated[str, StringConstraints(pattern=r"^media_player\.[a-z0-9_]+$")]
+    volume: Annotated[int, Field(ge=0, le=100)] | None = None
+    shuffle: bool = False
+
+
+class ProgramDocument(BaseModel):
+    """One program, as REST, MCP, storage and export use it (spec §5.1); defaults are filled in on write."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)
+    ]
+    active: bool = True
+    weekdays: list[Weekday]
+    stations: Annotated[list[StationIn], Field(min_length=1, max_length=15)]
+    rounds: Annotated[int, Field(ge=1, le=10)] = 5
+    work_seconds: Annotated[int, Field(ge=10, le=120)] = 45
+    switch_seconds: Annotated[int, Field(ge=0, le=60)] = 15
+    round_rest_seconds: Annotated[int, Field(ge=0, le=180)] = 60
+    countdown_seconds: Literal[0, 5, 10] = 5
+    music: Music | None = None
+
+    @field_validator("weekdays")
+    @classmethod
+    def _week_order(cls, weekdays: list[Weekday]) -> list[Weekday]:
+        """Refuse a weekday given twice; keep the rest in week order."""
+        if len(set(weekdays)) != len(weekdays):
+            raise ValueError("a weekday is given more than once")
+        return sorted(weekdays, key=WEEK_ORDER.index)
+
+    @model_validator(mode="after")
+    def _active_needs_a_weekday(self) -> Self:
+        """An active program needs at least one weekday."""
+        if self.active and not self.weekdays:
+            raise ValueError("an active program needs at least one weekday")
+        return self
+
+
+class ProgramActive(BaseModel):
+    """Body of `PUT /api/v1/programs/{id}/active`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    active: bool
+
+
+class ProgramOut(BaseModel):
+    """A stored program (spec §5.2); `program` holds the station ids and is a writable document as it stands."""
+
+    id: int
+    program: ProgramDocument
+    station_names: list[str]
+    total_seconds: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProgramSummary(BaseModel):
+    """A program in a list (spec §8 `list_programs`); `total_minutes` is rounded."""
+
+    id: int
+    name: str
+    active: bool
+    weekdays: list[Weekday]
+    station_count: int
+    rounds: int
+    total_minutes: int

@@ -15,6 +15,7 @@ from .ha import HaClient
 from .library.media import MediaStore
 from .library.service import Library
 from .people import People
+from .programs import Programs
 from .services import Services, ServicesHolder
 from .settings import Settings
 
@@ -57,6 +58,7 @@ def create_app(
                 library=library,
                 media=media,
                 people=People(engine, ha),
+                programs=Programs(engine, library),
             )
         )
         download = asyncio.create_task(media.download_missing(library.media_files()))
