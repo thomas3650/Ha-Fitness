@@ -166,7 +166,7 @@ class Programs:
         try:
             with session(self._engine) as db_session:
                 row = self._row(db_session, program_id)
-                # The change is logged before the name clash can show up at the flush, so a clash rolls back both.
+                # The log row and the update share the write's transaction, so a name clash at the flush rolls back both.
                 changes.record(
                     db_session,
                     client=client,

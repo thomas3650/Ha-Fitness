@@ -99,6 +99,7 @@ _GOOD_FIELDS: list[tuple[str, Any]] = [
     ("countdown_seconds", 0),
     ("countdown_seconds", 5),
     ("countdown_seconds", 10),
+    ("name", "x"),
     ("name", "x" * 60),
 ]
 
