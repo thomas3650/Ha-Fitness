@@ -64,7 +64,9 @@ types:
    to date.
 2. Before merging a release PR, run the **full loop** on `main` ([`testing.md`](testing.md#full-loop)). This is
    mandatory for every release: a 0.x release reaches the house without a human check (D19).
-3. Merge the release PR once its CI is green.
+3. Merge the release PR once its CI is green. When both components have a release PR, merge one, then expect the
+   other to conflict: both bump `.release-please-manifest.json`, and release-please doesn't refresh an open release PR
+   on the next run. Close the conflicting one; release-please opens a fresh one from `main` on the next push.
 4. Check the result: `gh release list` shows `vX.Y.Z` as Latest (not a draft), and the add-on's release as a draft;
    for the add-on, the `addon-image` run is green.
 5. Open the house issue ([After a release](#after-a-release)).

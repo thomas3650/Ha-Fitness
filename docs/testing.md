@@ -4,6 +4,9 @@ The gates are in `CLAUDE.md` → *Commands*; CI runs the same. What a test may c
 doc covers testing beyond the gates: the fast loop on every PR, the full loop before every release, and the checks in
 Chrome and from Claude Code. Home Assistant quirks met on the way are in [`ha-notes.md`](ha-notes.md).
 
+Everything is tested on the Mac before a release (Thomas): the fast loop and the full loop need no release, no HACS
+and no install on the real HA. A release only delivers a tested version to the house, and never stands in for a test.
+
 ## Fast loop
 
 Every PR. A dev Home Assistant with the integration and cards, and the add-on server on its own, all on the Mac.
