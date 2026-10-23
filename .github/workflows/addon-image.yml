@@ -13,8 +13,9 @@ defaults:
   run:
     shell: bash
 
+# One run at a time, in push order, so an older version never overwrites :latest after a newer one.
 concurrency:
-  group: addon-image-${{ github.sha }}
+  group: addon-image
   cancel-in-progress: false
 
 env:
@@ -44,8 +45,22 @@ jobs:
         run: |
           # yq (mikefarah) is preinstalled on GitHub's Ubuntu runners.
           version="$(yq -r '.version' addon/config.yaml)"
-          previous="$(git show HEAD^:addon/config.yaml 2>/dev/null | yq -r '.version' || true)"
-          echo "version ${previous:-none} -> ${version}"
+          if [ -z "${version}" ] || [ "${version}" = "null" ]; then
+            echo "No version in addon/config.yaml"
+            exit 1
+          fi
+          # Any git error other than a parent without the file fails the job.
+          git rev-parse --verify --quiet 'HEAD^1^{commit}' > /dev/null || { echo "Cannot read the parent commit"; exit 1; }
+          # ls-tree reads only the trees: no output means no file; an unreadable tree fails the job.
+          entry="$(git ls-tree 'HEAD^1' -- addon/config.yaml)"
+          if [ -z "${entry}" ]; then
+            # The merge that adds the add-on: release-please has not released a version yet.
+            echo "The parent commit has no addon/config.yaml: nothing to build"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          previous="$(git show 'HEAD^1:addon/config.yaml' | yq -r '.version')"
+          echo "version ${previous} -> ${version}"
           if [ "${version}" = "${previous}" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -87,6 +102,8 @@ jobs:
         uses: home-assistant/builder/actions/build-image@7412f0023ea9b6e58e8bb5059f1660f51376f49a  # 2026.09.0
         with:
           arch: ${{ matrix.arch }}
+          # No cache in a workflow that publishes (cache poisoning).
+          cache-gha: "false"
           container-registry-password: ${{ secrets.GITHUB_TOKEN }}
           context: ./addon
           image: ${{ matrix.image }}
