@@ -16,6 +16,6 @@ router = APIRouter(tags=["library"])
 def library_status(
     services: Annotated[Services, Depends(get_services)],
 ) -> LibraryStatus:
-    """Return the library and custom exercise counts."""
+    """Return the library and custom exercise counts and the media download's state."""
     counts = ExerciseCounts.model_validate(services.library.counts())
-    return LibraryStatus(exercises=counts)
+    return LibraryStatus(exercises=counts, media=services.media.state())

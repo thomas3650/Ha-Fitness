@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import Engine
 
+from .library.media import MediaStore
 from .library.service import Library
 
 
@@ -13,6 +14,7 @@ class Services:
 
     engine: Engine
     library: Library
+    media: MediaStore
 
 
 class ServicesHolder:

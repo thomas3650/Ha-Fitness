@@ -1,7 +1,8 @@
 """The FastAPI app."""
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import TypedDict
 
 from fastapi import FastAPI
@@ -10,6 +11,7 @@ import httpx
 from . import __version__
 from .api import add_error_handlers, router as api_router
 from .db import open_database
+from .library.media import MediaStore
 from .library.service import Library
 from .services import Services, ServicesHolder
 from .settings import Settings
@@ -39,13 +41,19 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Open the database before requests are served; close it at the end."""
+        """Open the database and start the media download; stop the download and close the database at the end."""
         engine = open_database(settings.data_dir)
         app.state.engine = engine
-        holder.set(Services(engine=engine, library=Library(engine)))
+        library = Library(engine)
+        media = MediaStore(settings.data_dir, settings.media_base_url, media_transport)
+        holder.set(Services(engine=engine, library=library, media=media))
+        download = asyncio.create_task(media.download_missing(library.media_files()))
         try:
             yield
         finally:
+            download.cancel()
+            with suppress(asyncio.CancelledError):
+                await download
             engine.dispose()
 
     app = FastAPI(title="HA Fitness", version=__version__, lifespan=lifespan)

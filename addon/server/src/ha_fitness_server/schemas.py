@@ -1,7 +1,7 @@
 """The Pydantic models REST and MCP share, so both expose one JSON schema."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -73,7 +73,16 @@ class ExerciseCounts(BaseModel):
     custom: int
 
 
+class MediaState(BaseModel):
+    """The state of the media download (spec §3.2): `idle` before it starts, then `downloading`, `done` or `failed`."""
+
+    state: Literal["idle", "downloading", "done", "failed"]
+    present: int
+    total: int
+
+
 class LibraryStatus(BaseModel):
     """Body of `GET /api/v1/library`."""
 
     exercises: ExerciseCounts
+    media: MediaState

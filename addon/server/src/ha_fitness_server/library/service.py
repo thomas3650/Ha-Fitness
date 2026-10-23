@@ -20,6 +20,7 @@ from ha_fitness_server.models import CustomExercise
 from ha_fitness_server.schemas import Exercise, ExerciseSummary, NewCustomExercise
 
 from . import ATTRIBUTION
+from .media import MediaFiles
 
 CUSTOM_PREFIX = "custom-"
 MAX_CLOSE_MATCHES = 5
@@ -30,13 +31,19 @@ _NAME_KEY_CLASH = "UNIQUE constraint failed: custom_exercises.name_key"
 _SUMMARY_FIELDS = set(ExerciseSummary.model_fields)
 
 
-def _load_library() -> list[Exercise]:
-    """Read the built-in exercises from the package."""
+def _load_records() -> list[dict[str, Any]]:
+    """Read the built-in exercise records from the package."""
     text = (
         resources.files("ha_fitness_server.library")
         .joinpath("exercises.json")
         .read_text("utf-8")
     )
+    records: list[dict[str, Any]] = json.loads(text)
+    return records
+
+
+def _library_exercises(records: list[dict[str, Any]]) -> list[Exercise]:
+    """Turn the built-in records into `Exercise`s."""
     return [
         Exercise(
             id=record["id"],
@@ -49,7 +56,7 @@ def _load_library() -> list[Exercise]:
             secondary_muscles=record["secondary_muscles"],
             attribution=ATTRIBUTION,
         )
-        for record in json.loads(text)
+        for record in records
     ]
 
 
@@ -80,7 +87,12 @@ class Library:
     def __init__(self, engine: Engine) -> None:
         """Load the built-in exercises; custom ones are read from `engine` per call."""
         self._engine = engine
-        self._library = _load_library()
+        records = _load_records()
+        self._library = _library_exercises(records)
+        self._media = {
+            record["id"]: MediaFiles(record["id"], record["gif"], record["thumbnail"])
+            for record in records
+        }
         self._by_id = {exercise.id: exercise for exercise in self._library}
         self._library_names = {exercise.name.casefold() for exercise in self._library}
 
@@ -213,6 +225,14 @@ class Library:
             if _NAME_KEY_CLASH not in str(error.orig):
                 raise
             raise taken from error
+
+    def media_files(self) -> list[MediaFiles]:
+        """Return the media of every library exercise."""
+        return list(self._media.values())
+
+    def media_of(self, exercise_id: str) -> MediaFiles | None:
+        """Return a library exercise's media; `None` for a custom or unknown id."""
+        return self._media.get(exercise_id)
 
     def counts(self) -> dict[str, int]:
         """Return how many library and custom exercises there are."""
