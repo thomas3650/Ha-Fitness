@@ -1,6 +1,6 @@
 """Seed a dev Home Assistant and a dev add-on server with people and a sample program; safe to run again.
 
-Usage: `scripts/seed [--ha-url URL] [--server-url URL] [--today | --late]` (defaults http://localhost:8123 and
+Usage: `scripts/seed [--ha-url URL] [--server-url URL] [--today | --late | --short]` (defaults http://localhost:8123 and
 http://localhost:8765)
 
 - Refuses unless both hosts are `localhost` or `127.0.0.1`, before any request: it never touches a real Home
@@ -14,16 +14,20 @@ http://localhost:8765)
 
 A second run changes nothing.
 
-Two flags then make a training day on purpose, through the add-on's dev routes (`HA_FITNESS_DEV=1`, which
+Three flags then make a training day on purpose, through the add-on's dev routes (`HA_FITNESS_DEV=1`, which
 `scripts/develop` sets). "Today" is the date in Europe/Copenhagen, the dev HA's zone.
 
-- Both flags first check that the server has its dev routes, before anything changes, and refuse when it hasn't.
+- Each flag first checks that the server has its dev routes, before anything changes, and refuse when it hasn't.
 - `--today` adds today's weekday to Sample, switches Sample on when it is off, and creates or reopens its day for
   today, so it is due at once, also after a skip earlier that day.
 - `--late` makes Sample late. It first refuses when another active program trains today, before it changes anything
   (also before the persons, people and Sample above). Then it switches Sample off (which removes its open days), sets
   its weekdays to every day except today, removes every training day of today (any day today, closed ones included,
   would close the late one), switches Sample on, and creates or reopens its day for yesterday.
+- `--short` is for a short real run of the workout: it creates the program "Kort" (2 body-weight stations, 1 round,
+  work 10 s, switch 0 s, countdown 5 s) with today's weekday only, or, when Kort exists, sets its weekdays to today's
+  only and switches it on. Then it creates or reopens Kort's day for today. Kort's day for today closes an earlier
+  late day as missed, and makes `--late` refuse on that weekday.
 """
 
 import argparse
@@ -53,6 +57,17 @@ SAMPLE: dict[str, Any] = {
     "stations": [
         {"exercise": exercise} for exercise in ("0662", "0514", "0630", "1460", "1160")
     ],
+}
+# Push-up and jump squat; the weekdays are set to today's when Kort is created.
+SHORT_NAME = "Kort"
+SHORT: dict[str, Any] = {
+    "name": SHORT_NAME,
+    "rounds": 1,
+    "work_seconds": 10,
+    "switch_seconds": 0,
+    "round_rest_seconds": 0,
+    "countdown_seconds": 5,
+    "stations": [{"exercise": exercise} for exercise in ("0662", "0514")],
 }
 
 
@@ -193,14 +208,24 @@ async def _refuse_late(server_url: str, today: dt.date) -> None:
         )
 
 
-async def _sample(session: aiohttp.ClientSession) -> dict[str, Any]:
-    """Return the stored Sample program (`{id, program, ...}`)."""
+async def _find_program(
+    session: aiohttp.ClientSession, name: str
+) -> dict[str, Any] | None:
+    """Return the stored program of that name (`{id, program, ...}`), or None."""
     async with session.get("/api/v1/programs") as response:
         programs = await _json(response)
     for program in programs:
-        if program["program"]["name"].casefold() == SAMPLE_NAME.casefold():
+        if program["program"]["name"].casefold() == name.casefold():
             return dict(program)
-    raise SeedError(f"the program {SAMPLE_NAME} is missing")
+    return None
+
+
+async def _sample(session: aiohttp.ClientSession) -> dict[str, Any]:
+    """Return the stored Sample program (`{id, program, ...}`)."""
+    sample = await _find_program(session, SAMPLE_NAME)
+    if sample is None:
+        raise SeedError(f"the program {SAMPLE_NAME} is missing")
+    return sample
 
 
 async def _put_program(
@@ -316,6 +341,34 @@ async def _make_late(server_url: str, today: dt.date) -> None:
         print(f"seed: {SAMPLE_NAME} has an open day for yesterday ({yesterday})")
 
 
+async def _make_short(server_url: str, today: dt.date) -> None:
+    """Create Kort for today's weekday, or set its weekdays to today's and switch it on; then open its day for today."""
+    weekday = WEEKDAYS[today.weekday()]
+    async with _server_session(server_url) as session:
+        short = await _find_program(session, SHORT_NAME)
+        if short is None:
+            async with session.post(
+                "/api/v1/programs", json={**SHORT, "weekdays": [weekday]}
+            ) as response:
+                short = dict(await _json(response))
+            print(f"seed: created the program {SHORT_NAME} for {weekday}")
+        else:
+            document = short["program"]
+            if document["weekdays"] == [weekday]:
+                print(f"seed: {SHORT_NAME} trains on {weekday} only")
+            else:
+                # The stored `active` goes along, so a switched-off Kort stays off until the switch below.
+                await _put_program(
+                    session, short["id"], {**document, "weekdays": [weekday]}
+                )
+                print(f"seed: set {SHORT_NAME}'s weekdays to {weekday} only")
+            if not document["active"]:
+                await _set_active(session, short["id"], True)
+                print(f"seed: switched {SHORT_NAME} on")
+        await _open_day(session, short["id"], today)
+        print(f"seed: {SHORT_NAME} has an open day for today ({today})")
+
+
 async def _run(ha_url: str, server_url: str, mode: str | None) -> None:
     today = _local_today()
     if mode is not None:
@@ -328,6 +381,8 @@ async def _run(ha_url: str, server_url: str, mode: str | None) -> None:
         await _make_due(server_url, today)
     elif mode == "late":
         await _make_late(server_url, today)
+    elif mode == "short":
+        await _make_short(server_url, today)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -357,6 +412,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_const",
         const="late",
         help="then make Sample late (refuses when another active program trains today)",
+    )
+    when.add_argument(
+        "--short",
+        dest="mode",
+        action="store_const",
+        const="short",
+        help="then make the short program Kort due today (1 round, work 10 s, 2 stations)",
     )
     args = parser.parse_args(argv)
     for option, url in (("--ha-url", args.ha_url), ("--server-url", args.server_url)):

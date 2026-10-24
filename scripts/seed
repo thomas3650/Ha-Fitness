@@ -5,6 +5,7 @@
 #   scripts/seed [--ha-url URL] [--server-url URL]   defaults http://localhost:8123 and http://localhost:8765
 #   scripts/seed --today                             also make Sample due today
 #   scripts/seed --late                              also make Sample late (its day of yesterday open)
+#   scripts/seed --short                             also make the short program Kort due today
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
