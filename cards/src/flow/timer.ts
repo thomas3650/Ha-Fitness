@@ -329,7 +329,7 @@ export const timerStyles = css`
     height: auto;
     aspect-ratio: 1;
     box-sizing: border-box;
-    background: #fff;
+    background: var(--card-background-color, #fff);
     border: 1px solid var(--divider-color);
   }
   .timer-now .exercise {

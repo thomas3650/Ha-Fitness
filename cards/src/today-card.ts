@@ -79,7 +79,8 @@ function errorKey(error: unknown): string {
 /**
  * "Træning i dag" (UI refresh spec §2.1): a top line with the title and the people's streaks, the
  * week ring, and the open training days, each with Start and a two-step Spring over (step 4 spec
- * §6). While a session is active the days give way to "Træning i gang" and Fortsæt (step 5 §5.1).
+ * §6). While a session is active the days give way to the session row: the program, the state line
+ * and the people line, with Fortsæt (UI polish spec §2).
  */
 export class TodayCard extends LitElement {
   static override properties = {
