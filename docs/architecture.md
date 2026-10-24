@@ -151,8 +151,8 @@ Not built yet: the workout flow in the cards (step 5, part F) and stats. Each co
 
 ### Sessions in the integration
 
-The add-on's side (the session view, the `session` message, the events and the error codes) is workout spec §3.5. The
-integration relays it.
+The add-on's side (the session view, the `session` message, the events and the error codes) is [below](#sessions).
+The integration relays it.
 
 - **The last view.** The coordinator keeps the last `session` message's view. A disconnect keeps it, so a card can go
   on counting down. "Seen" is reset on each `hello` and each disconnect. The session is available while the add-on is
