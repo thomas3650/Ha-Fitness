@@ -170,7 +170,7 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
    it.
 9. **The today card stays visible during an extra session:** with no day open, start a session from
    `custom:ha-fitness-workout-card` (the dev dashboard's Workout view). Back on the first view, the today card shows
-   "Træning i gang" and Fortsæt while the session runs. `dev_onboard.py` saves the dashboard only while it has none,
+   the session row ("I gang · runde …" and Fortsæt) while the session runs. `dev_onboard.py` saves the dashboard only while it has none,
    so a dev HA onboarded before the Workout view existed lacks it: delete the `ha-fitness-dev` dashboard (Settings →
    Dashboards) and run `dev_onboard.py` again.
 10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at

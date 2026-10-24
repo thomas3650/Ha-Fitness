@@ -100,8 +100,8 @@ The cards are built into the integration: one bundle, released and versioned wit
   (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the HA user's language
   (D11, D38).
   - **"Træning i dag"** (`custom:ha-fitness-today-card`) has a top line with the streak badge, the week ring, then
-    one row per open training day (a two-tap Spring over, and Start), or the session row ("Træning i gang" with
-    Fortsæt) while a session runs or is paused. The badge follows `ha_fitness/stats/subscribe`. It is hidden before
+    one row per open training day (a two-tap Spring over, and Start), or the session row (the program's name, "I gang · runde 2 af 5"
+    or "Pauset", the people with the planned length, and Fortsæt) while a session runs or is paused. The badge follows `ha_fitness/stats/subscribe`. It is hidden before
     counting, while the stats are unavailable and with no people. The ring comes from the `today` message's `week`.
     It is hidden without `week` or with `planned` 0. The card hides itself when nothing is open, except in edit
     mode, and shows one line while the add-on can't be reached.

@@ -5,6 +5,7 @@ kitchen tablet runs HA's light theme in Danish at 3:2 (1368×912). The feature s
 touch with light, Danish, 3:2 versions. Where a mockup and a spec disagree, the spec wins.
 The built screens follow the mockups' layout and hierarchy in HA's light colours, with `mdi:` icons
 ([D51](../decisions.md)).
+Cards are white with a grey border, and the person's colour is only on the badge ([D52](../decisions.md)).
 
 Static HTML mockups at 1280×800 (status card 440×280), dark theme. Open the `.html` in a browser, or see the `.png`.
 Exercise GIFs in `gifs/` are © Gym visual (via hasaneyldrm/exercises-dataset). Names (Thomas, Anna, Emil) are examples.
