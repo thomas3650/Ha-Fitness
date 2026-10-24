@@ -1,7 +1,7 @@
 """Training days and the scheduler (step 4 spec §3.3): which program asks to be trained on which local date."""
 
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import threading
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -85,9 +85,13 @@ class TrainingDays:
         self.lock = threading.RLock()
         self._published: TodayView | None = None
 
+    def local_date(self, moment: datetime) -> date:
+        """Return the local date of an aware `moment`."""
+        return moment.astimezone(self._timezone).date()
+
     def local_today(self) -> date:
         """Return the local date now."""
-        return self._clock.now().astimezone(self._timezone).date()
+        return self.local_date(self._clock.now())
 
     def reconcile_now(self) -> None:
         """Reconcile up to and including the local date now."""

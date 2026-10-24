@@ -26,6 +26,7 @@ from .people import People
 from .programs import Programs
 from .push import Hub, Message
 from .services import Services, ServicesHolder
+from .sessions import Sessions
 from .settings import Settings
 from .training_days import TrainingDays
 
@@ -99,19 +100,20 @@ def create_app(
         ha = HaClient(
             settings.ha_url, settings.ha_token, settings.ha_token_file, ha_transport
         )
-        training_days = TrainingDays(
-            engine,
-            the_clock,
-            settings.timezone,
-            _publisher(hub, asyncio.get_running_loop()),
-        )
+        publish = _publisher(hub, asyncio.get_running_loop())
+        training_days = TrainingDays(engine, the_clock, settings.timezone, publish)
+        people = People(engine, ha)
+        programs = Programs(engine, library, training_days)
         holder.set(
             Services(
                 engine=engine,
                 library=library,
                 media=media,
-                people=People(engine, ha),
-                programs=Programs(engine, library, training_days),
+                people=people,
+                programs=programs,
+                sessions=Sessions(
+                    engine, the_clock, training_days, programs, people, publish
+                ),
                 training_days=training_days,
             )
         )

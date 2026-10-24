@@ -8,6 +8,7 @@ from .library.media import MediaStore
 from .library.service import Library
 from .people import People
 from .programs import Programs
+from .sessions import Sessions
 from .training_days import TrainingDays
 
 
@@ -20,6 +21,7 @@ class Services:
     media: MediaStore
     people: People
     programs: Programs
+    sessions: Sessions
     training_days: TrainingDays
 
 
