@@ -1,8 +1,36 @@
 {
-  "today": {
-    "title": "Today's training"
+  "picker": {
+    "name": "HA Fitness – today",
+    "description": "Today's training, with a button to skip it. Hidden when there's no training."
   },
-  "common": {
-    "coming_soon": "Coming soon"
+  "today": {
+    "stations_one": "{count} exercise",
+    "stations_other": "{count} exercises",
+    "rounds_one": "{count} round",
+    "rounds_other": "{count} rounds",
+    "minutes": "about {count} min",
+    "summary": "{stations} · {rounds} · {minutes}",
+    "late": "Late · {weekday} · {summary}",
+    "skip": "Skip",
+    "skip_confirm": "Skip?",
+    "yes": "Yes",
+    "no": "No",
+    "nothing_open": "No training today",
+    "unreachable": "HA Fitness can't be reached"
+  },
+  "weekday": {
+    "monday": "Monday",
+    "tuesday": "Tuesday",
+    "wednesday": "Wednesday",
+    "thursday": "Thursday",
+    "friday": "Friday",
+    "saturday": "Saturday",
+    "sunday": "Sunday"
+  },
+  "error": {
+    "not_found": "This training day no longer exists.",
+    "not_open": "This training day is already finished.",
+    "unavailable": "HA Fitness can't be reached. Try again later.",
+    "general": "Something went wrong. Try again."
   }
 }

@@ -46,6 +46,34 @@ fit no doc stay in [`notes.md`](notes.md).
   carry it. Checked in the full loop (2026-10-24): the archive held `data/backup/snapshot.db` and neither the live
   database nor `library/media/`, and `ha backups restore <slug> --app local_ha_fitness` brought a deleted program back.
 
+## The integration
+
+- **`single_config_entry` blocks discovery updates.** With `"single_config_entry": true` in `manifest.json`, HA
+  aborts every new flow with `single_instance_allowed` once an entry exists, before the flow's first step runs
+  (checked in HA's `config_entries.py`). A Supervisor discovery for the existing entry then never reaches
+  `async_step_hassio`, so `_abort_if_unique_id_configured(updates=...)` can't give the entry the add-on's new address.
+  That is why HA Fitness has a unique id instead (D39).
+- **Entity ids on a Danish HA.** With `has_entity_name` and a `translation_key`, HA builds a new entity's id from its
+  translated name, in HA's own language. On a Danish HA that gives Danish ids, from "Træning i dag" and the others.
+  So the entities set `entity_id` explicitly (`sensor.ha_fitness_today` …), and `test_entity_ids_on_danish_ha`
+  checks the ids with `hass.config.language = "da"`.
+
+## The frontend
+
+- **Hiding a card.** HA's `hui-card` hides a card when the card element sets the `hidden` attribute and fires
+  `card-visibility-changed` (`detail: {value: <visible>}`, bubbling and composed); HA's own cards also set
+  `display: none`. A card that is only `display: none` keeps its grid cell, which shows as an empty space.
+- **A hidden card leaves the DOM.** `hui-card` removes a hidden card element unless the element has
+  `connectedWhileHidden = true`. Without it the card is disconnected, drops its subscription, and never sees the
+  data that should show it again.
+- **`hass.callService(domain, service, data, target, notifyOnError, returnResponse)`.** With `notifyOnError` true
+  (the default) HA shows its own toast on an error, in the system language. The today card passes `false` and shows
+  its own text, chosen by the error's `translation_key`, in the card's language.
+- **`connection.subscribeMessage(callback, message, {resubscribe})`.** home-assistant-js-websocket resubscribes by
+  default after a reconnect. A card that also subscribes again on the connection's `ready` event then has one extra
+  server subscription after each reconnect. The today card passes `{resubscribe: false}`, as HA's own frontend does,
+  and subscribes again on `ready` itself.
+
 ## Testing
 
 - The `frontend` dependency's setup imports `home-assistant-frontend`, which `pytest-homeassistant-custom-component`
@@ -57,6 +85,14 @@ fit no doc stay in [`notes.md`](notes.md).
 - HA allows one long-lived access token per client name: a second `auth/long_lived_access_token` with the same
   `client_name` fails with "already exists" (checked in HA's `auth/__init__.py`). So `scripts/dev_onboard.py` deletes
   the old `ha-fitness-dev` token (`auth/refresh_tokens`, `auth/delete_refresh_token`) before it makes a new one.
+- **A lingering aiohttp heartbeat timer.** When the client closes a ws with a heartbeat itself, aiohttp 3.14 re-arms
+  the heartbeat timer as the other side's close frame arrives. One timer then outlives the closed socket, and
+  `pytest-homeassistant-custom-component` fails the test for a lingering timer. That is why
+  `test_unexpected_error_does_not_stop_reconnect` sets `expected_lingering_timers`. It is harmless outside tests.
+- **The frozen clock and aiohttp.** Under `freezer` the event loop's clock moves only with `freezer.tick`, and
+  `async_fire_time_changed` runs aiohttp's own timers too (connect and pong timeouts). Firing 15 s or more ahead while
+  a socket is connecting or waiting for a pong times it out, so `wait_for` in `tests/common.py` is used with short
+  spans only.
 
 ## Bumping Home Assistant
 

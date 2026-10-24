@@ -43,6 +43,9 @@ spec already names.
 | **Done** | | A training day closed by a session (done late, if it was late). |
 | **Open** | | Due or late. |
 | **Closed** | | Done, missed or skipped. |
+| **Next training day** | Næste træningsdag | The first date after today on which an active program trains. The entity `sensor.ha_fitness_next_training_day`, with the programs of that date. |
+| **Training today** (the open-days sensor) | Træning i dag | The entity `sensor.ha_fitness_today`: `due` if any open day is due, else `late` if any is late, else `none`. Its `training_days` attribute lists the open days. |
+| **Training open** | Træning åben | The entity `binary_sensor.ha_fitness_training_open`: on while any training day is open. Unavailable, like every HA Fitness entity, while the add-on can't be reached. |
 
 ## Stats
 

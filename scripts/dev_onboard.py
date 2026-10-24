@@ -15,7 +15,12 @@ Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry] [--token-f
   (websocket `auth/long_lived_access_token`, client name `ha-fitness-dev`) and writes it there; a valid file is kept.
   `--token-file PATH` uses another file (a relative path is relative to the current folder). The fast loop's add-on
   server reads this file at each call (`HA_FITNESS_HA_TOKEN_FILE`).
-- Unless `--no-entry`, creates the HA Fitness config entry.
+- Creates the dev dashboard `ha-fitness-dev` (websocket `lovelace/dashboards/create`): one sections view holding the
+  card `custom:ha-fitness-today-card` (`lovelace/config/save`). Its config is saved only while it has none, so a
+  dashboard edited by hand is kept. This step also runs with `--no-entry`: the card works once an entry exists.
+- Unless `--no-entry`, creates the HA Fitness config entry through the user step, with the add-on server's URL
+  `http://localhost:8765` (the fast loop's). The integration checks that the server answers there, so it must run
+  (`scripts/develop` starts it). An entry that exists (`already_configured`) counts as done.
 
 Every step that is already done is skipped, so a second run changes nothing.
 """
@@ -39,6 +44,21 @@ NAME = "dev"
 USERNAME = "dev"
 PASSWORD = "dev"  # A local dev instance only; never a real Home Assistant.
 DOMAIN = "ha_fitness"
+# The add-on server of the fast loop (`scripts/develop`), as the integration's entry stores it.
+ADDON_URL = "http://localhost:8765"
+DASHBOARD_URL_PATH = "ha-fitness-dev"
+DASHBOARD_TITLE = "HA Fitness dev"
+DASHBOARD_CONFIG = {
+    "views": [
+        {
+            "title": "HA Fitness",
+            "type": "sections",
+            "sections": [
+                {"type": "grid", "cards": [{"type": "custom:ha-fitness-today-card"}]}
+            ],
+        }
+    ]
+}
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
 DEFAULT_TOKEN_FILE = Path(__file__).resolve().parents[1] / "local" / "dev-ha-token"
 TOKEN_CLIENT_NAME = "ha-fitness-dev"
@@ -71,7 +91,15 @@ def is_local_url(url: str) -> bool:
 
 
 class OnboardError(Exception):
-    """Home Assistant answered something this script can't continue from."""
+    """Home Assistant answered something this script can't continue from.
+
+    `code` is the error code of a failed websocket command (for example `config_not_found`), else None.
+    """
+
+    def __init__(self, message: str, code: str | None = None) -> None:
+        """Keep the message and the error code."""
+        super().__init__(message)
+        self.code = code
 
 
 async def _json(response: aiohttp.ClientResponse) -> Any:
@@ -148,7 +176,10 @@ async def websocket(
                 if reply.get("id") == msg_id:
                     break
             if not reply.get("success"):
-                raise OnboardError(f"{message['type']} failed: {reply.get('error')}")
+                error = reply.get("error") or {}
+                raise OnboardError(
+                    f"{message['type']} failed: {error}", code=error.get("code")
+                )
             return reply.get("result")
 
         yield call
@@ -274,14 +305,8 @@ async def _keep_token(session: aiohttp.ClientSession, token: str, path: Path) ->
 
 
 async def _add_entry(session: aiohttp.ClientSession, token: str) -> None:
-    """Create the HA Fitness config entry if there is none."""
+    """Create the HA Fitness config entry through the user step with `ADDON_URL`, unless it exists."""
     headers = {"Authorization": f"Bearer {token}"}
-    async with session.get(
-        "/api/config/config_entries/entry", params={"domain": DOMAIN}, headers=headers
-    ) as response:
-        if await _json(response):
-            print("onboard: the HA Fitness entry exists")
-            return
     async with session.post(
         "/api/config/config_entries/flow", json={"handler": DOMAIN}, headers=headers
     ) as response:
@@ -289,16 +314,57 @@ async def _add_entry(session: aiohttp.ClientSession, token: str) -> None:
     if flow.get("type") == "form":
         async with session.post(
             f"/api/config/config_entries/flow/{flow['flow_id']}",
-            json={},
+            json={"url": ADDON_URL},
             headers=headers,
         ) as response:
-            flow = await _json(response)
-    if flow.get("type") == "abort" and flow.get("reason") == "single_instance_allowed":
+            result = await _json(response)
+        if result.get("type") == "form":
+            # The add-on server didn't answer. Abort the flow, or the next run finds it in progress.
+            async with session.delete(
+                f"/api/config/config_entries/flow/{flow['flow_id']}", headers=headers
+            ) as response:
+                await _json(response)
+            raise OnboardError(
+                f"the HA Fitness add-on server doesn't answer at {ADDON_URL} "
+                f"({result.get('errors')}); start it with scripts/develop"
+            )
+        flow = result
+    if flow.get("type") == "abort" and flow.get("reason") == "already_configured":
         print("onboard: the HA Fitness entry exists")
         return
     if flow.get("type") != "create_entry":
         raise OnboardError(f"the HA Fitness config flow ended with {flow}")
-    print("onboard: created the HA Fitness entry")
+    print(f"onboard: created the HA Fitness entry ({ADDON_URL})")
+
+
+async def _add_dashboard(session: aiohttp.ClientSession, token: str) -> None:
+    """Create the dev dashboard with the today card; keep the config of one that has it."""
+    async with websocket(session, token) as call:
+        dashboards = await call(type="lovelace/dashboards/list")
+        if any(d.get("url_path") == DASHBOARD_URL_PATH for d in dashboards):
+            print(f"onboard: the dashboard {DASHBOARD_URL_PATH} exists")
+        else:
+            await call(
+                type="lovelace/dashboards/create",
+                url_path=DASHBOARD_URL_PATH,
+                title=DASHBOARD_TITLE,
+                icon="mdi:dumbbell",
+            )
+            print(f"onboard: created the dashboard {DASHBOARD_URL_PATH}")
+        try:
+            await call(type="lovelace/config", url_path=DASHBOARD_URL_PATH)
+        except OnboardError as err:
+            if err.code != "config_not_found":
+                raise
+        else:
+            print(f"onboard: the dashboard {DASHBOARD_URL_PATH} has a config; kept")
+            return
+        await call(
+            type="lovelace/config/save",
+            url_path=DASHBOARD_URL_PATH,
+            config=DASHBOARD_CONFIG,
+        )
+        print(f"onboard: saved the today card on {DASHBOARD_URL_PATH}")
 
 
 async def _run(base: str, add_entry: bool, token_file: Path) -> None:
@@ -307,6 +373,7 @@ async def _run(base: str, add_entry: bool, token_file: Path) -> None:
         await _set_language(session, token)
         await _set_timezone(session, token)
         await _keep_token(session, token, token_file)
+        await _add_dashboard(session, token)
         if add_entry:
             await _add_entry(session, token)
 

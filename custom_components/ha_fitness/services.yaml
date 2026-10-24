@@ -1,0 +1,9 @@
+skip:
+  fields:
+    training_day_id:
+      required: true
+      example: 12
+      selector:
+        number:
+          min: 1
+          mode: box

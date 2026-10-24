@@ -290,3 +290,34 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   sets `HA_FITNESS_TIMEZONE`, so a `TZ` in the Mac's shell doesn't matter.
 - **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.2; Claude, 2026-10-24
   (Thomas's delegation for the night)
+
+### D37: A 0.x integration may need a newer add-on, through `addon_too_old`
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** While both parts are 0.x, an integration release may need a newer add-on. It must say so through the
+  `addon_too_old` repair issue, and the release's `fitness` issue states the install order. From 1.0.0 on, the
+  contract rule of [`architecture.md`](architecture.md#the-contract-between-the-add-on-and-the-integration) holds
+  without exception.
+- **Why:** The add-on of step 3 has no push channel, and the integration of step 4 can't work without one. A repair
+  issue tells the user what to update, instead of entities that stay unavailable with no reason given.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §4.2, where it is numbered D36;
+  Claude, 2026-10-24 (Thomas's delegation for the night)
+
+### D38: The card's `language` option
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** A card takes an optional `language` in its config. Its texts follow that option, else the HA user's
+  language (`hass.locale.language`), else English. This extends D11.
+- **Why:** The house sets `language: da` on its cards, so a card's language doesn't depend on the logged-in user's
+  profile. Weekday names come from the language files too, not from `Intl`, so hard rule 6 holds.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §5, where it is numbered D37;
+  Claude, 2026-10-24 (Thomas's delegation for the night)
+
+### D39: Entry version 2, with the unique id `ha_fitness` and no `single_config_entry`
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The config entry is version 2: its data is the add-on's URL, and every flow sets the unique id
+  `ha_fitness`, so a second entry aborts as `already_configured`. `manifest.json` has no `single_config_entry`. A
+  version 1 entry is migrated to `http://localhost:8765` with that unique id.
+- **Why:** `single_config_entry` makes HA abort a discovery before the flow runs, so an existing entry could never get
+  the add-on's new address ([`ha-notes.md`](ha-notes.md#the-integration)). The unique id keeps one entry and lets the
+  discovery update it.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §4.1, where it is numbered D38;
+  Claude, 2026-10-24 (Thomas's delegation for the night)
