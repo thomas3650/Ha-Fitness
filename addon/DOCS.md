@@ -1,7 +1,7 @@
 # HA Fitness
 
-The HA Fitness add-on is the server behind the HA Fitness integration. It stores the programs, workouts and stats in
-the add-on's own data folder, so they are part of Home Assistant backups.
+The HA Fitness add-on is the server behind the HA Fitness integration. It stores the programs and workouts in the
+add-on's own data folder, so they are part of Home Assistant backups, and computes the stats from them.
 
 ## Installation
 

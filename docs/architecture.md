@@ -34,7 +34,7 @@ The cards are built into the integration: one bundle, released and versioned wit
       keeps it. It is null for people from before 0004, which means "from the start". Stats use it (D47).
     - **People writes** (`People.set`) check the persons against HA first, outside the lock, because that call can
       take 10 s. Only the database write and the reconcile after it take the lock, so a people change never holds up
-      a running workout's ticks. The reconcile publishes `today` and `stats`.
+      a running workout's ticks. The reconcile publishes `today` and `stats` when they changed.
   - **Training days** and the **scheduler** (step 4 spec §3.3, D34). A training day is one program on one local date,
     stored as open, done, missed or skipped; only a counted session closes a day as done. Training-day ids are never reused, so a skip by id
     can't hit a later day. The scheduler reconciles at start, every minute, after every program write and before
