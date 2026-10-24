@@ -105,8 +105,7 @@
       "countdown": "GØR KLAR",
       "work": "ARBEJD",
       "switch": "SKIFT",
-      "rest": "PAUSE",
-      "paused": "PAUSE"
+      "rest": "PAUSE"
     },
     "done": {
       "counted": "Godt gået!",
@@ -126,13 +125,20 @@
     "no": "Nej",
     "previous": "Forrige",
     "next": "Næste",
-    "next_label": "Næste",
     "station": "Station {number}",
     "next_station": "Næste: station {number} · {exercise}",
-    "then": {
-      "work": "så {seconds} s arbejde",
-      "switch": "så {seconds} s skift",
-      "rest": "så {seconds} s pause"
+    "station_of": "Station {station}/{stations}",
+    "go_to_next": "GÅ TIL NÆSTE STATION",
+    "seconds_left": "sekunder tilbage",
+    "tap_to_resume": "tryk på ringen for at fortsætte",
+    "whole_workout": "Hele træningen",
+    "next_card": "NÆSTE",
+    "then_card": "DEREFTER",
+    "after": {
+      "work": "efter {seconds} s arbejde",
+      "switch": "efter {seconds} s skift",
+      "rest": "efter {seconds} s pause",
+      "none": "derefter"
     },
     "error": {
       "already_running": "En træning er allerede i gang.",

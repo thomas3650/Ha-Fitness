@@ -105,8 +105,7 @@
       "countdown": "GET READY",
       "work": "WORK",
       "switch": "SWITCH",
-      "rest": "REST",
-      "paused": "PAUSED"
+      "rest": "REST"
     },
     "done": {
       "counted": "Well done!",
@@ -126,13 +125,20 @@
     "no": "No",
     "previous": "Previous",
     "next": "Next",
-    "next_label": "Next",
     "station": "Station {number}",
     "next_station": "Next: station {number} · {exercise}",
-    "then": {
-      "work": "then {seconds} s work",
-      "switch": "then {seconds} s switch",
-      "rest": "then {seconds} s rest"
+    "station_of": "Station {station}/{stations}",
+    "go_to_next": "GO TO THE NEXT STATION",
+    "seconds_left": "seconds left",
+    "tap_to_resume": "tap the ring to resume",
+    "whole_workout": "Whole workout",
+    "next_card": "NEXT",
+    "then_card": "THEN",
+    "after": {
+      "work": "after {seconds} s work",
+      "switch": "after {seconds} s switch",
+      "rest": "after {seconds} s rest",
+      "none": "next up"
     },
     "error": {
       "already_running": "A workout is already running.",

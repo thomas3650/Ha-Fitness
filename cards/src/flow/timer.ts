@@ -1,5 +1,6 @@
 import { type TemplateResult, css, html, nothing } from "lit";
 
+import { iconButton } from "../icon-button";
 import type { PhaseKind, SessionStation, SessionView } from "../overlay";
 import { ring } from "../ring";
 import {
@@ -13,7 +14,6 @@ import {
   renderImage,
   renderReach,
   renderSound,
-  renderThumbnail,
 } from "./shared";
 
 /** The ring's colours: orange for work, blue for the rest (design §3.4). Never used for text. */
@@ -24,7 +24,10 @@ export const RING_COLORS: Record<PhaseKind, string> = {
   rest: "#4DA8FF",
 };
 
-/** What the timer shows: the header with Slut, the stations, the ring and the controls. */
+/**
+ * What the timer shows (the `Timer` and `TimerRest` mockups): the top row with Slut, the stations,
+ * the ring, the controls and the whole workout's progress.
+ */
 export interface TimerContext {
   t: Translate;
   view: SessionView;
@@ -56,9 +59,8 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
   const { t, view, countdown } = ctx;
   const phase = view.phase!;
   const paused = view.status === "paused";
-  const word = t(`flow.phase.${paused ? "paused" : countdown.kind}`);
-  const next = view.next_phase;
-  const then = next && !countdown.ahead ? t(`flow.then.${next.kind}`, { seconds: next.duration }) : undefined;
+  // Paused, the ring keeps the phase word; the pill and the caption say it is paused.
+  const word = t(`flow.phase.${countdown.kind}`);
   const theRing = ring({
     label: word,
     word,
@@ -66,37 +68,75 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
     value: countdown.seconds,
     fraction: countdown.fraction,
     color: RING_COLORS[countdown.kind],
-    then,
+    caption: t(paused ? "flow.tap_to_resume" : "flow.seconds_left"),
     onTap: () => ctx.onRingTap(),
   });
   const stations = view.stations ?? [];
+  const one = stations.length === 1;
   return html`
-    ${renderHeader(ctx, phase.round, phase.interval)} ${renderReach(t, ctx.reach)} ${renderSound(t, ctx.sound)}
+    ${renderHeader(ctx, phase.round, phase.interval, one)} ${renderReach(t, ctx.reach)} ${renderSound(t, ctx.sound)}
     ${renderError(ctx.error)}
-    ${stations.length === 1
+    ${one
       ? renderSolo(ctx, theRing)
       : html`<div class="duo">${renderPanel(ctx, 0)} ${theRing} ${renderPanel(ctx, 1)}</div>`}
-    <div class="controls">
-      <button @click=${() => ctx.onPrevious()}>${t("flow.previous")}</button>
-      <button class="main" @click=${() => (paused ? ctx.onResume() : ctx.onPause())}>
-        ${t(paused ? "flow.resume" : "flow.pause")}
-      </button>
-      <button @click=${() => ctx.onNext()}>${t("flow.next")}</button>
+    <div class="timer-controls">
+      ${iconButton({
+        icon: "mdi:skip-previous",
+        label: t("flow.previous"),
+        className: "timer-skip",
+        onClick: ctx.onPrevious,
+      })}
+      ${iconButton({
+        icon: paused ? "mdi:play" : "mdi:pause",
+        label: t(paused ? "flow.resume" : "flow.pause"),
+        className: "timer-play",
+        onClick: paused ? ctx.onResume : ctx.onPause,
+      })}
+      ${iconButton({ icon: "mdi:skip-next", label: t("flow.next"), className: "timer-skip", onClick: ctx.onNext })}
+    </div>
+    ${renderWhole(ctx)}
+  `;
+}
+
+/** The whole workout's progress: the elapsed whole seconds out of the planned total. */
+function renderWhole(ctx: TimerContext) {
+  const planned = ctx.view.totals.planned;
+  const now = Math.floor(ctx.elapsed);
+  const share = planned > 0 ? Math.min(1, now / planned) : 0;
+  return html`
+    <div
+      class="timer-whole"
+      role="progressbar"
+      aria-label=${ctx.t("flow.whole_workout")}
+      aria-valuemin="0"
+      aria-valuemax=${planned}
+      aria-valuenow=${now}
+      style="--ring-color: ${RING_COLORS[ctx.countdown.kind]}"
+    >
+      <span class="timer-whole-done" style="width: ${share * 100}%"></span>
     </div>
   `;
 }
 
-/** Runde, Interval, the elapsed time against the planned, and Slut with its question. */
-function renderHeader(ctx: TimerContext, round: number, interval: number) {
+/**
+ * The top row: the round and station pills (two people: the interval), PAUSET while paused, the
+ * elapsed time against the planned, and Slut with its question.
+ */
+function renderHeader(ctx: TimerContext, round: number, interval: number, one: boolean) {
   const { t, view } = ctx;
+  const stations = view.totals.stations;
+  const where = one
+    ? stations === undefined
+      ? t("flow.station", { number: interval })
+      : t("flow.station_of", { station: interval, stations })
+    : stations === undefined
+      ? t("flow.interval", { interval })
+      : t("flow.interval_of", { interval, intervals: stations });
   return html`
-    <header class="top">
-      <span>${t("flow.round", { round, rounds: view.totals.rounds })}</span>
-      <span>
-        ${view.totals.stations === undefined
-          ? t("flow.interval", { interval })
-          : t("flow.interval_of", { interval, intervals: view.totals.stations })}
-      </span>
+    <header class="timer-top">
+      <span class="timer-pill">${t("flow.round", { round, rounds: view.totals.rounds })}</span>
+      <span class="timer-pill">${where}</span>
+      ${view.status === "paused" ? html`<span class="timer-pill paused">${t("flow.paused")}</span>` : nothing}
       <span class="elapsed">
         ${t("flow.elapsed", { elapsed: clock(ctx.elapsed), planned: clock(view.totals.planned) })}
       </span>
@@ -113,32 +153,47 @@ function renderHeader(ctx: TimerContext, round: number, interval: number) {
   `;
 }
 
-/** One person: the current station big with its GIF, the ring, and Næste beside them. */
+/**
+ * One person: the exercise big with its GIF, the ring in the middle, and the NÆSTE card on the
+ * right. During a switch or a rest `current` is the station moved to, so it reads "GÅ TIL NÆSTE
+ * STATION" and the card says DEREFTER. The three columns keep their widths without a card, so the
+ * ring stays centred (#36).
+ */
 function renderSolo(ctx: TimerContext, theRing: TemplateResult) {
   const { t, view } = ctx;
   const station = view.stations![0];
   const person = view.participants[0];
+  const moving = view.phase!.kind !== "work";
   return html`
-    <div class="solo">
-      <section class="now" aria-label=${person?.name ?? ""}>
+    <div class="timer-solo">
+      <section class="timer-now" aria-label=${person?.name ?? ""}>
+        ${moving ? html`<span class="timer-move">${t("flow.go_to_next")}</span>` : nothing}
         ${renderImage(ctx.imageOf, station.current, "gif", "gif")}
-        <span class="station">${t("flow.station", { number: station.current.number })}</span>
         <span class="exercise">${station.current.name}</span>
       </section>
-      ${theRing} ${station.next ? renderNext(ctx, station.next) : nothing}
+      ${theRing} ${station.next ? renderNext(ctx, station.next, moving) : nothing}
     </div>
   `;
 }
 
-function renderNext(ctx: TimerContext, next: SessionStation) {
-  const { t } = ctx;
-  const label = t("flow.next_label");
+/** The NÆSTE (or DEREFTER) card: the next station's picture, its name, and what comes before it. */
+function renderNext(ctx: TimerContext, next: SessionStation, moving: boolean) {
+  const { t, view } = ctx;
+  const label = t(moving ? "flow.then_card" : "flow.next_card");
+  const after = view.next_phase;
+  // During work a 0 s switch makes the next phase work: "derefter". During a switch or a rest the
+  // next phase is the coming work, so its length shows.
+  const subtitle = !after
+    ? undefined
+    : !moving && after.kind === "work"
+      ? t("flow.after.none")
+      : t(`flow.after.${after.kind}`, { seconds: after.duration });
   return html`
-    <section class="next" aria-label=${label}>
+    <section class="timer-next" aria-label=${label}>
       <span class="label">${label}</span>
-      ${renderThumbnail(ctx.imageOf, next)}
-      <span>${t("flow.station", { number: next.number })}</span>
-      <span>${next.name}</span>
+      ${renderImage(ctx.imageOf, next, "thumbnail", "timer-next-image")}
+      <span class="exercise">${next.name}</span>
+      ${subtitle ? html`<span class="after">${subtitle}</span>` : nothing}
     </section>
   `;
 }
@@ -168,23 +223,34 @@ function renderPanel(ctx: TimerContext, index: number) {
 }
 
 export const timerStyles = css`
-  header.top {
+  .timer-top {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px 32px;
+    gap: 12px 16px;
     align-items: center;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
   }
   /* Each part stays on one line; at a narrow width whole parts wrap instead. */
-  header.top > span,
-  header.top .question {
+  .timer-top > span,
+  .timer-top .question {
     white-space: nowrap;
   }
-  header.top .elapsed {
+  .timer-pill {
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: var(--secondary-background-color, var(--divider-color));
+  }
+  .timer-pill.paused {
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    background: var(--primary-text-color);
+    color: var(--primary-background-color);
+  }
+  .timer-top .elapsed {
     margin-left: auto;
     font-variant-numeric: tabular-nums;
   }
-  header.top .end {
+  .timer-top .end {
     display: flex;
     gap: 16px;
     align-items: center;
@@ -192,7 +258,79 @@ export const timerStyles = css`
   button.slot {
     min-width: 120px;
   }
-  .solo,
+  /* One person: three columns whose sides keep their widths, so the ring stays centred with or
+     without the NÆSTE card (#36). */
+  .timer-solo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 32px;
+    align-items: center;
+    margin: 24px 0;
+  }
+  /* One person: a ring as large as get ready's, readable across a kitchen. */
+  .timer-solo > .ring {
+    grid-column: 2;
+    width: 400px;
+    height: 400px;
+  }
+  .timer-solo > .ring .seconds {
+    font-size: 8rem;
+  }
+  .timer-now {
+    grid-column: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .timer-now .gif {
+    width: min(320px, 100%);
+    height: auto;
+    aspect-ratio: 1;
+  }
+  .timer-now .exercise {
+    font-size: 2.25rem;
+    font-weight: 700;
+  }
+  .timer-move,
+  .timer-next .label {
+    font-size: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+  }
+  .timer-move {
+    color: var(--primary-color);
+  }
+  .timer-next {
+    grid-column: 3;
+    justify-self: end;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-sizing: border-box;
+    width: min(300px, 100%);
+    min-width: 0;
+    padding: 18px;
+    border-radius: 20px;
+    background: var(--card-background-color, var(--secondary-background-color));
+    overflow-wrap: anywhere;
+  }
+  .timer-next .label,
+  .timer-next .after {
+    color: var(--secondary-text-color);
+  }
+  .timer-next-image {
+    width: 100%;
+    aspect-ratio: 16 / 11;
+    border-radius: 12px;
+    object-fit: cover;
+    background: var(--secondary-background-color, var(--divider-color));
+  }
+  .timer-next .exercise {
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
   .duo {
     display: flex;
     gap: 32px;
@@ -200,20 +338,12 @@ export const timerStyles = css`
     justify-content: center;
     margin: 24px 0;
   }
-  .now,
-  .panel,
-  .next {
+  .panel {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
     text-align: center;
-  }
-  .now .exercise {
-    font-size: 2rem;
-    font-weight: 500;
-  }
-  .panel {
     flex: 1;
     min-width: 0;
     overflow-wrap: anywhere;
@@ -228,10 +358,6 @@ export const timerStyles = css`
   }
   .panel .name,
   .panel .exercise {
-    font-weight: 500;
-  }
-  .next .label {
-    color: var(--secondary-text-color);
     font-weight: 500;
   }
   .gif {
@@ -277,28 +403,62 @@ export const timerStyles = css`
   }
   .ring .seconds {
     font-size: 6rem;
-    font-weight: 500;
+    font-weight: 700;
     line-height: 1;
     font-variant-numeric: tabular-nums;
   }
-  .ring .then {
+  .ring .caption {
     color: var(--secondary-text-color);
   }
-  .controls {
+  .timer-controls {
     display: flex;
     gap: 32px;
     align-items: center;
     justify-content: center;
   }
+  /* Icon-only round buttons; the pause/play one is the largest control. */
+  button.timer-skip,
+  button.timer-play {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+  }
+  button.timer-skip {
+    width: 72px;
+    min-width: 72px;
+    height: 72px;
+    background: var(--secondary-background-color, var(--divider-color));
+    --mdc-icon-size: 32px;
+  }
+  button.timer-play {
+    width: 104px;
+    min-width: 104px;
+    height: 104px;
+    background: var(--primary-color);
+    color: var(--text-primary-color);
+    --mdc-icon-size: 48px;
+  }
+  .timer-whole {
+    height: 8px;
+    margin-top: 24px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--divider-color);
+  }
+  .timer-whole-done {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: var(--ring-color);
+  }
   /* A portrait tablet (about 800 px wide): nothing scrolls sideways. */
   @container (max-width: 1000px) {
-    header.top {
-      gap: 12px 20px;
-      font-size: 1.25rem;
-    }
     /* Slut, and its question in its place, get a line of their own, right-aligned, so Nej
        lands where Slut was. */
-    header.top .end {
+    .timer-top .end {
       flex-basis: 100%;
       justify-content: flex-end;
     }
@@ -322,28 +482,30 @@ export const timerStyles = css`
       grid-area: ring;
       justify-self: center;
     }
-    /* One person: the station and Næste side by side, the ring below them. */
-    .solo {
-      display: grid;
-      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    /* One person: the exercise and NÆSTE side by side, the ring below them. */
+    .timer-solo {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       grid-template-areas:
         "now next"
         "ring ring";
       gap: 24px;
     }
-    .solo > .now {
+    .timer-now {
       grid-area: now;
     }
-    .solo > .next {
+    .timer-next {
       grid-area: next;
     }
-    .solo > .ring {
+    .timer-solo > .ring {
       grid-area: ring;
       justify-self: center;
     }
-    .solo .gif {
-      width: min(280px, 50cqi);
-      height: min(280px, 50cqi);
+    .timer-solo > .ring {
+      width: 320px;
+      height: 320px;
+    }
+    .timer-solo > .ring .seconds {
+      font-size: 6rem;
     }
   }
 `;

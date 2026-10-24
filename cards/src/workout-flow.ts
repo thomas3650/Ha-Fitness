@@ -722,8 +722,11 @@ export class WorkoutFlow extends LitElement {
       sound: this.sound(),
       error: this.error,
       asking: this.endQuestion !== undefined,
+      // The ring is a pointer shortcut: a tap pauses while running and resumes while paused.
       onRingTap: () => {
-        if (this.newest?.status === "running") void this.command("pause");
+        const status = this.newest?.status;
+        if (status === "running") void this.command("pause");
+        else if (status === "paused") void this.command("resume");
       },
       onPrevious: () => void this.command("previous"),
       onPause: () => void this.command("pause"),

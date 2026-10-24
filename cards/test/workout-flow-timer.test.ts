@@ -102,6 +102,10 @@ function paused(overrides: Partial<SessionView> = {}): SessionView {
   return view({ status: "paused", phase: phase({ ends_at: null, remaining: 30 }), ...overrides });
 }
 
+function soloPaused(overrides: Partial<SessionView> = {}): SessionView {
+  return paused({ participants: [thomas], stations: [{ current: push_up, next: squat }], ...overrides });
+}
+
 function finished(counted: boolean, overrides: Partial<SessionView> = {}): SessionView {
   return view({
     revision: 40,
@@ -162,8 +166,17 @@ function button(flow: FlowElement, name: string | RegExp): HTMLButtonElement {
   return getByRole(root(flow), "button", { name }) as HTMLButtonElement;
 }
 
+/** The whole-workout bar's name in each language. */
+const WHOLE = new Set(["Whole workout", "Hele træningen"]);
+
+/** The ring: the progressbar named after the phase, not the whole-workout bar. */
 function ring(flow: FlowElement): HTMLElement {
-  return getByRole(root(flow), "progressbar");
+  return getByRole(root(flow), "progressbar", { name: (name) => !WHOLE.has(name) });
+}
+
+/** The whole-workout bar. */
+function whole(flow: FlowElement): HTMLElement {
+  return getByRole(root(flow), "progressbar", { name: (name) => WHOLE.has(name) });
 }
 
 /** The ring's state: its name, its values, and the texts in it. */
@@ -208,7 +221,7 @@ test("timer text and ring from a view with a clock offset", async () => {
     min: "0",
     max: "45",
     now: "30",
-    text: "ARBEJD 30 så 15 s skift",
+    text: "ARBEJD 30 sekunder tilbage",
   });
   await wait(flow, 4_000);
   expect(ringState(flow).now).toBe("26");
@@ -241,7 +254,7 @@ test("seconds rounded up", async () => {
   // During the last second, 1 shows, even with 0.25 s left.
   await wait(flow, 43_750);
   expect(ringState(flow).now).toBe("1");
-  expect(ringState(flow).text).toBe("ARBEJD 1 så 15 s skift");
+  expect(ringState(flow).text).toBe("ARBEJD 1 sekunder tilbage");
 });
 
 test("local zero shows next phase word", async () => {
@@ -250,7 +263,13 @@ test("local zero shows next phase word", async () => {
 
   await wait(flow, 45_000);
   // No message yet: the switch shows from `next_phase`, at its full length.
-  expect(ringState(flow)).toEqual({ name: "SKIFT", min: "0", max: "15", now: "15", text: "SKIFT 15" });
+  expect(ringState(flow)).toEqual({
+    name: "SKIFT",
+    min: "0",
+    max: "15",
+    now: "15",
+    text: "SKIFT 15 sekunder tilbage",
+  });
 
   // The message that follows confirms it.
   await push(
@@ -266,7 +285,7 @@ test("local zero shows next phase word", async () => {
       server_time: "2026-10-24T08:00:45.000Z",
     }),
   );
-  expect(ringState(flow)).toMatchObject({ name: "SKIFT", now: "15", text: "SKIFT 15 så 45 s arbejde" });
+  expect(ringState(flow)).toMatchObject({ name: "SKIFT", now: "15", text: "SKIFT 15 sekunder tilbage" });
 
   // The last work phase has no next phase: it holds at 0 until the finish arrives.
   await push(
@@ -279,7 +298,7 @@ test("local zero shows next phase word", async () => {
     }),
   );
   await wait(flow, 46_000);
-  expect(ringState(flow)).toMatchObject({ name: "ARBEJD", now: "0", text: "ARBEJD 0" });
+  expect(ringState(flow)).toMatchObject({ name: "ARBEJD", now: "0", text: "ARBEJD 0 sekunder tilbage" });
 });
 
 test("older revision ignored; new session applied", async () => {
@@ -301,31 +320,169 @@ test("older revision ignored; new session applied", async () => {
 
 test("pause, resume and ring tap", async () => {
   const fake = fakeHass("en");
-  const { flow } = await mount(fake, view());
+  const { flow } = await mount(fake, solo());
 
   await tap(flow, button(flow, "Pause"));
   expect(sent(fake)).toEqual(["pause"]);
-  fake.commands[0].resolve(paused({ revision: 11 }));
+  fake.commands[0].resolve(soloPaused({ revision: 11 }));
   await settle(flow);
 
-  // Paused: the ring stops and says so; the play button resumes.
-  expect(ringState(flow)).toMatchObject({ name: "PAUSED", now: "30", text: "PAUSED 30 then 15 s switch" });
+  // Paused: the ring stops, keeps the phase word and says to tap; a PAUSED pill shows; the round
+  // button resumes.
+  expect(ringState(flow)).toMatchObject({ name: "WORK", now: "30", text: "WORK 30 tap the ring to resume" });
+  expect(hasText(flow, "PAUSED")).toBe(true);
+  expect(button(flow, "Resume")).toBeTruthy();
+  expect(queryByRole(root(flow), "button", { name: "Pause" })).toBeNull();
   await wait(flow, 5_000);
   expect(ringState(flow).now).toBe("30");
-  // A tap on the paused ring doesn't send another pause.
+
+  // A tap on the paused ring resumes.
   await tap(flow, ring(flow));
-  expect(sent(fake)).toEqual(["pause"]);
-  await tap(flow, button(flow, "Resume"));
   expect(sent(fake)).toEqual(["pause", "resume"]);
   fake.commands[1].resolve(
-    view({ revision: 12, phase: phase({ ends_at: "2026-10-24T08:00:35.000Z" }), server_time: "2026-10-24T08:00:05.000Z" }),
+    solo({
+      revision: 12,
+      phase: phase({ ends_at: "2026-10-24T08:00:35.000Z" }),
+      server_time: "2026-10-24T08:00:05.000Z",
+    }),
   );
   await settle(flow);
-  expect(ringState(flow)).toMatchObject({ name: "WORK", now: "30" });
+  expect(ringState(flow)).toMatchObject({ name: "WORK", now: "30", text: "WORK 30 seconds left" });
+  expect(hasText(flow, "PAUSED")).toBe(false);
 
   // Tapping the running ring pauses.
   await tap(flow, ring(flow));
   expect(sent(fake)).toEqual(["pause", "resume", "pause"]);
+  fake.commands[2].resolve(soloPaused({ revision: 13 }));
+  await settle(flow);
+
+  // The round button named Resume resumes too.
+  await tap(flow, button(flow, "Resume"));
+  expect(sent(fake)).toEqual(["pause", "resume", "pause", "resume"]);
+});
+
+test("the ring is no button and no tab stop", async () => {
+  const { flow } = await mount(fakeHass("da"), solo());
+  expect(ring(flow).getAttribute("tabindex")).toBeNull();
+  expect(queryByRole(root(flow), "button", { name: "ARBEJD" })).toBeNull();
+});
+
+test("the three icon buttons send previous, pause and next", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo());
+
+  await tap(flow, button(flow, "Forrige"));
+  await tap(flow, button(flow, "Pause"));
+  await tap(flow, button(flow, "Næste"));
+  expect(sent(fake)).toEqual(["previous", "pause", "next"]);
+});
+
+test("the top row's pills for one person", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
+  expect(hasText(flow, "Runde 2/5")).toBe(true);
+  expect(hasText(flow, "Station 1/3")).toBe(true);
+  expect(hasText(flow, "PAUSET")).toBe(false);
+
+  // During a switch the pill keeps the interval.
+  await push(
+    flow,
+    solo({
+      revision: 11,
+      totals: { planned: 1740, rounds: 5, stations: 3 },
+      phase: phase({ index: 4, kind: "switch", interval: 1, duration: 15, ends_at: "2026-10-24T08:00:15.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      stations: [{ current: squat, next: planke }],
+    }),
+  );
+  expect(hasText(flow, "Station 1/3")).toBe(true);
+
+  // Without the stations total, the number alone.
+  await push(flow, solo({ revision: 12, phase: phase({ interval: 2 }) }));
+  expect(hasText(flow, "Station 2")).toBe(true);
+
+  // Paused: the PAUSET pill.
+  await push(flow, soloPaused({ revision: 13 }));
+  expect(hasText(flow, "PAUSET")).toBe(true);
+});
+
+test("the NEXT card's subtitle before a switch, a rest and a 0 s switch", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo());
+  const card = () => getByRole(root(flow), "region", { name: "NÆSTE" });
+  expect(text(card())).toBe("NÆSTE Squat efter 15 s skift");
+  expect(getByRole(card(), "img", { name: "Squat" })).toBeTruthy();
+
+  await push(flow, solo({ revision: 11, next_phase: { kind: "rest", duration: 60 } }));
+  expect(text(card())).toBe("NÆSTE Squat efter 60 s pause");
+
+  await push(flow, solo({ revision: 12, next_phase: { kind: "work", duration: 45 } }));
+  expect(text(card())).toBe("NÆSTE Squat derefter");
+  document.body.replaceChildren();
+
+  const en = await mount(fakeHass("en"), solo());
+  expect(text(getByRole(root(en.flow), "region", { name: "NEXT" }))).toBe("NEXT Squat after 15 s switch");
+  await push(en.flow, solo({ revision: 11, next_phase: { kind: "rest", duration: 60 } }));
+  expect(text(getByRole(root(en.flow), "region", { name: "NEXT" }))).toBe("NEXT Squat after 60 s rest");
+  await push(en.flow, solo({ revision: 12, next_phase: { kind: "work", duration: 45 } }));
+  expect(text(getByRole(root(en.flow), "region", { name: "NEXT" }))).toBe("NEXT Squat next up");
+});
+
+test("THEN during a switch and a rest, with the move above the picture", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(
+    fake,
+    solo({
+      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: "2026-10-24T08:00:15.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      stations: [{ current: squat, next: planke }],
+    }),
+  );
+  expect(text(getByRole(root(flow), "region", { name: "Thomas" }))).toBe("GÅ TIL NÆSTE STATION Squat");
+  expect(text(getByRole(root(flow), "region", { name: "DEREFTER" }))).toBe("DEREFTER Planke efter 45 s arbejde");
+  expect(queryByRole(root(flow), "region", { name: "NÆSTE" })).toBeNull();
+
+  // A rest is a move to the next round's first station: it reads like a switch.
+  await push(
+    flow,
+    solo({
+      revision: 11,
+      phase: phase({ index: 8, kind: "rest", duration: 60, ends_at: "2026-10-24T08:01:00.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      stations: [{ current: push_up, next: squat }],
+    }),
+  );
+  expect(text(getByRole(root(flow), "region", { name: "Thomas" }))).toBe("GÅ TIL NÆSTE STATION Push-up");
+  expect(text(getByRole(root(flow), "region", { name: "DEREFTER" }))).toBe("DEREFTER Squat efter 45 s arbejde");
+  document.body.replaceChildren();
+
+  const en = await mount(
+    fakeHass("en"),
+    solo({
+      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: "2026-10-24T08:00:15.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      stations: [{ current: squat, next: planke }],
+    }),
+  );
+  expect(text(getByRole(root(en.flow), "region", { name: "Thomas" }))).toBe("GO TO THE NEXT STATION Squat");
+  expect(text(getByRole(root(en.flow), "region", { name: "THEN" }))).toBe("THEN Planke after 45 s work");
+});
+
+test("the whole-workout bar moves with the clock", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo());
+  expect(whole(flow).getAttribute("aria-label")).toBe("Hele træningen");
+  expect(whole(flow).getAttribute("aria-valuemin")).toBe("0");
+  expect(whole(flow).getAttribute("aria-valuemax")).toBe("1740");
+  expect(whole(flow).getAttribute("aria-valuenow")).toBe("360");
+
+  // Whole seconds, rounded down.
+  await wait(flow, 12_750);
+  expect(whole(flow).getAttribute("aria-valuenow")).toBe("372");
+  document.body.replaceChildren();
+
+  const en = await mount(fakeHass("en"), solo());
+  expect(whole(en.flow).getAttribute("aria-valuemax")).toBe("1740");
 });
 
 test("previous and next send commands", async () => {
@@ -402,13 +559,13 @@ test("one-person and two-person layouts in work and switch", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo());
 
-  // One person: the current station big, with its GIF; Næste beside it.
+  // One person: the current exercise big, with its GIF; NÆSTE beside it.
   const now = getByRole(root(flow), "region", { name: "Thomas" });
-  expect(text(now)).toBe("Station 1 Push-up");
+  expect(text(now)).toBe("Push-up");
   // The image cache is page-wide, so an earlier test may have fetched it: check what shows.
   expect(getByRole(now, "img", { name: "Push-up" }).getAttribute("src")).toMatch(/^blob:image-/);
-  const next = getByRole(root(flow), "region", { name: "Næste" });
-  expect(text(next)).toBe("Næste Station 2 Squat");
+  const next = getByRole(root(flow), "region", { name: "NÆSTE" });
+  expect(text(next)).toBe("NÆSTE Squat efter 15 s skift");
   expect(getByRole(next, "img", { name: "Squat" }).getAttribute("src")).toMatch(/^blob:image-/);
 
   // During a switch, the big one is the station being moved to.
@@ -421,12 +578,13 @@ test("one-person and two-person layouts in work and switch", async () => {
       stations: [{ current: squat, next: squat }],
     }),
   );
-  expect(text(getByRole(root(flow), "region", { name: "Thomas" }))).toBe("Station 2 Squat");
+  expect(text(getByRole(root(flow), "region", { name: "Thomas" }))).toBe("GÅ TIL NÆSTE STATION Squat");
   expect(ringState(flow).name).toBe("SKIFT");
 
   // On the last work phase there is no next station.
   await push(flow, solo({ revision: 12, next_phase: null, stations: [{ current: planke, next: null }] }));
-  expect(queryByRole(root(flow), "region", { name: "Næste" })).toBeNull();
+  expect(queryByRole(root(flow), "region", { name: "NÆSTE" })).toBeNull();
+  expect(queryByRole(root(flow), "region", { name: "DEREFTER" })).toBeNull();
   document.body.replaceChildren();
 
   // Two people: a panel each, in the person's colour, with the next station.
@@ -442,8 +600,9 @@ test("one-person and two-person layouts in work and switch", async () => {
     "#3DD6C6",
   ]);
   expect(getByRole(panels[1], "img", { name: "Squat" })).toBeTruthy();
-  // The ring is shared.
-  expect(queryAllByRole(root(two.flow), "progressbar")).toHaveLength(1);
+  // The ring is shared; the whole-workout bar is the second progressbar.
+  expect(queryAllByRole(root(two.flow), "progressbar")).toHaveLength(2);
+  expect(whole(two.flow)).toBeTruthy();
 
   await push(
     two.flow,
@@ -560,7 +719,7 @@ test("done counted and not counted; auto-close 60 s", async () => {
 test("the timer in English", async () => {
   const fake = fakeHass("en");
   const { flow } = await mount(fake, view());
-  expect(ringState(flow).text).toBe("WORK 45 then 15 s switch");
+  expect(ringState(flow).text).toBe("WORK 45 seconds left");
   expect(hasText(flow, "Round 2/5")).toBe(true);
   expect(button(flow, "Previous")).toBeTruthy();
   expect(button(flow, "Next")).toBeTruthy();
@@ -628,7 +787,7 @@ test("a session's first view clears an alert from details", async () => {
 
   // A session started elsewhere arrives: the flow moves on, and the alert doesn't come along.
   await push(flow, view());
-  expect(queryByRole(root(flow), "progressbar")).not.toBeNull();
+  expect(ring(flow)).toBeTruthy();
   expect(queryByRole(root(flow), "alert")).toBeNull();
 });
 
@@ -640,6 +799,11 @@ test("the header shows the intervals out of the stations when the view has them"
 
   const en = await mount(fakeHass("en"), view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
   expect(hasText(en.flow, "Interval 1/3")).toBe(true);
+  document.body.replaceChildren();
+
+  // One person reads Station.
+  const one = await mount(fakeHass("en"), solo({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
+  expect(hasText(one.flow, "Station 1/3")).toBe(true);
 });
 
 test("unreachable with no session keeps the ring counting", async () => {

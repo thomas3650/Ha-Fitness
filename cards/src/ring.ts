@@ -14,8 +14,8 @@ export interface RingOptions {
   color: string;
   /** The phase word over the seconds. */
   word: string;
-  /** The line under the seconds ("så 15 s skift"), if any. */
-  then?: string;
+  /** The line under the seconds ("sekunder tilbage"), if any. */
+  caption?: string;
   onTap?: () => void;
 }
 
@@ -26,7 +26,8 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /**
  * The timer's ring: an SVG circle that empties as the phase runs, exposed as a progressbar with
- * the seconds left. The texts sit in the middle. It renders into the caller's shadow root.
+ * the seconds left. The texts sit in the middle. A tap is a pointer shortcut only: the ring has no
+ * button role and no tab stop. It renders into the caller's shadow root.
  */
 export function ring(options: RingOptions) {
   const fraction = Math.min(1, Math.max(0, options.fraction));
@@ -61,7 +62,7 @@ export function ring(options: RingOptions) {
       <div class="middle">
         <span class="word">${options.word}</span>
         <span class="seconds">${options.value}</span>
-        ${options.then ? html`<span class="then">${options.then}</span>` : nothing}
+        ${options.caption ? html`<span class="caption">${options.caption}</span>` : nothing}
       </div>
     </div>
   `;
