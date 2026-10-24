@@ -49,8 +49,30 @@ class HaClient:
                 )
         return persons
 
+    def render_template(self, template: str) -> str:
+        """Return HA's rendering of `template` (`POST /api/template`), as plain text."""
+        return self._send("POST", "/api/template", {"template": template}).text
+
+    def call_service_response(
+        self, domain: str, service: str, data: dict[str, Any]
+    ) -> Any:
+        """Call a service that answers a response, and return its `service_response`."""
+        response = self._send(
+            "POST", f"/api/services/{domain}/{service}?return_response", data
+        )
+        body = _json(response)
+        if not isinstance(body, dict) or "service_response" not in body:
+            raise Unavailable("Can't reach Home Assistant: unexpected answer")
+        return body["service_response"]
+
     def _get(self, path: str) -> Any:
         """Return the JSON of `GET <base_url><path>`."""
+        return _json(self._send("GET", path, None))
+
+    def _send(
+        self, method: str, path: str, body: dict[str, Any] | None
+    ) -> httpx.Response:
+        """Send one request to `<base_url><path>` and return the successful response; raise `Unavailable` otherwise."""
         if self._base_url is None:
             raise Unavailable("Home Assistant isn't configured: no URL")
         headers = {"Authorization": f"Bearer {self._read_token()}"}
@@ -58,7 +80,9 @@ class HaClient:
             with httpx.Client(
                 transport=self._transport, timeout=TIMEOUT_SECONDS
             ) as http_client:
-                response = http_client.get(f"{self._base_url}{path}", headers=headers)
+                response = http_client.request(
+                    method, f"{self._base_url}{path}", headers=headers, json=body
+                )
         except httpx.HTTPError as error:
             # Never the error's text: it can quote the request, the token included.
             raise Unavailable(
@@ -68,12 +92,7 @@ class HaClient:
             raise Unavailable(
                 f"Can't reach Home Assistant: HTTP {response.status_code}"
             )
-        try:
-            return response.json()
-        except ValueError as error:
-            raise Unavailable(
-                "Can't reach Home Assistant: answer isn't JSON"
-            ) from error
+        return response
 
     def _read_token(self) -> str:
         """Return the token; raise `Unavailable` when there is none or it can't go in a header."""
@@ -97,6 +116,14 @@ class HaClient:
                 "Home Assistant isn't configured: no token in the token file"
             )
         raise Unavailable("Home Assistant isn't configured: no token")
+
+
+def _json(response: httpx.Response) -> Any:
+    """Return the response's JSON; raise `Unavailable` when it isn't JSON."""
+    try:
+        return response.json()
+    except ValueError as error:
+        raise Unavailable("Can't reach Home Assistant: answer isn't JSON") from error
 
 
 def _valid_token(token: str) -> bool:

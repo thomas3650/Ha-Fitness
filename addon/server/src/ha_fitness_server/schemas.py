@@ -81,6 +81,21 @@ class HaPerson(BaseModel):
     friendly_name: str
 
 
+class SpeakerOut(BaseModel):
+    """A Music Assistant player in Home Assistant (music spec §4.3)."""
+
+    entity_id: str
+    name: str
+    available: bool
+
+
+class PlaylistOut(BaseModel):
+    """A playlist in Music Assistant's library (music spec §4.3): `uri` is what a program's music plays."""
+
+    name: str
+    uri: str
+
+
 class Person(BaseModel):
     """A person who trains, linked to an HA person (spec §4)."""
 

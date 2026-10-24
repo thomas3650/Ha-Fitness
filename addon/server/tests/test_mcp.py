@@ -34,6 +34,8 @@ READ_TOOLS = {
     "list_programs",
     "get_program",
     "list_people",
+    "list_speakers",
+    "list_playlists",
     "get_change_log",
     "get_today",
     "get_session",
@@ -82,11 +84,11 @@ def _program(name: str = "Onsdag", **fields: Any) -> dict[str, Any]:
 
 
 async def test_tool_names_are_exactly_the_spec_list(make_app: MakeApp) -> None:
-    """The server has the twelve tools of spec §8, step 4's two, step 5's two, step 6's one, and no others."""
+    """The server has the twelve tools of spec §8, step 4's two, step 5's two, step 6's one, step 7's two, and no others."""
     async with mcp_client(make_app()) as session:
         names = {tool.name for tool in await session.list_tools()}
     assert names == READ_TOOLS | DESTRUCTIVE_TOOLS | ADDING_TOOLS
-    assert len(names) == 17
+    assert len(names) == 19
 
 
 async def test_annotations(make_app: MakeApp) -> None:

@@ -34,6 +34,14 @@ spec already names.
 | **Feeling** | How a workout felt, given on the finished screen: too easy, just right or too hard. Stored with the completed session, so Claude can read it when it adjusts a program. |
 | **Ended early** | A session stopped before its last work phase ended: with Slut or Annullér, or after 30 minutes paused. It counts as done if at least one full round was completed. |
 
+## Music
+
+| Term | Danish UI | Meaning |
+| --- | --- | --- |
+| **Speaker** | Højttaler | A Music Assistant player in Home Assistant, a `media_player` entity. A program names one; a session can start on another. |
+| **Playlist** | Playliste | A playlist in Music Assistant's library. A program stores its URI, which is played, and its name, which the screens show. |
+| **Music player** | Musikafspiller | The timer's small player in the header: the playlist, the speaker, and play, pause and next track. |
+
 ## Training days
 
 | Term | Danish UI | Meaning |

@@ -46,15 +46,18 @@ The cards are built into the integration: one bundle, released and versioned wit
   - **REST** under `/api/v1/` (the routes are step 3 spec §7). `GET /api/v1/health` answers
     `{"status": "ok", "version": "<server version>", "api_version": 1}`. Step 4 adds `GET /api/v1/today`,
     `GET /api/v1/training-days?from=&to=` and `POST /api/v1/training-days/{id}/skip` (step 4 spec §3.4–§3.5). Step 5
-    adds the [session routes](#sessions). The stats add `GET /api/v1/stats` ([below](#stats)).
+    adds the [session routes](#sessions). The stats add `GET /api/v1/stats` ([below](#stats)). The music step adds
+    `GET /api/v1/music`, `GET /api/v1/music/speakers` and `GET /api/v1/music/playlists?search=`
+    ([below](#music-assistants-speakers-and-playlists)).
   - **UI-refresh fields** ([spec](superpowers/specs/2026-10-24-ui-refresh-design.md) §3). `GET /api/v1/today` and the
     `today` message carry `week: {done, planned}`: household numbers for the current local week, Monday to Sunday. A
     program (REST and MCP) carries `equipment`, the distinct equipment of its stations without "body weight". A
     completed session can be rated with `POST /api/v1/session/feeling` ([below](#the-session-routes)). A card hides
     what a missing field would feed, so there is no `addon_too_old` for these and `api_version` stays 1.
   - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5,
-    the read-only `get_session` and `list_sessions` from step 5 spec §3.5, and the read-only `get_stats` from the
-    stats spec §4). No MCP tool starts or steers a workout.
+    the read-only `get_session` and `list_sessions` from step 5 spec §3.5, the read-only `get_stats` from the
+    stats spec §4, and the read-only `list_speakers` and `list_playlists` from the
+    [music spec](superpowers/specs/2026-10-24-music-design.md) §4.3). No MCP tool starts or steers a workout.
   - **The push channel** `GET /api/v1/ws`, a websocket (D6, D35; [below](#the-push-channel)).
   - **Supervisor discovery:** at every start under the Supervisor the add-on posts the service `ha_fitness` with its
     hostname and port 8765 (D28, step 4 spec §3.7). Outside the Supervisor it does nothing. A failure is logged and
@@ -302,7 +305,8 @@ HA's timezone (for midnight), the person entities, and Music Assistant's speaker
   with a log line. Under the Supervisor, `TZ` is HA's timezone ([`ha-notes.md`](ha-notes.md#the-supervisor)). The
   fast loop sets `HA_FITNESS_TIMEZONE`. A change takes effect at the next start.
 - **The rest** the add-on reads itself through HA's REST API, so its MCP tools work even when the integration isn't
-  connected. So far it reads only the persons: `GET /api/states`, filtered to `person.*`.
+  connected. It reads the persons (`GET /api/states`, filtered to `person.*`) and Music Assistant's speakers and
+  playlists ([below](#music-assistants-speakers-and-playlists)).
 
 - **Under the Supervisor:** `http://supervisor/core/api` with `SUPERVISOR_TOKEN` (`homeassistant_api: true`). The
   server only sees the token because the Dockerfile's `CMD` starts with `with-contenv`
@@ -313,13 +317,31 @@ HA's timezone (for midnight), the person entities, and Music Assistant's speaker
 - Without a URL or a token, HA is "not configured". A read still answers, with `ha_persons: null` and `ha_error`; a
   write that needs HA fails with 503.
 
+### Music Assistant's speakers and playlists
+
+The design is the [music spec](superpowers/specs/2026-10-24-music-design.md) §4.3; the code is
+`addon/server/src/ha_fitness_server/music.py`. Both reads are for Claude, so it can fill a program's `music`.
+
+- **Speakers.** One template (`SPEAKERS_TEMPLATE`), rendered with `POST /api/template`, lists the `media_player.`
+  entities of `integration_entities('music_assistant')` with their name, state and config entry id. `GET
+  /api/v1/music/speakers` and the MCP `list_speakers` answer `[{entity_id, name, available}]`, sorted by name;
+  `available` is false for the states `unavailable` and `unknown`.
+- **Playlists.** `GET /api/v1/music/playlists?search=` and the MCP `list_playlists` call
+  `music_assistant.get_library` with `?return_response`, on the config entry of the first speaker that has one, with
+  `media_type: playlist`, `limit: 500` and the search when it isn't empty. They answer `[{name, uri}]`, sorted by name.
+- **Without speakers** both answer `[]`, and no service is called.
+- **Errors.** HA unreachable, refusing or answering in another shape gives 503 `{"detail"}` over REST and a
+  `ToolError` over MCP, as for the people.
+- **`GET /api/v1/music`** answers `{"speakers": "/api/v1/music/speakers", "playlists": "/api/v1/music/playlists"}`
+  without calling HA. The integration probes it to tell an add-on with music from an older one.
+
 ## Sessions
 
 The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §3 (D40–D43); the code is
 `addon/server/src/ha_fitness_server/sessions.py`.
 
-- **The plan.** A start freezes the plan: the program's name and timing, its stations with their names, and the
-  participants with their names. A later program edit or a removed person changes no running session and no history.
+- **The plan.** A start freezes the plan: the program's name and timing, its stations with their names, the
+  participants with their names, and the music with the start's speaker. A later program edit or a removed person changes no running session and no history.
   The phases follow from the plan: countdown, then per round work and switch per station, then rest. There is no
   switch after the last interval of the last round (D41), so the session ends with the last work phase.
 - **Deadlines, not counters.** A session stores its phase and the time that phase started. Each next phase starts at
@@ -349,7 +371,7 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 | Method and path | Does |
 | --- | --- |
 | `GET /api/v1/session` | The running or paused session; else the last finished one for 5 minutes after it finished; else `null`. |
-| `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?}` → the session view (201). |
+| `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?, "speaker"?}` → the session view (201). `speaker` (`media_player.<name>`) replaces the program's speaker for this session; a program without music ignores it. |
 | `POST /api/v1/session/{command}` | `pause`, `resume`, `next`, `previous` or `end` → the session view. |
 | `POST /api/v1/session/feeling` | `{"feeling": "too_easy" \| "just_right" \| "too_hard"}` on a completed session within its 5-minute finished view → the session view. It is declared before `{command}`. A later call changes the rating. Any other current view gives 409 `conflict`; an unknown value gives 422 `invalid`. |
 | `GET /api/v1/sessions?limit=` | `{"counting_from", "sessions": [finished views, newest first]}`; `limit` 1–100, default 20. |
@@ -362,7 +384,9 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 - **The view** (`SessionView` in `schemas.py`) has the phase with `ends_at` (UTC with milliseconds, null while paused)
   or `remaining` (while paused), the next phase, each participant's current and next station, `totals`
   (`planned`, `rounds`, `stations`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
-  `server_time`. A finished view has no phase, next phase or stations.
+  `server_time`. A finished view has no phase, next phase or stations. `music` is the plan's
+  `{playlist, playlist_name, speaker, volume, shuffle}`, frozen at the start, or null for a program without music;
+  history keeps it.
 - **The feeling** is stored on the session (a nullable column) and shown in the view, in `GET /api/v1/sessions` and in
   the MCP `list_sessions`. A write raises `revision` and publishes `session`.
 - **The change log** records `session.started`, `session.completed`, `session.ended` and `session.feeling`. Pause,

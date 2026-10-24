@@ -22,6 +22,7 @@ from .ingress import render as render_ingress
 from .library.media import MediaStore
 from .library.service import Library
 from .mcp_tools import build_mcp
+from .music import MusicService
 from .people import People
 from .programs import Programs
 from .push import Hub, Message
@@ -141,6 +142,7 @@ def create_app(
                 engine=engine,
                 library=library,
                 media=media,
+                music=MusicService(ha),
                 people=people,
                 programs=programs,
                 sessions=sessions,

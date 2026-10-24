@@ -22,12 +22,14 @@ from .schemas import (
     NewPerson,
     PeopleView,
     Person,
+    PlaylistOut,
     ProgramDocument,
     ProgramOut,
     ProgramSummary,
     SearchLimit,
     SessionHistory,
     SessionView,
+    SpeakerOut,
     Stats,
     TodayView,
     TrainingDayOut,
@@ -239,6 +241,26 @@ old values.
         """
         with _tool_errors():
             return holder.get().people.set(people, _client(ctx))
+
+    @mcp.tool(annotations=_READ)
+    def list_speakers() -> list[SpeakerOut]:
+        """List Music Assistant's speakers in Home Assistant, sorted by name: {"entity_id", "name", "available"}.
+
+        A program's music.speaker is one of these entity ids. `available` is false while the speaker can't be
+        reached. An empty list means Music Assistant has no players, or isn't installed.
+        """
+        with _tool_errors():
+            return holder.get().music.speakers()
+
+    @mcp.tool(annotations=_READ)
+    def list_playlists(search: str | None = None) -> list[PlaylistOut]:
+        """List the playlists in Music Assistant's library, sorted by name: {"name", "uri"}; `search` filters by name.
+
+        A program's music.playlist is the uri and music.playlist_name the name. An empty list means no playlist
+        matched, or Music Assistant has no speakers.
+        """
+        with _tool_errors():
+            return holder.get().music.playlists(search)
 
     @mcp.tool(annotations=_READ)
     def get_change_log(limit: ChangeLogLimit = 20) -> list[ChangeEntry]:
