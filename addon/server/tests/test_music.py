@@ -7,7 +7,6 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastmcp.exceptions import ToolError
-from ha_fitness_server.music import SPEAKERS_TEMPLATE
 import httpx
 import pytest
 
@@ -20,6 +19,13 @@ SPEAKERS = "/api/v1/music/speakers"
 PLAYLISTS = "/api/v1/music/playlists"
 TEMPLATE_PATH = "/core/api/template"
 LIBRARY_PATH = "/core/api/services/music_assistant/get_library"
+# The speakers template, word for word as checked through the Supervisor's proxy (music spec §4.3).
+SPEAKERS_TEMPLATE = """\
+{%- set ns = namespace(out=[]) -%}
+{%- for e in integration_entities('music_assistant') if e.startswith('media_player.') -%}
+{%- set ns.out = ns.out + [{'entity_id': e, 'name': state_attr(e, 'friendly_name') or e, 'state': states(e), 'entry': config_entry_id(e)}] -%}
+{%- endfor -%}
+{{ ns.out | tojson }}"""
 
 KITCHEN = {
     "entity_id": "media_player.kitchen",
