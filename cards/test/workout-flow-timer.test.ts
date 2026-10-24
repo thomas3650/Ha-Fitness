@@ -1,0 +1,575 @@
+import { getAllByRole, getByRole, queryAllByRole, queryByRole, queryByText } from "@testing-library/dom";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+
+import "../src/index";
+import type { OverlayMode, SessionPhase, SessionState, SessionView } from "../src/overlay";
+import { installFakeAudio } from "./fake-audio";
+
+// The flow element is defined once for the file, so its modules are imported statically; the
+// audio and image modules keep page-wide state, and every test's fakes answer them the same way.
+installFakeAudio("running");
+let objectUrls = 0;
+vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:image-${++objectUrls}`);
+
+/** The properties the overlay controller sets on the flow. */
+interface FlowElement extends HTMLElement {
+  hass?: unknown;
+  state?: SessionState;
+  mode?: OverlayMode;
+  onClose?: () => void;
+  updateComplete: Promise<boolean>;
+}
+
+const thomas = { id: 1, name: "Thomas" };
+const maria = { id: 2, name: "Maria" };
+
+type Message = { type: string } & Record<string, unknown>;
+
+/** A deferred answer to one `ha_fitness/session/command`. */
+interface Pending {
+  message: Message;
+  resolve(view: SessionView): void;
+  reject(error: unknown): void;
+}
+
+/** A fake `hass` with `callWS` for §4's commands; each session command waits for the test. */
+function fakeHass(language = "da", people = [thomas, maria]) {
+  const commands: Pending[] = [];
+  const callWS = vi.fn((message: Message): Promise<unknown> => {
+    if (message.type === "ha_fitness/people") return Promise.resolve(people);
+    if (message.type === "ha_fitness/programs") return Promise.resolve([]);
+    if (message.type === "ha_fitness/session/command") {
+      return new Promise((resolve, reject) => commands.push({ message, resolve, reject }));
+    }
+    return Promise.reject({ code: "unknown_command", message: "Unknown command." });
+  });
+  // Every exercise has a GIF and a thumbnail.
+  const fetchWithAuth = vi.fn(async () => new Response(new Blob(["GIF89a"]), { status: 200 }));
+  return { hass: { locale: { language }, callWS, fetchWithAuth }, callWS, commands };
+}
+
+type Fake = ReturnType<typeof fakeHass>;
+
+const push_up = { number: 1, exercise_id: "0001", name: "Push-up" };
+const squat = { number: 2, exercise_id: "0002", name: "Squat" };
+const planke = { number: 3, exercise_id: "custom-7", name: "Planke" };
+
+function phase(overrides: Partial<SessionPhase> = {}): SessionPhase {
+  return {
+    index: 3,
+    kind: "work",
+    round: 2,
+    interval: 1,
+    duration: 45,
+    ends_at: "2026-10-24T08:00:45.000Z",
+    remaining: null,
+    ...overrides,
+  };
+}
+
+/** A running two-person session in round 2's first work phase, as the add-on sends it at 08:00:00. */
+function view(overrides: Partial<SessionView> = {}): SessionView {
+  return {
+    id: 7,
+    revision: 10,
+    status: "running",
+    counted: false,
+    program_name: "Onsdag",
+    training_day_id: 12,
+    participants: [thomas, maria],
+    phase: phase(),
+    next_phase: { kind: "switch", duration: 15 },
+    stations: [
+      { current: push_up, next: squat },
+      { current: squat, next: planke },
+    ],
+    totals: { planned: 1740, rounds: 5 },
+    started_at: "2026-10-24T07:54:00.000Z",
+    ended_at: null,
+    rounds_completed: 1,
+    time_trained: 360,
+    server_time: "2026-10-24T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function solo(overrides: Partial<SessionView> = {}): SessionView {
+  return view({ participants: [thomas], stations: [{ current: push_up, next: squat }], ...overrides });
+}
+
+function paused(overrides: Partial<SessionView> = {}): SessionView {
+  return view({ status: "paused", phase: phase({ ends_at: null, remaining: 30 }), ...overrides });
+}
+
+function finished(counted: boolean, overrides: Partial<SessionView> = {}): SessionView {
+  return view({
+    revision: 40,
+    status: counted ? "completed" : "ended",
+    counted,
+    phase: null,
+    next_phase: null,
+    stations: null,
+    ended_at: "2026-10-24T08:25:00.000Z",
+    rounds_completed: counted ? 5 : 0,
+    time_trained: counted ? 1530 : 20,
+    ...overrides,
+  });
+}
+
+/** Put the flow on the page the way the overlay controller does, resuming the session `session`. */
+async function mount(fake: Fake, session: SessionView | null, available = true) {
+  const flow = document.createElement("ha-fitness-workout-flow") as FlowElement;
+  document.body.append(flow);
+  const onClose = vi.fn();
+  flow.hass = fake.hass;
+  flow.state = { available, session };
+  flow.mode = { kind: "resume" };
+  flow.onClose = onClose;
+  await settle(flow);
+  return { flow, onClose };
+}
+
+async function settle(flow: FlowElement): Promise<void> {
+  await vi.advanceTimersByTimeAsync(0);
+  await flow.updateComplete;
+}
+
+async function wait(flow: FlowElement, ms: number): Promise<void> {
+  await vi.advanceTimersByTimeAsync(ms);
+  await flow.updateComplete;
+}
+
+async function tap(flow: FlowElement, element: HTMLElement): Promise<void> {
+  element.click();
+  await settle(flow);
+}
+
+async function push(flow: FlowElement, session: SessionView | null, available = true): Promise<void> {
+  flow.state = { available, session };
+  await settle(flow);
+}
+
+function root(flow: FlowElement): HTMLElement {
+  return flow.shadowRoot as unknown as HTMLElement;
+}
+
+function text(element: HTMLElement): string {
+  return (element.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+function button(flow: FlowElement, name: string | RegExp): HTMLButtonElement {
+  return getByRole(root(flow), "button", { name }) as HTMLButtonElement;
+}
+
+function ring(flow: FlowElement): HTMLElement {
+  return getByRole(root(flow), "progressbar");
+}
+
+/** The ring's state: its name, its values, and the texts in it. */
+function ringState(flow: FlowElement) {
+  const element = ring(flow);
+  return {
+    name: element.getAttribute("aria-label"),
+    min: element.getAttribute("aria-valuemin"),
+    max: element.getAttribute("aria-valuemax"),
+    now: element.getAttribute("aria-valuenow"),
+    text: text(element),
+  };
+}
+
+function sent(fake: Fake): unknown[] {
+  return fake.commands.map((command) => command.message.command);
+}
+
+function hasText(flow: FlowElement, value: string): boolean {
+  return queryByText(root(flow), value) !== null;
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-24T08:00:00.000Z"));
+});
+
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.useRealTimers();
+});
+
+test("timer text and ring from a view with a clock offset", async () => {
+  // The tablet's clock is 10 s behind the add-on's.
+  vi.setSystemTime(new Date("2026-10-24T07:59:50.000Z"));
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view({ server_time: "2026-10-24T08:00:15.000Z" }));
+
+  // 08:00:45 is 30 s after the add-on's 08:00:15; the local clock doesn't matter.
+  expect(ringState(flow)).toEqual({
+    name: "ARBEJD",
+    min: "0",
+    max: "45",
+    now: "30",
+    text: "ARBEJD 30 så 15 s skift",
+  });
+  await wait(flow, 4_000);
+  expect(ringState(flow).now).toBe("26");
+
+  // A newer message brings a new stamp, and with it a new offset: now the clocks agree.
+  vi.setSystemTime(new Date("2026-10-24T08:00:20.000Z"));
+  await push(flow, view({ revision: 11, server_time: "2026-10-24T08:00:20.000Z" }));
+  expect(ringState(flow).now).toBe("25");
+});
+
+test("the offset updates on every message, even one that isn't applied", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view());
+  expect(ringState(flow).now).toBe("45");
+
+  // The same revision again, stamped 5 s later by the add-on's clock while no local time passed.
+  await push(flow, view({ server_time: "2026-10-24T08:00:05.000Z" }));
+  expect(ringState(flow).now).toBe("40");
+});
+
+test("seconds rounded up", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view());
+
+  // 44.75 s left shows 45.
+  await wait(flow, 250);
+  expect(ringState(flow).now).toBe("45");
+  await wait(flow, 750);
+  expect(ringState(flow).now).toBe("44");
+  // During the last second, 1 shows, even with 0.25 s left.
+  await wait(flow, 43_750);
+  expect(ringState(flow).now).toBe("1");
+  expect(ringState(flow).text).toBe("ARBEJD 1 så 15 s skift");
+});
+
+test("local zero shows next phase word", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view());
+
+  await wait(flow, 45_000);
+  // No message yet: the switch shows from `next_phase`, at its full length.
+  expect(ringState(flow)).toEqual({ name: "SKIFT", min: "0", max: "15", now: "15", text: "SKIFT 15" });
+
+  // The message that follows confirms it.
+  await push(
+    flow,
+    view({
+      revision: 11,
+      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: "2026-10-24T08:01:00.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      stations: [
+        { current: squat, next: squat },
+        { current: planke, next: planke },
+      ],
+      server_time: "2026-10-24T08:00:45.000Z",
+    }),
+  );
+  expect(ringState(flow)).toMatchObject({ name: "SKIFT", now: "15", text: "SKIFT 15 så 45 s arbejde" });
+
+  // The last work phase has no next phase: it holds at 0 until the finish arrives.
+  await push(
+    flow,
+    view({
+      revision: 12,
+      phase: phase({ index: 9, round: 5, interval: 3, ends_at: "2026-10-24T08:01:30.000Z" }),
+      next_phase: null,
+      server_time: "2026-10-24T08:00:45.000Z",
+    }),
+  );
+  await wait(flow, 46_000);
+  expect(ringState(flow)).toMatchObject({ name: "ARBEJD", now: "0", text: "ARBEJD 0" });
+});
+
+test("older revision ignored; new session applied", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view({ revision: 10 }));
+  expect(hasText(flow, "Runde 2/5")).toBe(true);
+
+  // A command result and a push can arrive in either order: revision 9 is older.
+  await push(flow, view({ revision: 9, phase: phase({ round: 1 }) }));
+  expect(hasText(flow, "Runde 2/5")).toBe(true);
+  // The same revision again changes nothing either.
+  await push(flow, view({ revision: 10, phase: phase({ round: 3 }) }));
+  expect(hasText(flow, "Runde 2/5")).toBe(true);
+
+  // A different session applies whatever its revision.
+  await push(flow, view({ id: 8, revision: 1, phase: phase({ round: 1 }) }));
+  expect(hasText(flow, "Runde 1/5")).toBe(true);
+});
+
+test("pause, resume and ring tap", async () => {
+  const fake = fakeHass("en");
+  const { flow } = await mount(fake, view());
+
+  await tap(flow, button(flow, "Pause"));
+  expect(sent(fake)).toEqual(["pause"]);
+  fake.commands[0].resolve(paused({ revision: 11 }));
+  await settle(flow);
+
+  // Paused: the ring stops and says so; the play button resumes.
+  expect(ringState(flow)).toMatchObject({ name: "PAUSED", now: "30", text: "PAUSED 30 then 15 s switch" });
+  await wait(flow, 5_000);
+  expect(ringState(flow).now).toBe("30");
+  // A tap on the paused ring doesn't send another pause.
+  await tap(flow, ring(flow));
+  expect(sent(fake)).toEqual(["pause"]);
+  await tap(flow, button(flow, "Resume"));
+  expect(sent(fake)).toEqual(["pause", "resume"]);
+  fake.commands[1].resolve(
+    view({ revision: 12, phase: phase({ ends_at: "2026-10-24T08:00:35.000Z" }), server_time: "2026-10-24T08:00:05.000Z" }),
+  );
+  await settle(flow);
+  expect(ringState(flow)).toMatchObject({ name: "WORK", now: "30" });
+
+  // Tapping the running ring pauses.
+  await tap(flow, ring(flow));
+  expect(sent(fake)).toEqual(["pause", "resume", "pause"]);
+});
+
+test("previous and next send commands", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view());
+
+  await tap(flow, button(flow, "Forrige"));
+  await tap(flow, button(flow, "Næste"));
+  expect(fake.commands.map((command) => command.message)).toEqual([
+    { type: "ha_fitness/session/command", command: "previous" },
+    { type: "ha_fitness/session/command", command: "next" },
+  ]);
+
+  // The result moves the flow, like any newer view.
+  fake.commands[1].resolve(
+    view({
+      revision: 11,
+      phase: phase({ index: 5, interval: 2, ends_at: "2026-10-24T08:00:45.000Z" }),
+      stations: [
+        { current: squat, next: planke },
+        { current: planke, next: push_up },
+      ],
+    }),
+  );
+  await settle(flow);
+  expect(hasText(flow, "Interval 2")).toBe(true);
+});
+
+test("Slut two taps with guard", async () => {
+  const fake = fakeHass("da");
+  const { flow, onClose } = await mount(fake, view());
+
+  // The first tap asks.
+  await tap(flow, button(flow, "Slut"));
+  expect(hasText(flow, "Afslut træningen?")).toBe(true);
+  expect(queryByRole(root(flow), "button", { name: "Slut" })).toBeNull();
+
+  // A tap on Ja right away (a wake tap, a double tap) does nothing.
+  await tap(flow, button(flow, "Ja"));
+  expect(sent(fake)).toEqual([]);
+
+  // Nej puts Slut back.
+  await tap(flow, button(flow, "Nej"));
+  expect(queryByText(root(flow), "Afslut træningen?")).toBeNull();
+  await tap(flow, button(flow, "Slut"));
+  await wait(flow, 499);
+  await tap(flow, button(flow, "Ja"));
+  expect(sent(fake)).toEqual([]);
+  await wait(flow, 1);
+  await tap(flow, button(flow, "Ja"));
+  expect(sent(fake)).toEqual(["end"]);
+
+  // The ended view shows done; the overlay stays open.
+  fake.commands[0].resolve(finished(false, { revision: 11 }));
+  await settle(flow);
+  expect(hasText(flow, "Træningen blev afsluttet")).toBe(true);
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("an unanswered Slut question goes after 10 s", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view());
+
+  await tap(flow, button(flow, "Slut"));
+  await wait(flow, 9_999);
+  expect(hasText(flow, "Afslut træningen?")).toBe(true);
+  await wait(flow, 1);
+  expect(queryByText(root(flow), "Afslut træningen?")).toBeNull();
+  expect(button(flow, "Slut")).toBeTruthy();
+  expect(sent(fake)).toEqual([]);
+});
+
+test("one-person and two-person layouts in work and switch", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo());
+
+  // One person: the current station big, with its GIF; Næste beside it.
+  const now = getByRole(root(flow), "region", { name: "Thomas" });
+  expect(text(now)).toBe("Station 1 Push-up");
+  // The image cache is page-wide, so an earlier test may have fetched it: check what shows.
+  expect(getByRole(now, "img", { name: "Push-up" }).getAttribute("src")).toMatch(/^blob:image-/);
+  const next = getByRole(root(flow), "region", { name: "Næste" });
+  expect(text(next)).toBe("Næste Station 2 Squat");
+  expect(getByRole(next, "img", { name: "Squat" }).getAttribute("src")).toMatch(/^blob:image-/);
+
+  // During a switch, the big one is the station being moved to.
+  await push(
+    flow,
+    solo({
+      revision: 11,
+      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: "2026-10-24T08:00:15.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      stations: [{ current: squat, next: squat }],
+    }),
+  );
+  expect(text(getByRole(root(flow), "region", { name: "Thomas" }))).toBe("Station 2 Squat");
+  expect(ringState(flow).name).toBe("SKIFT");
+
+  // On the last work phase there is no next station.
+  await push(flow, solo({ revision: 12, next_phase: null, stations: [{ current: planke, next: null }] }));
+  expect(queryByRole(root(flow), "region", { name: "Næste" })).toBeNull();
+  document.body.replaceChildren();
+
+  // Two people: a panel each, in the person's colour, with the next station.
+  const two = await mount(fakeHass("da"), view());
+  const panels = getAllByRole(root(two.flow), "region");
+  expect(panels.map((panel) => panel.getAttribute("aria-label"))).toEqual(["Thomas", "Maria"]);
+  expect(panels.map(text)).toEqual([
+    "Thomas Station 1 Push-up Næste: station 2 · Squat",
+    "Maria Station 2 Squat Næste: station 3 · Planke",
+  ]);
+  expect(panels.map((panel) => panel.style.getPropertyValue("--person-color").trim().toUpperCase())).toEqual([
+    "#B18CFF",
+    "#3DD6C6",
+  ]);
+  expect(getByRole(panels[1], "img", { name: "Squat" })).toBeTruthy();
+  // The ring is shared.
+  expect(queryAllByRole(root(two.flow), "progressbar")).toHaveLength(1);
+
+  await push(
+    two.flow,
+    view({
+      revision: 11,
+      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: "2026-10-24T08:00:15.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      stations: [
+        { current: squat, next: squat },
+        { current: planke, next: planke },
+      ],
+    }),
+  );
+  expect(getAllByRole(root(two.flow), "region").map(text)).toEqual([
+    "Thomas Station 2 Squat Næste: station 2 · Squat",
+    "Maria Station 3 Planke Næste: station 3 · Planke",
+  ]);
+});
+
+test("elapsed from time_trained and server_time", async () => {
+  const fake = fakeHass("da");
+  // 6:00 trained as of the add-on's 08:00:00; the program plans 29:00.
+  const { flow } = await mount(fake, view());
+  expect(hasText(flow, "6:00 / 29:00")).toBe(true);
+  expect(hasText(flow, "Runde 2/5")).toBe(true);
+  expect(hasText(flow, "Interval 1")).toBe(true);
+
+  // Running past the countdown: the time since server_time counts.
+  await wait(flow, 12_000);
+  expect(hasText(flow, "6:12 / 29:00")).toBe(true);
+
+  // Paused: the view's time_trained only.
+  await push(flow, paused({ revision: 11, time_trained: 372, server_time: "2026-10-24T08:00:12.000Z" }));
+  await wait(flow, 30_000);
+  expect(hasText(flow, "6:12 / 29:00")).toBe(true);
+});
+
+test("unreachable keeps counting, holds at zero, Luk after 10 s", async () => {
+  const fake = fakeHass("da");
+  const last = view({ phase: phase({ ends_at: "2026-10-24T08:00:20.000Z" }) });
+  const { flow, onClose } = await mount(fake, last);
+  expect(queryByText(root(flow), "HA Fitness kan ikke nås")).toBeNull();
+
+  // The controller keeps the last view when the subscription is refused: the same stamp again.
+  await wait(flow, 2_000);
+  await push(flow, last, false);
+  expect(hasText(flow, "HA Fitness kan ikke nås")).toBe(true);
+  expect(ringState(flow).now).toBe("18");
+  await wait(flow, 5_000);
+  // A second unreachable message doesn't start the 10 s over.
+  await push(flow, last, false);
+  expect(ringState(flow).now).toBe("13");
+  expect(queryByRole(root(flow), "button", { name: "Luk" })).toBeNull();
+
+  await wait(flow, 4_999);
+  expect(queryByRole(root(flow), "button", { name: "Luk" })).toBeNull();
+  await wait(flow, 1);
+  await tap(flow, button(flow, "Luk"));
+  expect(onClose).toHaveBeenCalledTimes(1);
+
+  // At zero it holds: no next phase while nobody can confirm it.
+  await wait(flow, 10_000);
+  expect(ringState(flow)).toMatchObject({ name: "ARBEJD", now: "0" });
+
+  // Back again: the note and Luk go, and the next message corrects everything.
+  await push(
+    flow,
+    view({
+      revision: 12,
+      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: "2026-10-24T08:00:30.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      server_time: "2026-10-24T08:00:22.000Z",
+    }),
+  );
+  expect(queryByText(root(flow), "HA Fitness kan ikke nås")).toBeNull();
+  expect(queryByRole(root(flow), "button", { name: "Luk" })).toBeNull();
+  expect(ringState(flow)).toMatchObject({ name: "SKIFT", now: "8" });
+});
+
+test("done counted and not counted; auto-close 60 s", async () => {
+  const fake = fakeHass("da");
+  const { flow, onClose } = await mount(fake, view());
+
+  await push(flow, finished(true));
+  expect(text(getByRole(root(flow), "heading"))).toBe("Godt gået!");
+  expect(hasText(flow, "25:30")).toBe(true);
+  expect(hasText(flow, "5/5 runder")).toBe(true);
+  expect(getAllByRole(getByRole(root(flow), "list", { name: "Hvem trænede" }), "listitem").map(text)).toEqual([
+    "Thomas",
+    "Maria",
+  ]);
+  expect(queryByRole(root(flow), "progressbar")).toBeNull();
+
+  // It closes by itself after 60 s; a later push of the same view doesn't start that over.
+  await wait(flow, 30_000);
+  await push(flow, finished(true));
+  await wait(flow, 29_999);
+  expect(onClose).not.toHaveBeenCalled();
+  await wait(flow, 1);
+  expect(onClose).toHaveBeenCalledTimes(1);
+  document.body.replaceChildren();
+
+  // Not counted: no counting shown, and Luk closes.
+  const ended = await mount(fakeHass("da"), finished(false));
+  expect(text(getByRole(root(ended.flow), "heading"))).toBe("Træningen blev afsluttet");
+  expect(queryByText(root(ended.flow), /runder/)).toBeNull();
+  expect(queryByRole(root(ended.flow), "list")).toBeNull();
+  await tap(ended.flow, button(ended.flow, "Luk"));
+  expect(ended.onClose).toHaveBeenCalledTimes(1);
+  await wait(ended.flow, 60_000);
+  expect(ended.onClose).toHaveBeenCalledTimes(1);
+});
+
+test("the timer in English", async () => {
+  const fake = fakeHass("en");
+  const { flow } = await mount(fake, view());
+  expect(ringState(flow).text).toBe("WORK 45 then 15 s switch");
+  expect(hasText(flow, "Round 2/5")).toBe(true);
+  expect(button(flow, "Previous")).toBeTruthy();
+  expect(button(flow, "Next")).toBeTruthy();
+  expect(getAllByRole(root(flow), "region").map(text)[0]).toBe("Thomas Station 1 Push-up Next: station 2 · Squat");
+  await tap(flow, button(flow, "End"));
+  expect(hasText(flow, "End the workout?")).toBe(true);
+  expect(button(flow, "Yes")).toBeTruthy();
+  expect(button(flow, "No")).toBeTruthy();
+
+  await push(flow, finished(true));
+  expect(text(getByRole(root(flow), "heading"))).toBe("Well done!");
+  expect(hasText(flow, "5/5 rounds")).toBe(true);
+});

@@ -57,7 +57,28 @@
     },
     "done": {
       "counted": "Well done!",
-      "ended": "The workout was ended"
+      "ended": "The workout was ended",
+      "time": "Time",
+      "rounds": "{done}/{rounds} rounds",
+      "who": "Who trained"
+    },
+    "unreachable": "HA Fitness can't be reached",
+    "round": "Round {round}/{rounds}",
+    "interval": "Interval {interval}",
+    "elapsed": "{elapsed} / {planned}",
+    "end": "End",
+    "end_confirm": "End the workout?",
+    "yes": "Yes",
+    "no": "No",
+    "previous": "Previous",
+    "next": "Next",
+    "next_label": "Next",
+    "station": "Station {number}",
+    "next_station": "Next: station {number} · {exercise}",
+    "then": {
+      "work": "then {seconds} s work",
+      "switch": "then {seconds} s switch",
+      "rest": "then {seconds} s rest"
     },
     "error": {
       "already_running": "A workout is already running.",

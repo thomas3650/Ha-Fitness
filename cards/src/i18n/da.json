@@ -57,7 +57,28 @@
     },
     "done": {
       "counted": "Godt gået!",
-      "ended": "Træningen blev afsluttet"
+      "ended": "Træningen blev afsluttet",
+      "time": "Tid",
+      "rounds": "{done}/{rounds} runder",
+      "who": "Hvem trænede"
+    },
+    "unreachable": "HA Fitness kan ikke nås",
+    "round": "Runde {round}/{rounds}",
+    "interval": "Interval {interval}",
+    "elapsed": "{elapsed} / {planned}",
+    "end": "Slut",
+    "end_confirm": "Afslut træningen?",
+    "yes": "Ja",
+    "no": "Nej",
+    "previous": "Forrige",
+    "next": "Næste",
+    "next_label": "Næste",
+    "station": "Station {number}",
+    "next_station": "Næste: station {number} · {exercise}",
+    "then": {
+      "work": "så {seconds} s arbejde",
+      "switch": "så {seconds} s skift",
+      "rest": "så {seconds} s pause"
     },
     "error": {
       "already_running": "En træning er allerede i gang.",

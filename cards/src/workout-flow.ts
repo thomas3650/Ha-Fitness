@@ -1,10 +1,11 @@
-import { LitElement, type PropertyValues, css, html, nothing } from "lit";
+import { LitElement, type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 
 import { unlockAudio } from "./audio";
 import { type Vars, localize } from "./i18n";
-import { type ImageHass, imageUrl } from "./images";
+import { type ImageHass, type ImageKind, imageUrl } from "./images";
 import { type LanguageHass, cardLanguage } from "./language";
-import type { OverlayMode, SessionState, SessionView } from "./overlay";
+import type { OverlayMode, PhaseKind, SessionState, SessionStation, SessionView } from "./overlay";
+import { ring } from "./ring";
 
 /** An active program, as `ha_fitness/programs` returns it (spec §4). */
 interface Program {
@@ -44,6 +45,50 @@ const TAG = "ha-fitness-workout-flow";
 const PERSON_COLORS = ["#B18CFF", "#3DD6C6"];
 const IDLE_MS = 60_000;
 const TICK_MS = 250;
+/** Luk shows after this long unreachable, so a touch-only kiosk is never trapped (spec §5.3). */
+const UNREACHABLE_MS = 10_000;
+/** Slut's Ja ignores taps until it has shown this long, so a wake tap can't end a workout. */
+const ARM_MS = 500;
+/** An unanswered "Afslut træningen?" goes after this long. */
+const CONFIRM_MS = 10_000;
+/** The done step closes by itself after this long. */
+const DONE_MS = 60_000;
+/** The ring's colours: orange for work, blue for the rest (design §3.4). Never used for text. */
+const RING_COLORS: Record<PhaseKind, string> = {
+  countdown: "#4DA8FF",
+  work: "#FF8A3D",
+  switch: "#4DA8FF",
+  rest: "#4DA8FF",
+};
+
+/** What the timer shows of a phase at this moment (spec §5.3). */
+interface Countdown {
+  /** The phase kind whose word shows: the next one at local zero. */
+  kind: PhaseKind;
+  /** The length of the phase shown, in seconds. */
+  duration: number;
+  /** The seconds left, rounded up. */
+  seconds: number;
+  /** The share of the phase left, 0..1. */
+  fraction: number;
+  /** True at local zero, before the message of the next phase has come. */
+  ahead: boolean;
+}
+
+/** `seconds` as m:ss, or h:mm:ss from an hour. */
+function clock(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const secs = String(whole % 60).padStart(2, "0");
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${secs}` : `${minutes}:${secs}`;
+}
+
+/** Slut's question. */
+interface EndQuestion {
+  armed: boolean;
+  timers: ReturnType<typeof setTimeout>[];
+}
 /** The command errors with a text of their own; any other gets the general text. */
 const KNOWN_ERRORS = new Set(["not_found", "invalid", "unavailable"]);
 
@@ -70,7 +115,7 @@ export class WorkoutFlow extends LitElement {
     programs: { state: true },
     people: { state: true },
     selected: { state: true },
-    thumbnails: { state: true },
+    images: { state: true },
     busy: { state: true },
     error: { state: true },
     result: { state: true },
@@ -85,8 +130,8 @@ export class WorkoutFlow extends LitElement {
   declare people?: Person[] | null;
   /** The chosen people's ids. */
   declare selected: Set<number>;
-  /** The object URL of each exercise's thumbnail, or null when it has none. */
-  declare thumbnails: Map<string, string | null>;
+  /** The object URL of each exercise's image by `kind/id`, or null when it has none. */
+  declare images: Map<string, string | null>;
   declare busy: boolean;
   declare error?: string;
   /** The newest view a command returned. */
@@ -102,8 +147,17 @@ export class WorkoutFlow extends LitElement {
   private readonly annulled = new Set<number>();
   private idleTimer?: ReturnType<typeof setTimeout>;
   private tickTimer?: ReturnType<typeof setInterval>;
-  /** `server_time − Date.now()` of the newest view, in ms. */
+  /** `server_time − Date.now()` of the newest message, in ms. */
   private offset = 0;
+  /** The `server_time` the offset was taken from. */
+  private stamp?: string;
+  /** When the flow last heard the add-on was unreachable (`Date.now()`), while it still is. */
+  private unreachableSince?: number;
+  private unreachableTimer?: ReturnType<typeof setTimeout>;
+  private endQuestion?: EndQuestion;
+  /** The session whose done step the 60 s close is armed for. */
+  private doneFor?: number;
+  private doneTimer?: ReturnType<typeof setTimeout>;
   /** Set once this flow has asked to close; it never asks twice. */
   private closed = false;
   private readonly onActivity = (): void => this.armIdle();
@@ -111,7 +165,7 @@ export class WorkoutFlow extends LitElement {
   constructor() {
     super();
     this.selected = new Set();
-    this.thumbnails = new Map();
+    this.images = new Map();
     this.busy = false;
   }
 
@@ -228,6 +282,131 @@ export class WorkoutFlow extends LitElement {
       color: var(--error-color);
       margin: 16px 0;
     }
+    .note {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+      margin: 16px 0;
+      color: var(--secondary-text-color);
+    }
+    header.top {
+      display: flex;
+      gap: 32px;
+      align-items: center;
+      font-size: 1.5rem;
+    }
+    header.top .elapsed {
+      margin-left: auto;
+      font-variant-numeric: tabular-nums;
+    }
+    header.top .end {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    button.slot {
+      min-width: 120px;
+    }
+    .solo,
+    .duo {
+      display: flex;
+      gap: 32px;
+      align-items: center;
+      justify-content: center;
+      margin: 24px 0;
+    }
+    .now,
+    .panel,
+    .next {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      text-align: center;
+    }
+    .now .exercise {
+      font-size: 2rem;
+      font-weight: 500;
+    }
+    .panel {
+      flex: 1;
+      padding: 16px;
+      border: 4px solid var(--person-color);
+      border-radius: 16px;
+    }
+    .panel .who {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .panel .name,
+    .panel .exercise {
+      font-weight: 500;
+    }
+    .next .label {
+      color: var(--secondary-text-color);
+      font-weight: 500;
+    }
+    .gif {
+      width: 280px;
+      height: 280px;
+      border-radius: 16px;
+      object-fit: cover;
+      background: var(--secondary-background-color, var(--divider-color));
+    }
+    .duo .gif {
+      width: 200px;
+      height: 200px;
+    }
+    .ring {
+      position: relative;
+      flex: none;
+      width: 320px;
+      height: 320px;
+      cursor: pointer;
+    }
+    .ring svg {
+      width: 100%;
+      height: 100%;
+    }
+    .ring .track {
+      stroke: var(--divider-color);
+    }
+    .ring .left {
+      stroke: var(--ring-color);
+    }
+    .ring .middle {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .ring .word {
+      font-size: 1.5rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+    }
+    .ring .seconds {
+      font-size: 6rem;
+      font-weight: 500;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .ring .then {
+      color: var(--secondary-text-color);
+    }
+    .controls {
+      display: flex;
+      gap: 32px;
+      align-items: center;
+      justify-content: center;
+    }
+    .big {
+      font-size: 2rem;
+      font-weight: 500;
+    }
   `;
 
   override connectedCallback(): void {
@@ -242,10 +421,16 @@ export class WorkoutFlow extends LitElement {
     this.removeEventListener("click", this.onActivity);
     this.stopIdle();
     this.stopTick();
+    this.endAsk(false);
+    clearTimeout(this.unreachableTimer);
+    clearTimeout(this.doneTimer);
   }
 
   protected override willUpdate(changed: PropertyValues<this>): void {
-    if (changed.has("state")) this.take(this.state?.session ?? undefined);
+    if (changed.has("state")) {
+      this.watchReach(this.state?.available !== false);
+      this.take(this.state?.session ?? undefined);
+    }
     if (changed.has("result")) this.take(this.result);
     // A new details mode on the same flow (a Start while a finished view shows) starts over.
     if (changed.has("mode")) this.leftDetails = isActive(this.newest);
@@ -260,9 +445,45 @@ export class WorkoutFlow extends LitElement {
     } else {
       this.stopIdle();
     }
-    if (step === "ready" && this.newest?.status === "running") this.startTick();
+    const counting = step === "ready" || step === "timer";
+    if (counting && this.newest?.status === "running") this.startTick();
     else this.stopTick();
+    if (step !== "timer") this.endAsk(false);
+    if (this.hass && step === "timer") this.loadStationImages(this.hass, this.newest!);
+    this.armDone(step);
     if (step === "done" && this.newest && this.annulled.has(this.newest.id)) this.close();
+  }
+
+  /** Arm the done step's 60 s close once per session; leaving done disarms it. */
+  private armDone(step: Step | undefined): void {
+    const view = this.newest;
+    if (step !== "done" || !view) {
+      clearTimeout(this.doneTimer);
+      this.doneTimer = undefined;
+      this.doneFor = undefined;
+      return;
+    }
+    if (this.doneFor === view.id) return;
+    clearTimeout(this.doneTimer);
+    this.doneFor = view.id;
+    this.doneTimer = setTimeout(() => this.close(), DONE_MS);
+  }
+
+  /** Note when the add-on became unreachable; Luk shows 10 s after that, until it is back. */
+  private watchReach(available: boolean): void {
+    if (available) {
+      clearTimeout(this.unreachableTimer);
+      this.unreachableTimer = undefined;
+      this.unreachableSince = undefined;
+      return;
+    }
+    if (this.unreachableSince !== undefined) return;
+    this.unreachableSince = Date.now();
+    this.unreachableTimer = setTimeout(() => this.requestUpdate(), UNREACHABLE_MS);
+  }
+
+  private reachable(): boolean {
+    return this.state?.available !== false;
   }
 
   /** Ask the controller to close the overlay: once, and only while this flow is on the page. */
@@ -275,12 +496,17 @@ export class WorkoutFlow extends LitElement {
   /** Keep the newer of the flow's view and `view`: a higher revision, or another session. */
   private take(view: SessionView | undefined): void {
     if (!view) return;
+    // Every message's stamp corrects the clock, applied or not. A stamp seen before (the
+    // controller repeats the last view while refused) is old, so it would set the clock back.
+    if (view.server_time !== this.stamp) {
+      this.stamp = view.server_time;
+      this.offset = Date.parse(view.server_time) - Date.now();
+    }
     const newest = this.newest;
     if (newest && newest.id === view.id && newest.revision >= view.revision) return;
     // An alert belongs to the session it came from.
     if (newest && newest.id !== view.id) this.error = undefined;
     this.newest = view;
-    this.offset = Date.parse(view.server_time) - Date.now();
     if (isActive(view)) this.leftDetails = true;
   }
 
@@ -329,10 +555,25 @@ export class WorkoutFlow extends LitElement {
   }
 
   private loadThumbnail(hass: Hass, exerciseId: string): void {
-    if (this.thumbnails.has(exerciseId)) return;
-    void imageUrl(hass, exerciseId, "thumbnail").then((url) => {
-      this.thumbnails = new Map(this.thumbnails).set(exerciseId, url);
+    this.loadImage(hass, exerciseId, "thumbnail");
+  }
+
+  private loadImage(hass: Hass, exerciseId: string, kind: ImageKind): void {
+    const key = `${kind}/${exerciseId}`;
+    if (this.images.has(key)) return;
+    // Mark it as asked for, so each update doesn't ask again.
+    this.images.set(key, null);
+    void imageUrl(hass, exerciseId, kind).then((url) => {
+      if (url) this.images = new Map(this.images).set(key, url);
     });
+  }
+
+  /** The GIFs of the stations worked at, and with one person, the next station's thumbnail. */
+  private loadStationImages(hass: Hass, view: SessionView): void {
+    const stations = view.stations ?? [];
+    for (const station of stations) this.loadImage(hass, station.current.exercise_id, "gif");
+    const next = stations.length === 1 ? stations[0].next : null;
+    if (next) this.loadImage(hass, next.exercise_id, "thumbnail");
   }
 
   /**
@@ -459,13 +700,86 @@ export class WorkoutFlow extends LitElement {
     void this.command("end");
   }
 
-  /** The seconds left of the view's phase, rounded up, from the local clock corrected to the add-on's. */
-  private secondsLeft(view: SessionView): number {
+  /** The add-on's time now, from the local clock and the newest message's offset. */
+  private now(): number {
+    return Date.now() + this.offset;
+  }
+
+  /**
+   * The timing core (spec §5.3): the view's phase counted down locally. At local zero it shows the
+   * next phase from `next_phase` at its full length, until the message that confirms it. While
+   * unreachable, or with no next phase, it holds at zero instead.
+   */
+  private countdown(view: SessionView): Countdown {
     const phase = view.phase;
-    if (!phase) return 0;
-    if (phase.ends_at === null) return Math.ceil(phase.remaining ?? phase.duration);
-    const left = (Date.parse(phase.ends_at) - (Date.now() + this.offset)) / 1000;
-    return Math.max(0, Math.ceil(left));
+    if (!phase) return { kind: "work", duration: 0, seconds: 0, fraction: 0, ahead: false };
+    const leftMs =
+      phase.ends_at === null
+        ? (phase.remaining ?? phase.duration) * 1000
+        : Date.parse(phase.ends_at) - this.now();
+    const next = view.next_phase;
+    if (leftMs <= 0 && view.status === "running" && next && this.reachable()) {
+      return { kind: next.kind, duration: next.duration, seconds: next.duration, fraction: 1, ahead: true };
+    }
+    const left = Math.max(0, leftMs);
+    return {
+      kind: phase.kind,
+      duration: phase.duration,
+      seconds: Math.ceil(left / 1000),
+      fraction: phase.duration > 0 ? left / (phase.duration * 1000) : 0,
+      ahead: false,
+    };
+  }
+
+  /** The active seconds: `time_trained`, plus the time since `server_time` while running past the countdown. */
+  private elapsed(view: SessionView): number {
+    const since =
+      view.status === "running" && view.phase && view.phase.kind !== "countdown"
+        ? Math.max(0, (this.now() - Date.parse(view.server_time)) / 1000)
+        : 0;
+    return view.time_trained + since;
+  }
+
+  /** Slut's first tap asks; Ja counts only after 0.5 s, and the question goes after 10 s. */
+  private askEnd(): void {
+    this.endAsk(false);
+    const question: EndQuestion = { armed: false, timers: [] };
+    question.timers.push(
+      setTimeout(() => {
+        question.armed = true;
+      }, ARM_MS),
+      setTimeout(() => this.endAsk(), CONFIRM_MS),
+    );
+    this.endQuestion = question;
+    this.requestUpdate();
+  }
+
+  /** Drop Slut's question; `redraw` false when called from an update. */
+  private endAsk(redraw = true): void {
+    const question = this.endQuestion;
+    if (!question) return;
+    question.timers.forEach(clearTimeout);
+    this.endQuestion = undefined;
+    if (redraw) this.requestUpdate();
+  }
+
+  private confirmEnd(): void {
+    if (!this.endQuestion?.armed) return;
+    this.endAsk();
+    void this.command("end");
+  }
+
+  /** The unreachable note, and Luk once it has lasted 10 s. */
+  private renderReach() {
+    if (this.reachable()) return nothing;
+    const since = this.unreachableSince;
+    const luk = since !== undefined && Date.now() - since >= UNREACHABLE_MS;
+    return html`
+      <div class="note">
+        <span role="status">${this.t("flow.unreachable")}</span>
+        ${luk ? html`<button @click=${() => this.close()}>${this.t("flow.close")}</button>` : nothing}
+      </div>
+    `;
   }
 
   private renderError() {
@@ -473,10 +787,15 @@ export class WorkoutFlow extends LitElement {
   }
 
   private renderThumbnail(station: { exercise_id: string; name: string }) {
-    const url = this.thumbnails.get(station.exercise_id);
+    return this.renderImage(station, "thumbnail", "thumb");
+  }
+
+  /** An exercise's image, or a neutral placeholder while it loads or when it has none. */
+  private renderImage(station: { exercise_id: string; name: string }, kind: ImageKind, className: string) {
+    const url = this.images.get(`${kind}/${station.exercise_id}`);
     return url
-      ? html`<img class="thumb" src=${url} alt=${station.name} />`
-      : html`<span class="thumb" role="img" aria-label=${station.name}></span>`;
+      ? html`<img class=${className} src=${url} alt=${station.name} />`
+      : html`<span class=${className} role="img" aria-label=${station.name}></span>`;
   }
 
   private renderDetails() {
@@ -559,7 +878,8 @@ export class WorkoutFlow extends LitElement {
     const paused = view.status === "paused";
     return html`
       <h2>${view.program_name}</h2>
-      <div class="count">${this.secondsLeft(view)}</div>
+      ${this.renderReach()}
+      <div class="count">${this.renderReadyCount(view)}</div>
       <ul class="starts" aria-label=${this.t("flow.get_ready")}>
         ${view.participants.map((person, index) => {
           const station = view.stations?.[index]?.current;
@@ -586,15 +906,147 @@ export class WorkoutFlow extends LitElement {
     `;
   }
 
-  // F3 replaces the timer and done placeholders.
+  /** The countdown's seconds; at local zero, the word of the phase that follows. */
+  private renderReadyCount(view: SessionView) {
+    const countdown = this.countdown(view);
+    return countdown.ahead ? this.t(`flow.phase.${countdown.kind}`) : countdown.seconds;
+  }
+
   private renderTimer(view: SessionView) {
-    const kind = view.status === "paused" ? "paused" : (view.phase?.kind ?? "work");
-    return html`<h2>${this.t(`flow.phase.${kind}`)}</h2>`;
+    const phase = view.phase!;
+    const paused = view.status === "paused";
+    const countdown = this.countdown(view);
+    const word = this.t(`flow.phase.${paused ? "paused" : countdown.kind}`);
+    const next = view.next_phase;
+    const then =
+      next && !countdown.ahead ? this.t(`flow.then.${next.kind}`, { seconds: next.duration }) : undefined;
+    const theRing = ring({
+      label: word,
+      word,
+      max: countdown.duration,
+      value: countdown.seconds,
+      fraction: countdown.fraction,
+      color: RING_COLORS[countdown.kind],
+      then,
+      onTap: () => {
+        if (this.newest?.status === "running") void this.command("pause");
+      },
+    });
+    const stations = view.stations ?? [];
+    return html`
+      ${this.renderHeader(view, phase.round, phase.interval)} ${this.renderReach()} ${this.renderError()}
+      ${stations.length === 1
+        ? this.renderSolo(view, theRing)
+        : html`<div class="duo">${this.renderPanel(view, 0)} ${theRing} ${this.renderPanel(view, 1)}</div>`}
+      <div class="controls">
+        <button @click=${() => this.command("previous")}>${this.t("flow.previous")}</button>
+        <button class="main" @click=${() => this.command(paused ? "resume" : "pause")}>
+          ${this.t(paused ? "flow.resume" : "flow.pause")}
+        </button>
+        <button @click=${() => this.command("next")}>${this.t("flow.next")}</button>
+      </div>
+    `;
+  }
+
+  /** Runde, Interval, the elapsed time against the planned, and Slut with its question. */
+  private renderHeader(view: SessionView, round: number, interval: number) {
+    const question = this.endQuestion;
+    return html`
+      <header class="top">
+        <span>${this.t("flow.round", { round, rounds: view.totals.rounds })}</span>
+        <span>${this.t("flow.interval", { interval })}</span>
+        <span class="elapsed">
+          ${this.t("flow.elapsed", { elapsed: clock(this.elapsed(view)), planned: clock(view.totals.planned) })}
+        </span>
+        <span class="end">
+          ${question
+            ? html`
+                <span class="question">${this.t("flow.end_confirm")}</span>
+                <button @click=${() => this.confirmEnd()}>${this.t("flow.yes")}</button>
+                <button class="slot" @click=${() => this.endAsk()}>${this.t("flow.no")}</button>
+              `
+            : html`<button class="slot" @click=${() => this.askEnd()}>${this.t("flow.end")}</button>`}
+        </span>
+      </header>
+    `;
+  }
+
+  /** One person: the current station big with its GIF, the ring, and Næste beside them. */
+  private renderSolo(view: SessionView, theRing: TemplateResult) {
+    const station = view.stations![0];
+    const person = view.participants[0];
+    return html`
+      <div class="solo">
+        <section class="now" aria-label=${person?.name ?? ""}>
+          ${this.renderImage(station.current, "gif", "gif")}
+          <span class="station">${this.t("flow.station", { number: station.current.number })}</span>
+          <span class="exercise">${station.current.name}</span>
+        </section>
+        ${theRing} ${station.next ? this.renderNext(station.next) : nothing}
+      </div>
+    `;
+  }
+
+  private renderNext(next: SessionStation) {
+    const label = this.t("flow.next_label");
+    return html`
+      <section class="next" aria-label=${label}>
+        <span class="label">${label}</span>
+        ${this.renderThumbnail(next)}
+        <span>${this.t("flow.station", { number: next.number })}</span>
+        <span>${next.name}</span>
+      </section>
+    `;
+  }
+
+  /** A person's panel in the two-person layout, in the person's colour. */
+  private renderPanel(view: SessionView, index: number) {
+    const person = view.participants[index];
+    const station = view.stations?.[index];
+    if (!person || !station) return nothing;
+    return html`
+      <section class="panel" aria-label=${person.name} style="--person-color: ${this.personColor(person.id, index)}">
+        <div class="who">
+          <span class="badge"></span>
+          <span class="name">${person.name}</span>
+          <span class="station">${this.t("flow.station", { number: station.current.number })}</span>
+        </div>
+        ${this.renderImage(station.current, "gif", "gif")}
+        <span class="exercise">${station.current.name}</span>
+        ${station.next
+          ? html`<span class="line">
+              ${this.t("flow.next_station", { number: station.next.number, exercise: station.next.name })}
+            </span>`
+          : nothing}
+      </section>
+    `;
   }
 
   private renderDone(view: SessionView) {
+    if (!view.counted) {
+      return html`
+        <h2>${this.t("flow.done.ended")}</h2>
+        <div class="actions">
+          <button class="main" @click=${() => this.close()}>${this.t("flow.close")}</button>
+        </div>
+      `;
+    }
     return html`
-      <h2>${this.t(view.counted ? "flow.done.counted" : "flow.done.ended")}</h2>
+      <h2>${this.t("flow.done.counted")}</h2>
+      <p class="line">
+        <span>${this.t("flow.done.time")}</span>
+        <span class="big">${clock(view.time_trained)}</span>
+      </p>
+      <p class="big">${this.t("flow.done.rounds", { done: view.rounds_completed, rounds: view.totals.rounds })}</p>
+      <ul class="starts" aria-label=${this.t("flow.done.who")}>
+        ${view.participants.map(
+          (person, index) => html`
+            <li style="--person-color: ${this.personColor(person.id, index)}">
+              <span class="badge"></span>${person.name}
+            </li>
+          `,
+        )}
+      </ul>
       <div class="actions">
         <button class="main" @click=${() => this.close()}>${this.t("flow.close")}</button>
       </div>
