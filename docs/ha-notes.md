@@ -58,9 +58,9 @@ fit no doc stay in [`notes.md`](notes.md).
   So the entities set `entity_id` explicitly (`sensor.ha_fitness_today` …), and `test_entity_ids_on_danish_ha`
   checks the ids with `hass.config.language = "da"`.
 - **HA's request filter runs before any view.** Its `security_filter` middleware answers 400 for a path that holds a
-  tab, CR or LF once decoded (`%0A`), or a `../` after unquoting, however often it was encoded (`..%2F`). The view never sees such a
-  request. A lone `%2F` isn't filtered. So the media proxy's tests expect 400 for those paths, and 404 for every other
-  path outside its patterns (checked in HA's `http/security_filter.py`).
+  tab, CR or LF once decoded (`%0A`), or a `../` after unquoting, however often it was encoded (`..%2F`). The view
+  never sees such a request. A lone `%2F` isn't filtered. So the media proxy's tests expect 400 for those paths, and
+  404 for every other path outside its patterns (checked in HA's `http/security_filter.py`).
 
 ## The frontend
 

@@ -134,8 +134,8 @@ Not built yet: the workout flow in the cards (step 5, part F) and stats. Each co
   1, 2, 5 and 10 s, then every 30 s. The first failed connect of an outage logs one warning.
 - **On `hello`** it checks `api_version`. It speaks version 1. On another version it raises a repair issue, and the
   entities stay unavailable.
-- **REST calls** (the skip and the session commands) send `User-Agent: ha_fitness/<integration version>`, so the add-on's change log names
-  the integration.
+- **REST calls** (the skip and the session commands) send `User-Agent: ha_fitness/<integration version>`, so the
+  add-on's change log names the integration.
 - **While disconnected, or on an unsupported version,** every entity is unavailable and the today subscription sends
   `null`. The session subscription sends `available: false` with the last view instead
   ([below](#sessions-in-the-integration)).
