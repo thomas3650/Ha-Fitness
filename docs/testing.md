@@ -180,7 +180,8 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
 ### The refreshed screens
 
 After a change to the today card or the workout flow, check each screen at 1368×912 and at 800×1280, in Danish, against
-the mockups' layout ([`mockups/README.md`](mockups/README.md)). The design is in the
+the mockups' layout ([`mockups/README.md`](mockups/README.md)). When Chrome's window can't be resized, use the
+portrait frame in [`ha-notes.md`](ha-notes.md#the-frontend). The design is in the
 [UI refresh spec](superpowers/specs/2026-10-24-ui-refresh-design.md).
 
 - **The today card:** an open day, a late day, a running session and a narrow (500 px) column.

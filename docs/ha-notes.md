@@ -96,8 +96,8 @@ fit no doc stay in [`notes.md`](notes.md).
   polyfill. A card defined at import can land in the native registry before that happens; the polyfill's registry then
   doesn't know it, and Lovelace shows a configuration error until a normal reload. So the bundle registers its
   elements only once `home-assistant` is defined in the then-current `customElements` (`cards/src/register.ts`).
-- **The cards bundle is cached per version.** The integration serves the bundle at
-  `/ha_fitness_frontend/ha-fitness-cards.js?v=<integration version>`. In the fast loop the version doesn't change
+- **The cards bundle is cached per version.** The URL carries the integration version
+  ([`architecture.md`](architecture.md#what-exists-now)). In the fast loop the version doesn't change
   when the bundle is rebuilt, so the browser keeps the old one until a hard reload (Cmd+Shift+R). A release changes
   the version, so the tablet fetches the new bundle.
 - **Chrome's window can't always be resized for the Chrome check.** When it can't, a same-origin page holding an
