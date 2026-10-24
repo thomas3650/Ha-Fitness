@@ -14,14 +14,24 @@ class FitnessEntity(Entity):
     _attr_should_poll = False
 
     def __init__(
-        self, coordinator: FitnessCoordinator, platform: str, key: str
+        self,
+        coordinator: FitnessCoordinator,
+        platform: str,
+        key: str,
+        *,
+        entity_key: str | None = None,
+        unique_key: str | None = None,
     ) -> None:
-        """Set the explicit entity id (so a Danish HA keeps the English one) and the unique id."""
+        """Set the explicit entity id (so a Danish HA keeps the English one) and the unique id.
+
+        `key` is the translation key, and by default also the entity id's and the unique id's suffix;
+        `entity_key` and `unique_key` set those suffixes apart.
+        """
         self.coordinator = coordinator
         entry_id = coordinator.entry.entry_id
-        self.entity_id = f"{platform}.{DOMAIN}_{key}"
+        self.entity_id = f"{platform}.{DOMAIN}_{entity_key or key}"
         self._attr_translation_key = key
-        self._attr_unique_id = f"{entry_id}_{key}"
+        self._attr_unique_id = f"{entry_id}_{unique_key or key}"
         # The device itself, with the add-on's version, is made at setup (see __init__.py).
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry_id)})
 

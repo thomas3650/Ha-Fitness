@@ -7,6 +7,10 @@
     "name": "HA Fitness – workout",
     "description": "The active programs, each with Start. Shows Continue while a workout runs."
   },
+  "picker_stats": {
+    "name": "HA Fitness – stats",
+    "description": "Per person: the streak, workouts done, missed and time trained, this month and all time."
+  },
   "today": {
     "stations_one": "{count} exercise",
     "stations_other": "{count} exercises",
@@ -29,6 +33,22 @@
   },
   "workout": {
     "no_programs": "No active programs",
+    "unreachable": "HA Fitness can't be reached"
+  },
+  "stats": {
+    "streak_one": "{count} in a row",
+    "streak_other": "{count} in a row",
+    "this_month": "This month",
+    "all_time": "All time",
+    "done": "Done",
+    "missed": "Missed",
+    "time": "Time",
+    "extra": "· {count} extra",
+    "skipped": "· {count} skipped",
+    "hours_minutes": "{hours} h {minutes} min",
+    "minutes": "{minutes} min",
+    "no_people": "No people",
+    "not_started": "Stats start at the first workout",
     "unreachable": "HA Fitness can't be reached"
   },
   "weekday": {

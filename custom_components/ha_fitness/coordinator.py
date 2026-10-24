@@ -19,10 +19,12 @@ from .client import (
     Message,
     Session,
     SessionEvent,
+    StatsMessage,
     Today,
     async_health,
     async_listen,
     async_session_missing,
+    async_stats_missing,
     async_today_missing,
 )
 from .const import (
@@ -52,7 +54,8 @@ class FitnessCoordinator:
     `connected` is true while a supported add-on is connected. `today` is the add-on's last
     `today` message, and None while not connected. `session` is the add-on's last session view;
     it is kept across a disconnect, so the card can go on counting down. `session_seen` is true
-    once a session message has come since the last connect. Each change is also sent on the
+    once a session message has come since the last connect. `stats` and `stats_seen` work the
+    same way for the add-on's stats (the stats spec §5.1). Each change is also sent on the
     dispatcher (`SIGNAL_UPDATE`), which the cards' subscriptions follow across entry reloads.
     """
 
@@ -74,6 +77,8 @@ class FitnessCoordinator:
         self.today: dict[str, Any] | None = None
         self.session: dict[str, Any] | None = None
         self.session_seen = False
+        self.stats: dict[str, Any] | None = None
+        self.stats_seen = False
         self.addon_version: str | None = None
         self._listeners: list[CALLBACK_TYPE] = []
         self._attempt = 0
@@ -115,6 +120,11 @@ class FitnessCoordinator:
     def session_available(self) -> bool:
         """Return whether a supported add-on is connected and has sent its session."""
         return self.connected and self.session_seen
+
+    @property
+    def stats_available(self) -> bool:
+        """Return whether a supported add-on is connected and has sent its stats."""
+        return self.connected and self.stats_seen
 
     async def _async_connect(self) -> None:
         """Hold one connection until it ends, then schedule the next attempt."""
@@ -159,15 +169,22 @@ class FitnessCoordinator:
             )
         return too_old
 
-    async def _async_probe_sessions(self) -> None:
-        """Raise addon_too_old when `/session` gives 404 while health answers (the workout spec §4)."""
+    async def _async_probe_routes(self) -> None:
+        """Raise addon_too_old when `/session` or `/stats` gives 404 while health answers.
+
+        An add-on from before sessions (the workout spec §4) or before stats (the stats spec §5.1)
+        connects, but lacks the route.
+        """
         try:
-            if not await async_session_missing(self.http_session, self.url):
+            if not (
+                await async_session_missing(self.http_session, self.url)
+                or await async_stats_missing(self.http_session, self.url)
+            ):
                 return
             await async_health(self.http_session, self.url)
         except AddonConnectionError:
             # The connection's own handling notices an outage; the next hello probes again.
-            _LOGGER.debug("The session probe could not reach the add-on")
+            _LOGGER.debug("The route probe could not reach the add-on")
             return
         ir.async_create_issue(
             self.hass,
@@ -195,6 +212,10 @@ class FitnessCoordinator:
         elif isinstance(message, Session):
             self.session = message.data
             self.session_seen = True
+            self._notify()
+        elif isinstance(message, StatsMessage):
+            self.stats = message.data
+            self.stats_seen = True
             self._notify()
         elif isinstance(message, SessionEvent):
             if message.event in SESSION_EVENTS:
@@ -232,9 +253,10 @@ class FitnessCoordinator:
         self._update_sw_version(hello.version)
         self.connected = True
         self.session_seen = False
+        self.stats_seen = False
         # Every hello deletes addon_too_old above; the probe raises it again on an older add-on.
         self.entry.async_create_background_task(
-            self.hass, self._async_probe_sessions(), f"{DOMAIN} session probe"
+            self.hass, self._async_probe_routes(), f"{DOMAIN} route probe"
         )
         self._notify()
 
@@ -257,10 +279,16 @@ class FitnessCoordinator:
 
     @callback
     def _set_disconnected(self) -> None:
-        if self.connected or self.today is not None or self.session_seen:
+        if (
+            self.connected
+            or self.today is not None
+            or self.session_seen
+            or self.stats_seen
+        ):
             self.connected = False
             self.today = None
             self.session_seen = False
+            self.stats_seen = False
             self._notify()
 
     @callback
