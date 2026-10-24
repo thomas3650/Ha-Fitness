@@ -114,6 +114,10 @@ async def test_skip_closed_day_is_409(make_app: MakeApp) -> None:
             assert response.status_code == 409, response.text
             assert isinstance(response.json()["detail"], str)
         assert (await client.get(CHANGES)).json() == before
+        assert await _days(client, "2026-10-28", "2026-10-29") == [
+            ("2026-10-28", "Onsdag", "missed"),
+            ("2026-10-29", "Torsdag", "skipped"),
+        ]
 
 
 async def test_skip_unknown_is_404(make_app: MakeApp) -> None:

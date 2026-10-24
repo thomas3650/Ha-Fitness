@@ -18,22 +18,29 @@ router = APIRouter()
 async def push_channel(websocket: WebSocket) -> None:
     """Send `hello`, then `today`, then every message the hub broadcasts; the client sends nothing.
 
-    It subscribes before it builds `today`, so nothing published meanwhile is lost. A `today` queued by then is
-    older than or the same as the one sent, so it is dropped; events stay.
+    It subscribes before it builds the snapshot, so nothing published meanwhile is lost. Every publish runs under the
+    training days' lock, so the queue holds them in lock order. A `today` can be queued after the snapshot was built
+    (a skip, a write or a tick in the gap before the drain), and `_publish_today` won't send that view again. So when
+    the drain holds a `today`, the last one is the newest view and is sent instead of the snapshot. Otherwise the
+    snapshot is the newest: a later change would have queued a `today`. The queued events follow, in queue order.
     """
     hub: Hub = websocket.app.state.hub
     holder: ServicesHolder = websocket.app.state.services
     await websocket.accept()
     async with hub.subscribe() as queue:
         view = await anyio.to_thread.run_sync(holder.get().training_days.today_view)
-        pending = [m for m in _drain(queue) if m.get("type") != "today"]
+        today: Message = {"type": "today", "data": view.model_dump(mode="json")}
+        events: list[Message] = []
+        for message in _drain(queue):
+            if message.get("type") == "today":
+                today = message
+            else:
+                events.append(message)
         await websocket.send_json(
             {"type": "hello", "version": __version__, "api_version": API_VERSION}
         )
-        await websocket.send_json(
-            {"type": "today", "data": view.model_dump(mode="json")}
-        )
-        for message in pending:
+        await websocket.send_json(today)
+        for message in events:
             await websocket.send_json(message)
         await _serve(websocket, queue)
 

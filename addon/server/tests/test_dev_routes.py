@@ -107,6 +107,24 @@ async def test_dev_post_creates_late_day_and_reopens_closed(make_app: MakeApp) -
         assert unknown.status_code == 404
 
 
+async def test_dev_post_rejects_a_date_after_today(make_app: MakeApp) -> None:
+    """`POST` for a date after today is a 422 and makes nothing, so open days keep sharing one date."""
+    clock = FrozenClock(local(2026, 10, 29, 9))  # a Thursday
+    async with dev_app(make_app, clock) as client:
+        program_id = await _create(client, "Sample", ["mon"])
+        response = await client.post(
+            DEV, json={"program_id": program_id, "date": "2026-10-30"}
+        )
+        assert response.status_code == 422, response.text
+        assert isinstance(response.json()["detail"], str)
+        today = await client.post(
+            DEV, json={"program_id": program_id, "date": "2026-10-29"}
+        )
+        assert today.status_code == 200, today.text
+        assert await _open(client) == [("Sample", "2026-10-29", "due")]
+        assert await _days(client, "2026-10-30", "2026-10-30") == []
+
+
 async def test_dev_delete_removes_open_and_closed(make_app: MakeApp) -> None:
     """`DELETE ?date=` removes every training day of that date, open or closed, and no other."""
     clock = FrozenClock(local(2026, 10, 29, 9))  # a Thursday, when nothing trains

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from . import changes
 from .clock import Clock
 from .db import session
-from .errors import Conflict, NotFound
+from .errors import Conflict, Invalid, NotFound
 from .models import (
     Program as ProgramRow,
     SchedulerState,
@@ -264,9 +264,15 @@ class TrainingDays:
             return out
 
     def upsert_open(self, program_id: int, day: date) -> TrainingDayOut:
-        """Dev only: make an open day for a program on any date, or reopen the one there is; raise `NotFound`."""
+        """Dev only: make an open day for a program on today or a past date, or reopen the one there is.
+
+        Raise `NotFound` for an unknown program, and `Invalid` for a date after today: an open day there would break
+        "open days share one date".
+        """
         with self.lock:
             self.reconcile_now()
+            if day > self.local_today():
+                raise Invalid(f"{day.isoformat()} is after today")
             with session(self._engine) as db_session:
                 program = db_session.get(ProgramRow, program_id)
                 if program is None:
