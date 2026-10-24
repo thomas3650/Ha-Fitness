@@ -430,3 +430,12 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** The kitchen tablet runs HA's light theme, so the dark mockups are a reference for layout only. `ha-icon`
   needs no extra bundle.
 - **Source:** [UI refresh spec](superpowers/specs/2026-10-24-ui-refresh-design.md) §6; Thomas, 2026-10-24
+
+### D52: Cards are white with a grey border; the person's colour only on the badge
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** A card or tile is white (`--card-background-color`) with a 1 px grey border (`--divider-color`), and
+  the person's colour shows only on the numbered badge. The phase words take darker shades of the ring's colours.
+- **Why:** Thomas asked for this look on get ready's person cards in his screen review; Claude carried it to every
+  card and tile. The darker shades keep 4.5:1 contrast on the light background.
+- **Source:** [UI polish spec](superpowers/specs/2026-10-24-ui-polish-design.md) §2, §3.1 and §3.2; Thomas (§2, his
+  screen review); Claude (§3), for Thomas's review on the PR, 2026-10-24

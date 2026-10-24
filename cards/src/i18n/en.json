@@ -35,7 +35,12 @@
   },
   "session": {
     "running": "Workout in progress · {program}",
-    "resume": "Continue"
+    "resume": "Continue",
+    "state_running": "Running",
+    "state_paused": "Paused",
+    "state_round": "{state} · round {round} of {rounds}",
+    "people_two": "{first} and {second}",
+    "people_minutes": "{people} · {minutes}"
   },
   "workout": {
     "no_programs": "No active programs",
@@ -94,6 +99,7 @@
     "round_rest": "Rest between rounds",
     "seconds": "{seconds} s",
     "need": "You'll need",
+    "no_equipment": "No equipment",
     "total": "Total time",
     "ask_claude": "Change the program by asking Claude",
     "who": "Who's training?",
@@ -134,6 +140,7 @@
       "trained": "Trained",
       "streak": "Streak",
       "feeling": "How did it feel?",
+      "feeling_hint": "Saved with the session – Claude uses it when you ask it to adjust the program",
       "feelings": {
         "too_easy": "Too easy",
         "just_right": "Just right",
@@ -148,19 +155,16 @@
       "finish": "Done"
     },
     "unreachable": "HA Fitness can't be reached",
-    "round": "Round {round}/{rounds}",
-    "interval": "Interval {interval}",
-    "interval_of": "Interval {interval}/{intervals}",
-    "elapsed": "{elapsed} / {planned}",
+    "round_label": "Round",
+    "station_label": "Station",
+    "interval_label": "Interval",
     "end": "End",
     "end_confirm": "End the workout?",
     "yes": "Yes",
     "no": "No",
     "previous": "Previous",
     "next": "Next",
-    "station": "Station {number}",
     "next_station": "Next: station {number} · {exercise}",
-    "station_of": "Station {station}/{stations}",
     "go_to_next": "GO TO THE NEXT STATION",
     "seconds_left": "seconds left",
     "tap_to_resume": "tap the ring to resume",

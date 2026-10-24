@@ -164,15 +164,16 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
 5. **The timer for 2 people,** in work and in switch: a panel per person, with the person's colour, and the ring in
    the middle.
 6. **Paused:** tap the ring. It stops and shows "PAUSE"; the play button resumes.
-7. **Fortsæt after a reload:** reload while a session runs. Nothing opens by itself. The today card shows "Træning i
-   gang" and Fortsæt, which opens the overlay at the timer.
+7. **Fortsæt after a reload:** reload while a session runs. Nothing opens by itself. The today card shows the session
+   row: the program's name, "I gang · runde …", the people with the minutes, and Fortsæt, which opens the overlay at the
+   timer.
 8. **Done:** Slut, then Ja. After a full round "Godt gået!" shows; before one, "Træningen blev afsluttet". Luk closes
    it.
 9. **The today card stays visible during an extra session:** with no day open, start a session from
    `custom:ha-fitness-workout-card` (the dev dashboard's Workout view). Back on the first view, the today card shows
-   "Træning i gang" and Fortsæt while the session runs. `dev_onboard.py` saves the dashboard only while it has none,
-   so a dev HA onboarded before the Workout view existed lacks it: delete the `ha-fitness-dev` dashboard (Settings →
-   Dashboards) and run `dev_onboard.py` again.
+   the session row ("I gang · runde …" and Fortsæt) while the session runs. `dev_onboard.py` saves the dashboard only
+   while it has none, so a dev HA onboarded before the Workout view existed lacks it: delete the `ha-fitness-dev`
+   dashboard (Settings → Dashboards) and run `dev_onboard.py` again.
 10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at
     5, 4, 3, 2 and 1 s line up with the numbers, and that the change tones and the chime at the end come.
 11. The console is clean throughout.

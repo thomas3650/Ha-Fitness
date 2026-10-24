@@ -305,7 +305,7 @@ async def ws_session_command(
 def _program(stored: dict[str, Any]) -> dict[str, Any]:
     """Return one stored program (step 3's ProgramOut) in the shape of the workout spec §4."""
     program = stored["program"]
-    return {
+    result: dict[str, Any] = {
         "id": stored["id"],
         "name": program["name"],
         "rounds": program["rounds"],
@@ -316,8 +316,6 @@ def _program(stored: dict[str, Any]) -> dict[str, Any]:
         # A half minute rounds up, as step 3's total_minutes does.
         "total_minutes": (stored["total_seconds"] + 30) // 60,
         "total_seconds": stored["total_seconds"],
-        # An add-on from before equipment leaves it out.
-        "equipment": stored.get("equipment", []),
         "stations": [
             {"exercise_id": station["exercise"], "name": name}
             for station, name in zip(
@@ -325,6 +323,10 @@ def _program(stored: dict[str, Any]) -> dict[str, Any]:
             )
         ],
     }
+    # An add-on from before equipment sends no list; the key stays out, so the cards hide "Du skal bruge".
+    if "equipment" in stored:
+        result["equipment"] = stored["equipment"]
+    return result
 
 
 @websocket_command({probatio.Required("type"): "ha_fitness/programs"})

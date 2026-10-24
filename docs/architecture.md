@@ -100,11 +100,12 @@ The cards are built into the integration: one bundle, released and versioned wit
   (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the HA user's language
   (D11, D38).
   - **"Træning i dag"** (`custom:ha-fitness-today-card`) has a top line with the streak badge, the week ring, then
-    one row per open training day (a two-tap Spring over, and Start), or the session row ("Træning i gang" with
-    Fortsæt) while a session runs or is paused. The badge follows `ha_fitness/stats/subscribe`. It is hidden before
-    counting, while the stats are unavailable and with no people. The ring comes from the `today` message's `week`.
-    It is hidden without `week` or with `planned` 0. The card hides itself when nothing is open, except in edit
-    mode, and shows one line while the add-on can't be reached.
+    one row per open training day (a two-tap Spring over, and Start), or the session row (the program's name,
+    "I gang · runde 2 af 5" or "Pauset · runde 2 af 5", the people with the planned length, and Fortsæt) while a
+    session runs or is paused. The badge follows `ha_fitness/stats/subscribe`. It is hidden before counting, while
+    the stats are unavailable and with no people. The ring comes from the `today` message's `week`. It is hidden
+    without `week` or with `planned` 0. The card hides itself when nothing is open, except in edit mode, and shows
+    one line while the add-on can't be reached.
   - **The workout card** (`custom:ha-fitness-workout-card`) lists the active programs with Start, for a workout on
     any day (an extra session).
   - **The workout flow** is one page-level overlay (D45), a `<dialog>` opened with `showModal()`: details and the
@@ -219,7 +220,7 @@ The integration relays it.
     `invalid` before any relay. A field of the wrong type fails HA's own schema, as `invalid_format`.
   - `ha_fitness/programs` gives the active programs, in the add-on's order, in the shape of workout spec §4. It is
     built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up. It also relays `total_seconds` and
-    `equipment` (`[]` from an older add-on).
+    `equipment` (left out when an older add-on doesn't send it).
   - `ha_fitness/people` gives `[{id, name}]` from `GET /api/v1/people`.
   - The lists answer `unavailable` when the add-on can't be used, or sends an item they can't read.
 

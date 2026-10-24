@@ -396,7 +396,7 @@ test("one tap never skips", async () => {
   await wait(card, 0);
 
   expect(fake.callService).not.toHaveBeenCalled();
-  expect(text(rows(card)[0])).toBe("Onsdag I dag 5 øvelser · 29 min Spring over? Ja Nej");
+  expect(text(rows(card)[0])).toBe("Onsdag Spring over? 5 øvelser · 29 min Ja Nej");
 });
 
 test("Nej in place of Spring over", async () => {
@@ -687,24 +687,24 @@ test("language option wins", async () => {
 });
 
 test("the grid rows follow the days", async () => {
-  // One row for the top line and the ring, then two per day (or for the session row).
+  // One row for the top line, then three per day (or for the session row).
   const fake = fakeHass();
   const card = await mount(fake);
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 3 });
-  expect(card.getCardSize()).toBe(3);
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
+  expect(card.getCardSize()).toBe(4);
 
   await push(card, fake, today([wednesday]));
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 3 });
-  expect(card.getCardSize()).toBe(3);
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
+  expect(card.getCardSize()).toBe(4);
 
   await push(card, fake, today([wednesday, strength]));
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 5 });
-  expect(card.getCardSize()).toBe(5);
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 7 });
+  expect(card.getCardSize()).toBe(7);
 
   fake.pushSession({ available: true, session: sessionView("running") });
   await card.updateComplete;
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 3 });
-  expect(card.getCardSize()).toBe(3);
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
+  expect(card.getCardSize()).toBe(4);
 });
 
 test("is offered in the card picker, in English", () => {
@@ -845,6 +845,10 @@ test("Start is hidden while Spring over asks", async () => {
 
 test("Fortsæt while session active unlocks audio and resumes; Spring over hidden", async () => {
   const opened = audioAtOpen();
+  const expected = {
+    running: "Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt",
+    paused: "Onsdag Pauset · runde 1 af 5 Thomas · 29 min Fortsæt",
+  };
   for (const status of ["running", "paused"] as const) {
     opened.length = 0;
     const fake = fakeHass();
@@ -853,7 +857,7 @@ test("Fortsæt while session active unlocks audio and resumes; Spring over hidde
 
     fake.pushSession({ available: true, session: sessionView(status) });
     await card.updateComplete;
-    expect(rows(card).map(text)).toEqual(["Træning i gang · Onsdag Fortsæt"]);
+    expect(rows(card).map(text)).toEqual([expected[status]]);
     expect(queryByRole(root(card), "button", { name: "Spring over" })).toBeNull();
     expect(queryByRole(root(card), "button", { name: "Start" })).toBeNull();
 
@@ -876,7 +880,43 @@ test("Fortsæt while session active unlocks audio and resumes; Spring over hidde
   const card = await mount(english);
   english.pushSession({ available: true, session: sessionView("running") });
   await card.updateComplete;
-  expect(rows(card).map(text)).toEqual(["Workout in progress · Onsdag Continue"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag Running · round 1 of 5 Thomas · 29 min Continue"]);
+});
+
+/** The session row's text, once the session is pushed to a card on a Danish (or the given) HA. */
+async function sessionRow(session: ReturnType<typeof sessionView>, language = "da"): Promise<string> {
+  const fake = fakeHass(language);
+  const card = await mount(fake);
+  fake.pushSession({ available: true, session });
+  await card.updateComplete;
+  const [row] = rows(card).map(text);
+  card.remove();
+  return row;
+}
+
+test("a two-person session joins the names with og", async () => {
+  const session = {
+    ...sessionView("running"),
+    participants: [
+      { id: 1, name: "Thomas" },
+      { id: 2, name: "Elin" },
+    ],
+  };
+  expect(await sessionRow(session)).toContain("Thomas og Elin · 29 min");
+});
+
+test("the running row rounds the planned time to the nearest minute", async () => {
+  const base = sessionView("running");
+  expect(await sessionRow({ ...base, totals: { ...base.totals, planned: 1769 } })).toContain("· 29 min");
+  expect(await sessionRow({ ...base, totals: { ...base.totals, planned: 1770 } })).toContain("· 30 min");
+});
+
+test("a session without a phase reads I gang alone", async () => {
+  expect(await sessionRow({ ...sessionView("running"), phase: null })).toBe("Onsdag I gang Thomas · 29 min Fortsæt");
+});
+
+test("the running row in English", async () => {
+  expect(await sessionRow(sessionView("running"), "en")).toBe("Onsdag Running · round 1 of 5 Thomas · 29 min Continue");
 });
 
 test("after a completed view the today card shows no Fortsæt and hides when nothing is open", async () => {
@@ -886,7 +926,7 @@ test("after a completed view the today card shows no Fortsæt and hides when not
     await push(card, fake, today([wednesday]));
     fake.pushSession({ available: true, session: sessionView("running") });
     await card.updateComplete;
-    expect(rows(card).map(text)).toEqual(["Træning i gang · Onsdag Fortsæt"]);
+    expect(rows(card).map(text)).toEqual(["Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt"]);
 
     // The finished view is kept for 5 minutes, but it is not an active session.
     fake.pushSession({ available: true, session: sessionView(status) });
@@ -912,8 +952,8 @@ test("today card visible during extra session with nothing open", async () => {
   await card.updateComplete;
   expect(card.hidden).toBe(false);
   expect(card.style.display).toBe("");
-  expect(text(root(card))).toBe("TRÆNING Træning i gang · Onsdag Fortsæt");
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 3 });
+  expect(text(root(card))).toBe("TRÆNING Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt");
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
 
   // The add-on unreachable: the last view still counts as active, so the card stays.
   fake.pushSession({ available: false, session: sessionView("paused", null) });
@@ -929,7 +969,7 @@ test("today card visible during extra session with nothing open", async () => {
 test("a card that connects during a session shows Fortsæt at once", async () => {
   const fake = fakeHass("da", { available: true, session: sessionView("running") });
   const first = await mount(fake);
-  expect(text(root(first))).toBe("TRÆNING Træning i gang · Onsdag Fortsæt");
+  expect(text(root(first))).toBe("TRÆNING Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt");
 
   // A second card on the page: the controller already holds the session.
   const second = document.createElement("ha-fitness-today-card") as unknown as CardElement;
@@ -938,7 +978,7 @@ test("a card that connects during a session shows Fortsæt at once", async () =>
   document.body.append(second);
   await second.updateComplete;
   expect(second.hidden).toBe(false);
-  expect(text(root(second))).toBe("TRÆNING Træning i gang · Onsdag Fortsæt");
+  expect(text(root(second))).toBe("TRÆNING Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt");
 });
 
 test("the card's language option carries into the flow, from Start and from Fortsæt", async () => {
@@ -1131,7 +1171,7 @@ test("Start comes before Spring over, and Spring over keeps its two taps", async
 
   await tap(card, skip);
   expect(fake.callService).not.toHaveBeenCalled();
-  expect(text(rows(card)[0])).toBe("Onsdag I dag 5 øvelser · 29 min Spring over? Ja Nej");
+  expect(text(rows(card)[0])).toBe("Onsdag Spring over? 5 øvelser · 29 min Ja Nej");
   await wait(card, 500);
   await tap(card, getByRole(rows(card)[0], "button", { name: "Ja" }));
   expect(fake.callService).toHaveBeenCalledWith("ha_fitness", "skip", { training_day_id: 12 }, undefined, false);
@@ -1149,6 +1189,20 @@ test("several open days share one top line and ring", async () => {
   expect(text(root(card)).match(/TRÆNING/g)).toHaveLength(1);
 });
 
+test("the week ring sits in the first row only", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, { ...today([wednesday, strength]), week: { done: 2, planned: 4 } });
+
+  const [first, second] = rows(card);
+  expect(getByRole(first, "progressbar", { name: "Denne uge" })).toBeTruthy();
+  expect(queryByRole(second, "progressbar")).toBeNull();
+  expect(rows(card).map(text)).toEqual([
+    "2/4 Denne uge Onsdag I dag 5 øvelser · 29 min Start Spring over",
+    "Styrke I dag 1 øvelse · 12 min Start Spring over",
+  ]);
+});
+
 test("session row replaces the days but keeps the top line", async () => {
   const fake = fakeHass();
   const card = await mount(fake);
@@ -1157,7 +1211,9 @@ test("session row replaces the days but keeps the top line", async () => {
 
   fake.pushSession({ available: true, session: sessionView("running") });
   await card.updateComplete;
-  expect(rows(card).map(text)).toEqual(["Træning i gang · Onsdag Fortsæt"]);
+  // The ring sits in the session row, before its text.
+  expect(rows(card).map(text)).toEqual(["2/4 Denne uge Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt"]);
+  expect(getByRole(rows(card)[0], "progressbar", { name: "Denne uge" })).toBeTruthy();
   expect(getByRole(root(card), "img", { name: "I træk: Thomas 6" })).toBeTruthy();
   expect(weekRing(card, "Denne uge")?.getAttribute("aria-valuenow")).toBe("2");
   expect(text(root(card)).startsWith("TRÆNING T 6")).toBe(true);

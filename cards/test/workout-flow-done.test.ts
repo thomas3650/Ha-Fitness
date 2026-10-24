@@ -297,6 +297,14 @@ test("the streak tile in English", async () => {
   expect(tiles(flow).at(-1)).toEqual(["Streak", "Thomas 7 Maria 3"]);
 });
 
+test("the feeling group shows the hint", async () => {
+  const hint = "Gemmes med træningen – Claude bruger det, når du beder om at justere programmet";
+  const { flow } = await mount(fakeHass(), completed());
+  expect(hasText(flow, hint)).toBe(true);
+  const over = await mount(fakeHass(), ended(true));
+  expect(hasText(over.flow, hint)).toBe(false);
+});
+
 test("how it felt: a tap sends the command, and the mark follows the view", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, completed());

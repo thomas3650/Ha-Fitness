@@ -90,7 +90,7 @@ export function renderDetails(ctx: DetailsContext): TemplateResult {
         <ol class="grid" aria-label=${t("flow.stations")}>
           ${program.stations.map(
             (station, index) => html`
-              <li>
+              <li class="card">
                 ${renderImage(ctx.imageOf, station, "thumbnail", "picture")}
                 <span class="name">${index + 1} · ${station.name}</span>
               </li>
@@ -143,10 +143,10 @@ function renderChips(ctx: DetailsContext): TemplateResult {
   `;
 }
 
-/** Runder, Arbejde / skift, the round rest above 0, the equipment when there is any, and the total. */
+/** Runder, Arbejde / skift, the round rest above 0, the equipment ("Intet udstyr" when empty), and the total. */
 function renderFacts(t: Translate, program: Program): TemplateResult {
   const seconds = (value: number) => t("flow.seconds", { seconds: value });
-  const equipment = program.equipment ?? [];
+  const equipment = program.equipment;
   const total = program.total_seconds ?? program.total_minutes * 60;
   return html`
     <div class="row">
@@ -169,15 +169,19 @@ function renderFacts(t: Translate, program: Program): TemplateResult {
           </div>
         `
       : nothing}
-    ${equipment.length > 0
+    ${equipment
       ? html`
           <div class="row stacked">
             <dt>${t("flow.need")}</dt>
             <dd>
-              <!-- The space after each chip keeps the words apart in the row's text. -->
-              <ul class="equipment" aria-label=${t("flow.need")}>
-                ${equipment.map((value) => html`<li>${equipmentName(t, value)}</li> `)}
-              </ul>
+              ${equipment.length > 0
+                ? html`
+                    <!-- The space after each chip keeps the words apart in the row's text. -->
+                    <ul class="equipment" aria-label=${t("flow.need")}>
+                      ${equipment.map((value) => html`<li>${equipmentName(t, value)}</li> `)}
+                    </ul>
+                  `
+                : html`<span class="none">${t("flow.no_equipment")}</span>`}
             </dd>
           </div>
         `
@@ -256,7 +260,6 @@ export const detailsStyles = css`
     gap: 8px;
     padding: 8px;
     border-radius: 12px;
-    background: var(--secondary-background-color, var(--divider-color));
   }
   .picture {
     display: block;
@@ -289,6 +292,9 @@ export const detailsStyles = css`
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
+  }
+  .row .none {
+    font-weight: 400;
   }
   dt {
     color: var(--secondary-text-color);

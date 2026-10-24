@@ -1,4 +1,4 @@
-import { type TemplateResult, css, html, nothing } from "lit";
+import { type TemplateResult, css, html, nothing, unsafeCSS } from "lit";
 
 import { iconButton } from "../icon-button";
 import type { SessionView } from "../overlay";
@@ -7,6 +7,7 @@ import { ring } from "../ring";
 import {
   type Countdown,
   type ImageOf,
+  PHASE_TEXT_COLORS,
   RING_COLORS,
   type ReachNote,
   type SoundButton,
@@ -43,7 +44,7 @@ export function renderReady(ctx: ReadyContext): TemplateResult {
     <header class="ready-top">
       <span class="pill">${summary(t, view)}</span>
       ${paused ? html`<span class="pill paused">${t("flow.paused")}</span>` : nothing}
-      <button class="cancel" @click=${() => ctx.onCancel()}>${t("flow.cancel")}</button>
+      <button class="cancel soft" @click=${() => ctx.onCancel()}>${t("flow.cancel")}</button>
     </header>
     ${renderReach(t, ctx.reach)} ${renderSound(t, ctx.sound)}
     <div class="ready">
@@ -86,6 +87,7 @@ function renderRing(ctx: ReadyContext): TemplateResult {
     value: countdown.seconds,
     fraction: countdown.fraction,
     color: RING_COLORS[countdown.kind],
+    wordColor: PHASE_TEXT_COLORS[countdown.kind],
   });
 }
 
@@ -101,7 +103,7 @@ function renderStarts(ctx: ReadyContext): TemplateResult {
           const station = view.stations?.[index]?.current;
           return html`
             <li
-              class="ready-card"
+              class="ready-card card"
               style="--person-color: ${ctx.colors[index]}; --person-text: ${personTextColor(ctx.colors[index])}"
             >
               <span class="number">${index + 1}</span>
@@ -148,9 +150,10 @@ export const readyStyles = css`
     font-weight: 500;
     letter-spacing: 0.1em;
   }
+  /* Landscape: the ring and the cards start level at the top. */
   .ready {
     display: flex;
-    align-items: center;
+    align-items: start;
     justify-content: center;
     gap: 64px;
     margin: 32px 0;
@@ -171,7 +174,7 @@ export const readyStyles = css`
     width: min(440px, 100%);
   }
   .ready-starts .label {
-    color: var(--primary-color);
+    color: ${unsafeCSS(PHASE_TEXT_COLORS.countdown)};
     font-weight: 500;
     letter-spacing: 0.08em;
   }
@@ -187,8 +190,6 @@ export const readyStyles = css`
     gap: 16px;
     padding: 14px;
     border-radius: 20px;
-    border-left: 6px solid var(--person-color);
-    background: var(--card-background-color, var(--secondary-background-color));
     font-size: 1.25rem;
   }
   .ready-card .number {
@@ -229,6 +230,7 @@ export const readyStyles = css`
   @container (max-width: 1000px) {
     .ready {
       flex-direction: column;
+      align-items: center;
       gap: 32px;
     }
   }

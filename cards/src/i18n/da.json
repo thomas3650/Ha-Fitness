@@ -35,7 +35,12 @@
   },
   "session": {
     "running": "Træning i gang · {program}",
-    "resume": "Fortsæt"
+    "resume": "Fortsæt",
+    "state_running": "I gang",
+    "state_paused": "Pauset",
+    "state_round": "{state} · runde {round} af {rounds}",
+    "people_two": "{first} og {second}",
+    "people_minutes": "{people} · {minutes}"
   },
   "workout": {
     "no_programs": "Ingen aktive programmer",
@@ -94,6 +99,7 @@
     "round_rest": "Pause mellem runder",
     "seconds": "{seconds} s",
     "need": "Du skal bruge",
+    "no_equipment": "Intet udstyr",
     "total": "Samlet tid",
     "ask_claude": "Ret programmet ved at spørge Claude",
     "who": "Hvem træner?",
@@ -134,6 +140,7 @@
       "trained": "Trænede",
       "streak": "I træk",
       "feeling": "Hvordan føltes det?",
+      "feeling_hint": "Gemmes med træningen – Claude bruger det, når du beder om at justere programmet",
       "feelings": {
         "too_easy": "For let",
         "just_right": "Tilpas",
@@ -148,19 +155,16 @@
       "finish": "Færdig"
     },
     "unreachable": "HA Fitness kan ikke nås",
-    "round": "Runde {round}/{rounds}",
-    "interval": "Interval {interval}",
-    "interval_of": "Interval {interval}/{intervals}",
-    "elapsed": "{elapsed} / {planned}",
+    "round_label": "Runde",
+    "station_label": "Station",
+    "interval_label": "Interval",
     "end": "Slut",
     "end_confirm": "Afslut træningen?",
     "yes": "Ja",
     "no": "Nej",
     "previous": "Forrige",
     "next": "Næste",
-    "station": "Station {number}",
     "next_station": "Næste: station {number} · {exercise}",
-    "station_of": "Station {station}/{stations}",
     "go_to_next": "GÅ TIL NÆSTE STATION",
     "seconds_left": "sekunder tilbage",
     "tap_to_resume": "tryk på ringen for at fortsætte",

@@ -12,6 +12,14 @@ export const RING_COLORS: Record<PhaseKind, string> = {
   rest: "#4DA8FF",
 };
 
+/** The phase colours for text on the light theme: darker than the ring's, for contrast (spec §3.2). */
+export const PHASE_TEXT_COLORS: Record<PhaseKind, string> = {
+  countdown: "#1F5FAD",
+  work: "#B54708",
+  switch: "#1F5FAD",
+  rest: "#1F5FAD",
+};
+
 /** The flow's texts in the card's language. */
 export type Translate = (key: string, vars?: Vars) => string;
 
@@ -123,7 +131,7 @@ export const sharedStyles = css`
   }
   /* Done: one centred column. The other steps use the wide page. */
   .page.column {
-    max-width: 720px;
+    max-width: 960px;
   }
   .page.column h2,
   .page.column > .line {
@@ -162,6 +170,12 @@ export const sharedStyles = css`
     object-fit: cover;
     background: var(--secondary-background-color, var(--divider-color));
   }
+  /* The card look on HA's light theme; the radius stays with each component. */
+  .card {
+    box-sizing: border-box;
+    background: var(--card-background-color, #fff);
+    border: 1px solid var(--divider-color);
+  }
   .chips {
     display: flex;
     gap: 16px;
@@ -185,6 +199,11 @@ export const sharedStyles = css`
     font: inherit;
     font-weight: 500;
     cursor: pointer;
+  }
+  /* A quiet button with no outline, such as Annullér. */
+  button.soft {
+    border: none;
+    background: var(--secondary-background-color, var(--divider-color));
   }
   button.chip {
     border-color: var(--person-color);
