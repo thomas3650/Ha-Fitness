@@ -1,5 +1,6 @@
 """Tests for steering a session: the services, the session command, and the programs and people lists."""
 
+import copy
 from typing import Any
 
 from homeassistant.auth.const import GROUP_ID_USER
@@ -260,7 +261,16 @@ async def test_ws_programs_shape_active_only(
     fake_addon: FakeAddon,
     config_entry: MockConfigEntry,
 ) -> None:
-    """Only the active programs, in the add-on's order, each in exactly §4's shape."""
+    """Only the active programs, in the add-on's order, each in exactly §4's shape.
+
+    Søndag stands for an older add-on that sends no equipment: the key stays out. Fredag sends an empty list.
+    """
+    # A program that needs no equipment, from an add-on that sends the list.
+    fredag = copy.deepcopy(PROGRAMS[2])
+    fredag["id"] = 6
+    fredag["program"]["name"] = "Fredag"
+    fredag["equipment"] = []
+    fake_addon.programs = [*copy.deepcopy(PROGRAMS), fredag]
     await _connected(hass, config_entry)
     client = await hass_ws_client(hass)
 
@@ -288,6 +298,18 @@ async def test_ws_programs_shape_active_only(
         {
             "id": 5,
             "name": "Søndag",
+            "rounds": 2,
+            "work_seconds": 30,
+            "switch_seconds": 0,
+            "round_rest_seconds": 0,
+            "countdown_seconds": 0,
+            "total_minutes": 30,
+            "total_seconds": 1770,
+            "stations": [{"exercise_id": "0002", "name": "Push-up"}],
+        },
+        {
+            "id": 6,
+            "name": "Fredag",
             "rounds": 2,
             "work_seconds": 30,
             "switch_seconds": 0,
