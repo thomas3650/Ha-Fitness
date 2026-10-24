@@ -12,6 +12,7 @@ import httpx
 
 from . import __version__
 from .api import add_error_handlers, router as api_router
+from .clock import Clock, SystemClock
 from .db import open_database
 from .ha import HaClient
 from .ingress import render as render_ingress
@@ -40,10 +41,13 @@ def create_app(
     *,
     ha_transport: httpx.BaseTransport | None = None,
     media_transport: httpx.AsyncBaseTransport | None = None,
+    clock: Clock | None = None,
+    supervisor_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """Build the app for the given settings.
 
-    The transports replace the network to HA and to the media source; tests pass fakes.
+    The transports replace the network to HA, to the media source and to the Supervisor; the clock replaces the
+    system clock. Tests pass fakes.
     """
     holder = ServicesHolder()
     mcp = build_mcp(holder)
@@ -87,6 +91,8 @@ def create_app(
     app.state.mcp = mcp
     app.state.ha_transport = ha_transport
     app.state.media_transport = media_transport
+    app.state.clock = clock or SystemClock()
+    app.state.supervisor_transport = supervisor_transport
 
     @app.get("/api/v1/health")
     async def health() -> Health:

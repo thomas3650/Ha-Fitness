@@ -30,7 +30,7 @@ def open_database(data_dir: Path) -> Engine:
     engine = create_engine(f"sqlite:///{database}")
     event.listen(engine, "connect", _set_pragmas)
     try:
-        _migrate(engine)
+        migrate(engine)
     except BaseException:
         engine.dispose()
         raise
@@ -73,8 +73,11 @@ def _restore_snapshot(data_dir: Path, database: Path) -> None:
     partial.replace(database)
 
 
-def _migrate(engine: Engine) -> None:
-    """Run the migrations to head; refuse a revision this code doesn't know."""
+def migrate(engine: Engine, revision: str = "head") -> None:
+    """Run the migrations up to `revision`; refuse a database at a revision this code doesn't know.
+
+    `open_database` migrates to head; tests pass an older revision to build an old database.
+    """
     config = Config()
     config.set_main_option("script_location", "ha_fitness_server:migrations")
     known = {
@@ -91,4 +94,4 @@ def _migrate(engine: Engine) -> None:
             )
             raise DatabaseTooNew(f"unknown database revision {current}")
         config.attributes["connection"] = connection
-        command.upgrade(config, "head")
+        command.upgrade(config, revision)

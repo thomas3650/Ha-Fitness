@@ -4,10 +4,22 @@ Names are compared through `name_key`, the `str.casefold()` of the name. Times a
 timezone-aware.
 """
 
+import datetime as dt
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Dialect, MetaData, String
+from sqlalchemy import (
+    JSON,
+    Date,
+    DateTime,
+    Dialect,
+    Enum,
+    ForeignKey,
+    MetaData,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
@@ -101,3 +113,45 @@ class ChangeLogEntry(Base):
     action: Mapped[str] = mapped_column(String)
     target: Mapped[str] = mapped_column(String)
     summary: Mapped[str] = mapped_column(String)
+
+
+class TrainingDayStatus(StrEnum):
+    """The stored status of a training day (spec §3.1); "due" and "late" are derived, never stored."""
+
+    OPEN = "open"
+    DONE = "done"
+    MISSED = "missed"
+    SKIPPED = "skipped"
+
+
+class TrainingDay(Base):
+    """One program on one local date; `program_name` is a copy, so history keeps the name after a delete."""
+
+    __tablename__ = "training_days"
+    __table_args__ = (UniqueConstraint("program_id", "date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    program_id: Mapped[int | None] = mapped_column(
+        ForeignKey("programs.id", ondelete="SET NULL")
+    )
+    program_name: Mapped[str] = mapped_column(String)
+    date: Mapped[dt.date] = mapped_column(Date, index=True)
+    status: Mapped[TrainingDayStatus] = mapped_column(
+        Enum(
+            TrainingDayStatus,
+            native_enum=False,
+            length=16,
+            values_callable=lambda members: [member.value for member in members],
+        )
+    )
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    closed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class SchedulerState(Base):
+    """The scheduler's one row: `last_date` is the last fully handled local date, null until the first run."""
+
+    __tablename__ = "scheduler_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    last_date: Mapped[dt.date | None] = mapped_column(Date)

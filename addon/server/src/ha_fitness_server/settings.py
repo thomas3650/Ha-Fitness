@@ -1,12 +1,18 @@
 """Server settings, read from the environment."""
 
 from dataclasses import dataclass
+import logging
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .library import DATASET_COMMIT
 
+_LOGGER = logging.getLogger(__name__)
+
 DEFAULT_PORT = 8765
+DEFAULT_SCHEDULER_INTERVAL = 60.0
+UTC_ZONE = ZoneInfo("UTC")
 DEFAULT_DATA_DIR = Path("/data")
 SUPERVISOR_HA_URL = "http://supervisor/core"
 DEFAULT_MEDIA_BASE_URL = (
@@ -19,7 +25,8 @@ class Settings:
     """Settings for one server run.
 
     HA is reached at `ha_url` (the server adds `/api`) with `ha_token`, or with the token read from `ha_token_file` at
-    each call. Without a URL HA is not configured.
+    each call. Without a URL HA is not configured. `timezone` gives the local dates of training days (spec §3.2);
+    `supervisor_token` is for the Supervisor's discovery API.
     """
 
     port: int
@@ -28,6 +35,10 @@ class Settings:
     ha_token: str | None = None
     ha_token_file: Path | None = None
     media_base_url: str = DEFAULT_MEDIA_BASE_URL
+    timezone: ZoneInfo = UTC_ZONE
+    dev: bool = False
+    scheduler_interval: float = DEFAULT_SCHEDULER_INTERVAL
+    supervisor_token: str | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -49,4 +60,20 @@ class Settings:
             media_base_url=os.environ.get(
                 "HA_FITNESS_MEDIA_BASE_URL", DEFAULT_MEDIA_BASE_URL
             ),
+            timezone=_timezone_from_env(),
+            dev=os.environ.get("HA_FITNESS_DEV") == "1",
+            supervisor_token=supervisor_token or None,
         )
+
+
+def _timezone_from_env() -> ZoneInfo:
+    """Return the zone named by `HA_FITNESS_TIMEZONE`, else `TZ`, else UTC; an unknown name gives UTC."""
+    name = os.environ.get("HA_FITNESS_TIMEZONE") or os.environ.get("TZ")
+    if not name:
+        _LOGGER.info("No timezone is set; using UTC")
+        return UTC_ZONE
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError, ValueError:
+        _LOGGER.warning("The timezone %r is unknown; using UTC", name)
+        return UTC_ZONE

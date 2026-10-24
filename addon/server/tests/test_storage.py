@@ -1,15 +1,18 @@
 """Tests for the database, its migrations and the backup snapshot."""
 
 import asyncio
+import json
 import os
 from pathlib import Path
 import sqlite3
 import subprocess
 import sys
 
+from ha_fitness_server import db
 from ha_fitness_server.errors import DatabaseTooNew
 import httpx
 import pytest
+from sqlalchemy import create_engine
 
 from tests.conftest import MakeApp, running
 
@@ -194,3 +197,22 @@ def test_snapshot_without_database_exits_0(tmp_path: Path) -> None:
     result = _run_snapshot(tmp_path)
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / "backup" / "snapshot.db").exists()
+
+
+async def test_migration_0002_keeps_programs(make_app: MakeApp, tmp_path: Path) -> None:
+    """A database at 0001 with a program migrates to head on the next start, and the program stays."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'ha_fitness.db'}")
+    try:
+        db.migrate(engine, "0001")
+    finally:
+        engine.dispose()
+    # The second raw-database exception: setup only, a program as step 3 stored it.
+    with sqlite3.connect(tmp_path / "ha_fitness.db") as connection:
+        connection.execute(
+            "INSERT INTO programs (name, name_key, active, document, created_at, updated_at) "
+            "VALUES (?, ?, 1, ?, '2026-10-20 06:00:00', '2026-10-20 06:00:00')",
+            ("Onsdag", "onsdag", json.dumps(PROGRAM | {"active": True})),
+        )
+    connection.close()
+    async with running(make_app()) as client:
+        assert await _program_names(client) == ["Onsdag"]

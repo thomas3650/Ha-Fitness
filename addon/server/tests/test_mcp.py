@@ -330,7 +330,9 @@ async def test_get_and_add_custom_exercise_via_mcp(make_app: MakeApp) -> None:
 
 async def test_list_people_via_mcp_with_fake_ha(make_app: MakeApp) -> None:
     """`set_people` stores the people and `list_people` shows them with HA's persons."""
-    app = make_app(ha_url=HA_URL, ha_token=TOKEN, ha_transport=FakeHa().transport())
+    app = make_app(
+        {"ha_url": HA_URL, "ha_token": TOKEN}, ha_transport=FakeHa().transport()
+    )
     async with mcp_client(app) as session:
         people = await call(session, "set_people", people=[THOMAS, ELIN])
         view = await call(session, "list_people")
@@ -344,7 +346,7 @@ async def test_set_people_when_ha_is_down_is_a_tool_error(make_app: MakeApp) -> 
     """Setting people while HA can't be reached fails with HA's error text and logs nothing."""
     ha = FakeHa()
     ha.down = True
-    app = make_app(ha_url=HA_URL, ha_token=TOKEN, ha_transport=ha.transport())
+    app = make_app({"ha_url": HA_URL, "ha_token": TOKEN}, ha_transport=ha.transport())
     async with mcp_client(app) as session:
         view = await call(session, "list_people")
         with pytest.raises(ToolError) as error:
