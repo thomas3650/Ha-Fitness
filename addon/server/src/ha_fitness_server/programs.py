@@ -13,7 +13,7 @@ from . import changes
 from .db import session
 from .errors import Conflict, Invalid, NotFound
 from .library.service import Library
-from .models import Program as ProgramRow
+from .models import ACTIVE_SESSION_STATUSES, Program as ProgramRow, WorkoutSession
 from .schemas import ProgramDocument, ProgramOut, ProgramSummary, StationIn
 
 if TYPE_CHECKING:
@@ -151,6 +151,20 @@ class Programs:
         )
 
     @staticmethod
+    def _refuse_in_session(db_session: Session, program_id: int) -> None:
+        """Raise `Conflict` when a running or paused session, extra or not, is of this program (step 5 spec §3.4).
+
+        The program id is in the session's frozen plan.
+        """
+        active = db_session.scalars(
+            select(WorkoutSession).where(
+                WorkoutSession.status.in_(ACTIVE_SESSION_STATUSES)
+            )
+        )
+        if any(row.plan["program_id"] == program_id for row in active):
+            raise Conflict("A session for this program is running")
+
+    @staticmethod
     def _taken(name: str) -> Conflict:
         """Return the error for a name already in use."""
         return Conflict(f"Program name '{name}' is taken")
@@ -204,7 +218,8 @@ class Programs:
     ) -> ProgramOut:
         """Replace a program's whole document and log the fields that changed.
 
-        Raise `NotFound`, `Invalid` for a station that can't be resolved, or `Conflict` for a name another program has.
+        Raise `NotFound`, `Invalid` for a station that can't be resolved, or `Conflict` for a name another program has
+        or for `active: false` while a session of the program is active.
         """
         stored = self._resolved(document)
         with self._training_days.lock:
@@ -224,6 +239,8 @@ class Programs:
         try:
             with session(self._engine) as db_session:
                 row = self._row(db_session, program_id)
+                if not document.active:
+                    self._refuse_in_session(db_session, program_id)
                 before = self._snapshot(row)
                 # The log row and the update share the write's transaction, so a name clash at the flush rolls back both.
                 changes.record(
@@ -247,7 +264,11 @@ class Programs:
             raise self._taken(document.name) from error
 
     def set_active(self, program_id: int, active: bool, client: str) -> ProgramOut:
-        """Switch a program on or off; raise `NotFound`, or `Invalid` when switching on one without weekdays."""
+        """Switch a program on or off.
+
+        Raise `NotFound`, `Invalid` when switching on one without weekdays, or `Conflict` when switching off one whose
+        session is active.
+        """
         with self._training_days.lock:
             self._training_days.reconcile_now()
             out = self._set_active(program_id, active, client)
@@ -258,6 +279,8 @@ class Programs:
         """Switch and log a program, in one transaction."""
         with session(self._engine) as db_session:
             row = self._row(db_session, program_id)
+            if not active:
+                self._refuse_in_session(db_session, program_id)
             before = self._snapshot(row)
             if active and not row.document["weekdays"]:
                 raise Invalid(
@@ -278,7 +301,7 @@ class Programs:
             return self._out(row)
 
     def delete(self, program_id: int, client: str) -> None:
-        """Delete a program for good and log it; raise `NotFound` if there is none."""
+        """Delete a program for good and log it; raise `NotFound`, or `Conflict` while a session of it is active."""
         with self._training_days.lock:
             self._training_days.reconcile_now()
             self._delete(program_id, client)
@@ -288,6 +311,7 @@ class Programs:
         """Delete and log a program, in one transaction; its open days go first."""
         with session(self._engine) as db_session:
             row = self._row(db_session, program_id)
+            self._refuse_in_session(db_session, program_id)
             self._training_days.on_program_written(
                 db_session, self._snapshot(row), None
             )

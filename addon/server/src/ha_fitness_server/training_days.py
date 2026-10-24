@@ -14,10 +14,12 @@ from .clock import Clock
 from .db import session
 from .errors import Conflict, Invalid, NotFound
 from .models import (
+    ACTIVE_SESSION_STATUSES,
     Program as ProgramRow,
     SchedulerState,
     TrainingDay,
     TrainingDayStatus,
+    WorkoutSession,
 )
 from .programs import total_minutes
 from .schemas import (
@@ -52,6 +54,14 @@ def _event(name: str, day: TrainingDay) -> dict[str, Any]:
             "date": day.date.isoformat(),
         },
     }
+
+
+def _in_session(day_id: Any) -> Any:
+    """Return the condition "a running or paused session is for the day `day_id`" (a column or an id)."""
+    return exists().where(
+        WorkoutSession.training_day_id == day_id,
+        WorkoutSession.status.in_(ACTIVE_SESSION_STATUSES),
+    )
 
 
 def _out(day: TrainingDay) -> TrainingDayOut:
@@ -156,9 +166,14 @@ class TrainingDays:
                 events.append(_event("due", created))
         if not db_session.scalar(select(exists().where(TrainingDay.date == day))):
             return events
+        # A day whose session is running or paused stays open (step 5 spec §3.4).
         earlier = db_session.scalars(
             select(TrainingDay)
-            .where(TrainingDay.status == TrainingDayStatus.OPEN, TrainingDay.date < day)
+            .where(
+                TrainingDay.status == TrainingDayStatus.OPEN,
+                TrainingDay.date < day,
+                ~_in_session(TrainingDay.id),
+            )
             .order_by(TrainingDay.date, TrainingDay.id)
         )
         for missed in earlier:
@@ -167,6 +182,26 @@ class TrainingDays:
             events.append(_event("missed", missed))
         db_session.flush()
         return events
+
+    def publish_today(self) -> None:
+        """Publish `today` if it changed; for writes elsewhere that close a day, after their commit."""
+        with self.lock:
+            self._publish_today()
+
+    def close_done(
+        self, db_session: Session, day_id: int, at: datetime
+    ) -> dict[str, Any] | None:
+        """Close an open day as done in the caller's session (step 5 spec §3.4); return its `done` event.
+
+        A day that is gone or no longer open is left as it is, and there is no event.
+        """
+        day = db_session.get(TrainingDay, day_id)
+        if day is None or day.status != TrainingDayStatus.OPEN:
+            return None
+        day.status = TrainingDayStatus.DONE
+        day.closed_at = at
+        db_session.flush()
+        return _event("done", day)
 
     def _publish_today(self) -> None:
         """Publish `today` when what `/today` returns differs from what was published last."""
@@ -240,7 +275,10 @@ class TrainingDays:
         return [_out(day) for day in days]
 
     def skip(self, day_id: int, client: str) -> TrainingDayOut:
-        """Close an open day as skipped and log it (spec §3.4); raise `NotFound`, or `Conflict` for a closed day."""
+        """Close an open day as skipped and log it (spec §3.4).
+
+        Raise `NotFound`, or `Conflict` for a closed day or one whose session is running or paused.
+        """
         with self.lock:
             self.reconcile_now()
             with session(self._engine) as db_session:
@@ -251,6 +289,8 @@ class TrainingDays:
                     raise Conflict(
                         f"Training day {day_id} is {day.status.value}, not open"
                     )
+                if db_session.scalar(select(_in_session(day_id))):
+                    raise Conflict(f"A session for training day {day_id} is running")
                 day.status = TrainingDayStatus.SKIPPED
                 day.closed_at = self._clock.now()
                 changes.record(

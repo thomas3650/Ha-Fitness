@@ -171,6 +171,10 @@ class SessionStatus(StrEnum):
     ENDED = "ended"
 
 
+# "A session is active": running or paused. One session at a time can be.
+ACTIVE_SESSION_STATUSES = (SessionStatus.RUNNING, SessionStatus.PAUSED)
+
+
 class WorkoutSession(Base):
     """One workout (step 5 spec §3.2); `plan` is frozen at the start, so later edits change nothing here.
 

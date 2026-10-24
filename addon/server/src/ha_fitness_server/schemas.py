@@ -372,5 +372,12 @@ class SessionView(BaseModel):
     started_at: UtcMillis | None
     ended_at: UtcMillis | None
     rounds_completed: int
-    time_trained: float
+    time_trained: int
     server_time: UtcMillis
+
+
+class SessionHistory(BaseModel):
+    """Body of `GET /api/v1/sessions`: the finished sessions, newest first, and the date counting starts from."""
+
+    counting_from: dt.date | None
+    sessions: list[SessionView]
