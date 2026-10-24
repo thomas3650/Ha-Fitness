@@ -28,6 +28,11 @@ const RAMP = 0.01;
 
 // One context for the page. The browser allows sound only after a gesture.
 let context: AudioContext | undefined;
+const stateListeners = new Set<() => void>();
+
+function onStateChange(): void {
+  for (const listener of [...stateListeners]) listener();
+}
 
 /**
  * Create or resume the page's audio context. Call it synchronously in a tap handler (Start,
@@ -38,8 +43,21 @@ export function unlockAudio(): void {
     const Context = globalThis.AudioContext as typeof AudioContext | undefined;
     if (!Context) return;
     context = new Context();
+    context.addEventListener("statechange", onStateChange);
   }
-  if (context.state === "suspended") void context.resume().catch(() => undefined);
+  // Not only "suspended": Safari can also leave a context "interrupted".
+  if (context.state !== "running") void context.resume().catch(() => undefined);
+}
+
+/**
+ * Call `listener` each time the page's audio context changes state, so `audioLocked()` can be
+ * checked again. It also hears a context made after the call. Returns the unsubscribe.
+ */
+export function onAudioStateChange(listener: () => void): () => void {
+  stateListeners.add(listener);
+  return () => {
+    stateListeners.delete(listener);
+  };
 }
 
 /** True while no sound can play: never unlocked, suspended again, or no Web Audio. */

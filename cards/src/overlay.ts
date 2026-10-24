@@ -115,6 +115,14 @@ export function subscribe(listener: (state: SessionState) => void): () => void {
 
 /** Open the overlay in `mode`, or switch the open one to it. */
 export function open(mode: OverlayMode): void {
+  // A dialog someone else took off the page counts as gone. The page still has the overflow this
+  // controller set, so the one saved when it opened stays.
+  const replacing = dialog !== undefined && !dialog.isConnected;
+  if (replacing) {
+    dialog?.removeEventListener("close", reopen);
+    dialog = undefined;
+    flow = undefined;
+  }
   if (!dialog) {
     dialog = document.createElement("dialog");
     // Escape and the Android back gesture must not close it; Chrome honours `closedby`.
@@ -125,7 +133,7 @@ export function open(mode: OverlayMode): void {
     flow.onClose = close;
     dialog.append(flow);
     document.body.append(dialog);
-    savedOverflow = document.documentElement.style.overflow;
+    if (!replacing) savedOverflow = document.documentElement.style.overflow;
     document.documentElement.style.overflow = "hidden";
   }
   if (flow) {

@@ -282,15 +282,45 @@ test("a reconnect subscribes again and the old subscription's messages are ignor
   expect(overlay.state()).toEqual({ available: true, session: view(2) });
 });
 
-test("a refused subscription keeps the last view, unavailable", async () => {
-  const fake = fakeHass();
-  overlay.setHass(fake.hass);
-  await settle();
-  fake.push({ available: true, session: view(3) });
+test("a refused subscription keeps the last view, unavailable, and retries after 5 s", async () => {
+  vi.useFakeTimers();
+  try {
+    const fake = fakeHass();
+    overlay.setHass(fake.hass);
+    await vi.advanceTimersByTimeAsync(0);
+    fake.push({ available: true, session: view(3) });
 
-  fake.refuseNext();
-  fake.fire("ready");
-  await settle();
+    fake.refuseNext();
+    fake.fire("ready");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(overlay.state()).toEqual({ available: false, session: view(3) });
+    expect(fake.subscribeMessage).toHaveBeenCalledTimes(2);
 
-  expect(overlay.state()).toEqual({ available: false, session: view(3) });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(fake.subscribeMessage).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.subscribeMessage).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a dialog removed from the page by someone else is built again", () => {
+  document.documentElement.style.overflow = "auto";
+  overlay.setHass(fakeHass().hass);
+  overlay.open({ kind: "details", programId: 3 });
+
+  // Home Assistant can replace the page's body content, taking the dialog with it.
+  document.body.replaceChildren();
+  flows.length = 0;
+  overlay.open({ kind: "resume" });
+
+  const dialog = theDialog();
+  expect(dialog.isConnected).toBe(true);
+  expect(dialog.open).toBe(true);
+  expect(theFlow().mode).toEqual({ kind: "resume" });
+
+  overlay.close();
+  expect(queryAllByRole(document.body, "dialog", { hidden: true })).toHaveLength(0);
+  expect(document.documentElement.style.overflow).toBe("auto");
 });

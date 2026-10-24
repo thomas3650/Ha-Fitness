@@ -45,6 +45,39 @@ test("unlockAudio resumes a context the browser suspended again", () => {
   expect(audio.audioLocked()).toBe(false);
 });
 
+test("unlockAudio resumes an interrupted context", () => {
+  const fake = installFakeAudio("running");
+  audio.unlockAudio();
+
+  // Safari interrupts a context, for example during a call; that is not "suspended".
+  fake.contexts[0].state = "interrupted" as AudioContextState;
+  expect(audio.audioLocked()).toBe(true);
+  audio.unlockAudio();
+
+  expect(fake.contexts[0].resume).toHaveBeenCalledTimes(1);
+  expect(audio.audioLocked()).toBe(false);
+});
+
+test("onAudioStateChange tells listeners when the lock changes", () => {
+  const fake = installFakeAudio("running");
+  const listener = vi.fn(() => audio.audioLocked());
+  // A listener added before the context exists still hears its changes.
+  const stop = audio.onAudioStateChange(listener);
+  audio.unlockAudio();
+
+  fake.contexts[0].setState("suspended");
+  expect(listener).toHaveBeenCalledTimes(1);
+  expect(listener).toHaveLastReturnedWith(true);
+
+  fake.contexts[0].setState("running");
+  expect(listener).toHaveBeenCalledTimes(2);
+  expect(listener).toHaveLastReturnedWith(false);
+
+  stop();
+  fake.contexts[0].setState("suspended");
+  expect(listener).toHaveBeenCalledTimes(2);
+});
+
 test("without Web Audio nothing plays and audio stays locked", () => {
   vi.stubGlobal("AudioContext", undefined);
 

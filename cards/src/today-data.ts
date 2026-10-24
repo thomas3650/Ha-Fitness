@@ -89,6 +89,11 @@ export class WsSubscription<T> {
         // extra server subscription behind after each reconnect.
         { resubscribe: false },
       )
+      .then((stop) => {
+        // A subscription that holds starts the waits over for the next refusal.
+        if (this.current === subscription) this.retries = 0;
+        return stop;
+      })
       .catch(() => {
         if (this.current === subscription) {
           this.onData(null);

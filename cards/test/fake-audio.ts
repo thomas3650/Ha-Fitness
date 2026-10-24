@@ -26,9 +26,24 @@ export function installFakeAudio(initialState: AudioContextState = "suspended") 
       this.state = "running";
       return Promise.resolve();
     });
+    private readonly stateListeners = new Set<() => void>();
 
     constructor() {
       contexts.push(this);
+    }
+
+    addEventListener(type: string, listener: () => void) {
+      if (type === "statechange") this.stateListeners.add(listener);
+    }
+
+    removeEventListener(type: string, listener: () => void) {
+      if (type === "statechange") this.stateListeners.delete(listener);
+    }
+
+    /** Change the state as the browser would, and fire `statechange`. */
+    setState(state: AudioContextState) {
+      this.state = state;
+      for (const listener of [...this.stateListeners]) listener();
     }
 
     createOscillator() {
