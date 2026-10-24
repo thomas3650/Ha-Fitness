@@ -24,7 +24,8 @@ from .fake_addon import TODAY_DUE, FakeAddon
 TODAY = "sensor.ha_fitness_today"
 NEXT = "sensor.ha_fitness_next_training_day"
 OPEN = "binary_sensor.ha_fitness_training_open"
-ENTITY_IDS = (TODAY, NEXT, OPEN)
+RUNNING = "binary_sensor.ha_fitness_session_running"
+ENTITY_IDS = (TODAY, NEXT, OPEN, RUNNING)
 
 LATE_DAY: dict[str, Any] = {
     **TODAY_DUE["open"][0],
@@ -68,6 +69,7 @@ async def test_entity_ids_on_danish_ha(
         f"{entry_id}_today": TODAY,
         f"{entry_id}_next_training_day": NEXT,
         f"{entry_id}_training_open": OPEN,
+        f"{entry_id}_session_running": RUNNING,
     }
     names = {
         entity_id: hass.states.get(entity_id).attributes["friendly_name"]  # type: ignore[union-attr]
@@ -77,6 +79,7 @@ async def test_entity_ids_on_danish_ha(
         TODAY: "HA Fitness Træning i dag",
         NEXT: "HA Fitness Næste træningsdag",
         OPEN: "HA Fitness Træning åben",
+        RUNNING: "HA Fitness Træning i gang",
     }
     await unload(hass, config_entry)
 

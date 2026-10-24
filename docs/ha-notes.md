@@ -57,9 +57,16 @@ fit no doc stay in [`notes.md`](notes.md).
   translated name, in HA's own language. On a Danish HA that gives Danish ids, from "Træning i dag" and the others.
   So the entities set `entity_id` explicitly (`sensor.ha_fitness_today` …), and `test_entity_ids_on_danish_ha`
   checks the ids with `hass.config.language = "da"`.
+- **HA's request filter runs before any view.** Its `security_filter` middleware answers 400 for a path that holds a
+  tab, CR or LF once decoded (`%0A`), or a `../` after unquoting, however often it was encoded (`..%2F`). The view
+  never sees such a request. A lone `%2F` isn't filtered. So the media proxy's tests expect 400 for those paths, and
+  404 for every other path outside its patterns (checked in HA's `http/security_filter.py`).
 
 ## The frontend
 
+- **Authenticated images.** An `<img src>` request sends no `Authorization` header, so a view with `requires_auth`
+  answers it 401. The cards load the media proxy's files with `hass.fetchWithAuth(url)`, which adds the token, and
+  show the body through an object URL (`URL.createObjectURL`). An object URL holds its blob until it is revoked.
 - **Hiding a card.** HA's `hui-card` hides a card when the card element sets the `hidden` attribute and fires
   `card-visibility-changed` (`detail: {value: <visible>}`, bubbling and composed); HA's own cards also set
   `display: none`. A card that is only `display: none` keeps its grid cell, which shows as an empty space.

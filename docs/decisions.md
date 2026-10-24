@@ -358,3 +358,13 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   snapshot of the last backup. Now it holds the data as of the stop; only a crash leaves an older one (#20).
 - **Source:** [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §3.6; Claude, 2026-10-24 (Thomas's
   delegation for the night)
+
+### D44: Exercise media reaches the cards only through an authenticated proxy
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The cards load an exercise's GIF or thumbnail only from the integration's view
+  `/api/ha_fitness/media/{exercise_id}/{kind}`, which requires HA's login. It relays only a library or custom exercise
+  id and the kinds `gif` and `thumbnail`; anything else is a 404 before any relay. The cards fetch with
+  `hass.fetchWithAuth` and show object URLs.
+- **Why:** The add-on's port has no auth of its own and must stay off the internet, while HA's port is reachable from
+  outside. The proxy keeps the media behind HA's login, and the patterns stop it from reaching any other add-on path.
+- **Source:** [workout spec](superpowers/specs/2026-10-24-the-workout-design.md) §4 and §5.2; Claude, 2026-10-24

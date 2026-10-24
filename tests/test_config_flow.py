@@ -154,3 +154,40 @@ async def test_user_step_while_discovery_in_progress(hass: HomeAssistant) -> Non
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_in_progress"
     assert result["translation_domain"] == "homeassistant"
+
+
+async def test_user_step_aborts_next_to_unmigrated_v1_entry(
+    hass: HomeAssistant,
+) -> None:
+    """A version 1 entry not yet set up (no unique id) still blocks a second manual entry."""
+    MockConfigEntry(domain=DOMAIN, title="HA Fitness", data={}, version=1).add_to_hass(
+        hass
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
+async def test_hassio_discovery_updates_unmigrated_v1_entry(
+    hass: HomeAssistant,
+) -> None:
+    """A discovery next to an unmigrated version 1 entry gives it the URL; no second entry."""
+    entry = MockConfigEntry(domain=DOMAIN, title="HA Fitness", data={}, version=1)
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_HASSIO}, data=DISCOVERY
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert hass.config_entries.async_entries(DOMAIN) == [entry]
+
+    # Setting it up afterwards keeps the discovered URL.
+    with patch(PATCH_SETUP_ENTRY, return_value=True):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.version == 2
+    assert entry.data == {"url": "http://local-ha-fitness:8765"}
+    assert entry.unique_id == "ha_fitness"
