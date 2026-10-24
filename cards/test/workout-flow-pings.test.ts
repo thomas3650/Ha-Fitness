@@ -496,3 +496,15 @@ test("Forrige that restarts the current work phase plays its change tone", async
   await settle(flow);
   expect(live()).toEqual([]);
 });
+
+test("a running phase that ends later with only part of it left is no restart", async () => {
+  const fake = fakeHass("da");
+  const flow = await mount(fake, view());
+  await wait(flow, 30_000);
+
+  // A pause and resume the flow never saw (during an outage, say): still running, the end moved
+  // from 45 s to 55 s, but only 25 s of the 45 s work are left. No change tone; only the replan.
+  mark = audio.tones().length;
+  await push(flow, view({ revision: 13, phase: phase({ ends_at: at(55) }), server_time: at(30) }));
+  expect(live()).toEqual([...beeps(50, 51, 52, 53, 54), { kind: "rest", start: 55 }]);
+});

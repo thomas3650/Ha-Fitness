@@ -752,18 +752,22 @@ export class WorkoutFlow extends LitElement {
 
   /**
    * Næste and Forrige start a phase before the old one ran out: its change tone plays now. That
-   * includes Forrige restarting the running phase, which keeps its index but ends later. A phase
-   * that started because the old one ran out had its tone at local zero, so it gets none here.
+   * includes Forrige restarting the running phase, which keeps its index, ends later and has its
+   * whole length left. A phase that started because the old one ran out had its tone at local
+   * zero, so it gets none here.
    * Nothing plays while paused.
    */
   private playSkipTone(previous: SessionView | undefined, view: SessionView): void {
     const before = previous?.id === view.id ? previous.phase : null;
     const after = view.phase;
     if (!before?.ends_at || !after) return;
+    // A pause and resume the flow never saw also moves the end later; a restart has, per the
+    // view, its whole length still ahead.
     const restarted =
       after.index === before.index &&
       after.ends_at !== null &&
-      Date.parse(after.ends_at) - Date.parse(before.ends_at) > RESTART_MS;
+      Date.parse(after.ends_at) - Date.parse(before.ends_at) > RESTART_MS &&
+      Date.parse(after.ends_at) - Date.parse(view.server_time) >= after.duration * 1000 - RESTART_MS;
     if (after.index === before.index && !restarted) return;
     if (view.status !== "running" || after.kind === "countdown" || audioLocked()) return;
     const now = this.now();
