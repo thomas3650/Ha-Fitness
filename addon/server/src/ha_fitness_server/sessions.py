@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import math
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel
 from sqlalchemy import Engine, select
@@ -30,6 +30,7 @@ from .models import (
 from .people import MAX_PEOPLE, People
 from .programs import Programs
 from .schemas import (
+    Feeling,
     NextPhase,
     PhaseKind,
     ProgramOut,
@@ -46,6 +47,8 @@ from .training_days import TrainingDays
 type Publish = Callable[[dict[str, Any]], None]
 
 COMMANDS = ("pause", "resume", "next", "previous", "end")
+# How a completed session can feel (UI refresh spec §3.3).
+FEELINGS = ("too_easy", "just_right", "too_hard")
 # `GET /session` keeps a finished view this long (spec §3.5).
 FINISHED_VIEW_KEPT = timedelta(minutes=5)
 # The tick writes `last_tick_at` at least this often (spec §3.2).
@@ -461,6 +464,51 @@ class Sessions:
             self._send(messages)
             return view
 
+    def feel(self, feeling: str, client: str) -> SessionView:
+        """Tick, then rate the completed session of the finished view (UI refresh spec §3.3) and return its view.
+
+        A later call replaces the rating. Raise `SessionError`: 422 `invalid` for a value not in `FEELINGS`, 409
+        `conflict` unless there is no running or paused session and the last finished one is completed and ended
+        under `FINISHED_VIEW_KEPT` ago.
+        """
+        if feeling not in FEELINGS:
+            raise SessionError(
+                422,
+                "invalid",
+                f"feeling must be one of {', '.join(FEELINGS)}, got {feeling}",
+            )
+        with self._training_days.lock:
+            now = self._clock.now()
+            self._tick_alone(now)
+            with session(self._engine) as db_session:
+                if self._active(db_session) is not None:
+                    raise SessionError(409, "conflict", "The session is still running")
+                row = self._last_finished(db_session)
+                if (
+                    row is None
+                    or row.ended_at is None
+                    or now - row.ended_at >= FINISHED_VIEW_KEPT
+                ):
+                    raise SessionError(409, "conflict", "No session has just finished")
+                if row.status != SessionStatus.COMPLETED:
+                    raise SessionError(
+                        409, "conflict", "Only a completed session can be rated"
+                    )
+                row.feeling = feeling
+                row.revision += 1
+                plan = Plan.model_validate(row.plan)
+                changes.record(
+                    db_session,
+                    client=client,
+                    action="session.feeling",
+                    target=f"session:{row.id}",
+                    summary=f"Rated session of {plan.program_name} as {feeling}",
+                )
+                db_session.flush()
+                view = self._finished_view(db_session, row, now)
+            self._send([_session_message(view)])
+            return view
+
     def _tick_alone(self, now: datetime) -> None:
         """Tick in a transaction of its own and publish it, so a refused command after it can't undo the tick."""
         with session(self._engine) as db_session:
@@ -775,6 +823,7 @@ class Sessions:
             rounds_completed=row.rounds_completed,
             time_trained=time_trained(row, now),
             server_time=now,
+            feeling=cast(Feeling | None, row.feeling),
         )
 
     @staticmethod
@@ -836,6 +885,7 @@ class Sessions:
             rounds_completed=row.rounds_completed,
             time_trained=time_trained(row, now),
             server_time=now,
+            feeling=None,
         )
 
 

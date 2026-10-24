@@ -361,6 +361,10 @@ class SessionTotals(BaseModel):
     stations: int
 
 
+# How a completed session felt (UI refresh spec §3.3); `sessions.FEELINGS` lists the same values.
+type Feeling = Literal["too_easy", "just_right", "too_hard"]
+
+
 class SessionView(BaseModel):
     """A session as `GET /api/v1/session` and the push channel give it (step 5 spec §3.5).
 
@@ -383,6 +387,14 @@ class SessionView(BaseModel):
     rounds_completed: int
     time_trained: int
     server_time: UtcMillis
+    # How a completed session felt; null on a live view and on a finished one not rated (UI refresh spec §3.3).
+    feeling: Feeling | None
+
+
+class FeelingIn(BaseModel):
+    """Body of `POST /api/v1/session/feeling`; any text, so the service answers an unknown value with `{code, message}`."""
+
+    feeling: str
 
 
 class SessionHistory(BaseModel):

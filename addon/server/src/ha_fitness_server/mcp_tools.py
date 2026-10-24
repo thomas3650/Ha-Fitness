@@ -279,7 +279,8 @@ old values.
     def list_sessions(limit: int = 20) -> SessionHistory:
         """Return the finished sessions, newest first, and `counting_from`, the date the counting starts (or null).
 
-        `limit` is 1-100, default 20.
+        `limit` is 1-100, default 20. Each session's `feeling` is how the workout felt, rated on the tablet just after
+        it completed: `too_easy`, `just_right`, `too_hard`, or null when not rated.
         """
         with _tool_errors():
             return holder.get().sessions.finished(limit)

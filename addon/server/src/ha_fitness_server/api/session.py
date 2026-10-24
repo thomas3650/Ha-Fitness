@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from ha_fitness_server.errors import SessionError
-from ha_fitness_server.schemas import NewSession, SessionHistory, SessionView
+from ha_fitness_server.schemas import FeelingIn, NewSession, SessionHistory, SessionView
 from ha_fitness_server.services import Services
 
 from .deps import client_from_request, get_services
@@ -30,6 +30,17 @@ def start_session(
     return services.sessions.start(
         body.program_id, body.participants, body.training_day_id, client
     )
+
+
+@router.post("/session/feeling")
+def session_feeling(
+    services: ServicesDep, client: ClientDep, body: FeelingIn
+) -> SessionView:
+    """Rate the completed session of the finished view: 422 `invalid` for an unknown value, 409 `conflict` otherwise.
+
+    Declared before `POST /session/{command}`, which would take `feeling` as a command.
+    """
+    return services.sessions.feel(body.feeling, client)
 
 
 @router.post("/session/{command}")
