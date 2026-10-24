@@ -53,6 +53,11 @@ export interface SessionState {
   session: SessionView | null;
 }
 
+/** A session is active while it runs or is paused; a finished view (kept 5 minutes) is not. */
+export function isActive(session: SessionView | null | undefined): session is SessionView {
+  return session?.status === "running" || session?.status === "paused";
+}
+
 /** How the flow opens: the details of a program (from a card's Start), or the running session. */
 export type OverlayMode =
   | { kind: "details"; programId: number; trainingDayId?: number }

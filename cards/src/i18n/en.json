@@ -1,7 +1,11 @@
 {
   "picker": {
     "name": "HA Fitness – today",
-    "description": "Today's training, with a button to skip it. Hidden when there's no training."
+    "description": "Today's training, with Start and a button to skip it. Hidden when there's no training."
+  },
+  "picker_workout": {
+    "name": "HA Fitness – workout",
+    "description": "The active programs, each with Start. Shows Continue while a workout runs."
   },
   "today": {
     "stations_one": "{count} exercise",
@@ -11,11 +15,20 @@
     "minutes": "about {count} min",
     "summary": "{stations} · {rounds} · {minutes}",
     "late": "Late · {weekday} · {summary}",
+    "start": "Start",
     "skip": "Skip",
     "skip_confirm": "Skip?",
     "yes": "Yes",
     "no": "No",
     "nothing_open": "No training today",
+    "unreachable": "HA Fitness can't be reached"
+  },
+  "session": {
+    "running": "Workout in progress · {program}",
+    "resume": "Continue"
+  },
+  "workout": {
+    "no_programs": "No active programs",
     "unreachable": "HA Fitness can't be reached"
   },
   "weekday": {

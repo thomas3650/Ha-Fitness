@@ -1,7 +1,11 @@
 {
   "picker": {
     "name": "HA Fitness – i dag",
-    "description": "Dagens træning, med en knap til at springe den over. Skjult, når der ikke er nogen træning."
+    "description": "Dagens træning, med Start og en knap til at springe den over. Skjult, når der ikke er nogen træning."
+  },
+  "picker_workout": {
+    "name": "HA Fitness – træning",
+    "description": "De aktive programmer, hver med Start. Viser Fortsæt, mens en træning er i gang."
   },
   "today": {
     "stations_one": "{count} øvelse",
@@ -11,11 +15,20 @@
     "minutes": "ca. {count} min",
     "summary": "{stations} · {rounds} · {minutes}",
     "late": "Forfalden · {weekday} · {summary}",
+    "start": "Start",
     "skip": "Spring over",
     "skip_confirm": "Spring over?",
     "yes": "Ja",
     "no": "Nej",
     "nothing_open": "Ingen træning i dag",
+    "unreachable": "HA Fitness kan ikke nås"
+  },
+  "session": {
+    "running": "Træning i gang · {program}",
+    "resume": "Fortsæt"
+  },
+  "workout": {
+    "no_programs": "Ingen aktive programmer",
     "unreachable": "HA Fitness kan ikke nås"
   },
   "weekday": {
