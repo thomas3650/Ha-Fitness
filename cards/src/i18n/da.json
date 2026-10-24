@@ -65,6 +65,7 @@
     "unreachable": "HA Fitness kan ikke nås",
     "round": "Runde {round}/{rounds}",
     "interval": "Interval {interval}",
+    "interval_of": "Interval {interval}/{intervals}",
     "elapsed": "{elapsed} / {planned}",
     "end": "Slut",
     "end_confirm": "Afslut træningen?",

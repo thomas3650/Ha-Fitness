@@ -65,6 +65,7 @@
     "unreachable": "HA Fitness can't be reached",
     "round": "Round {round}/{rounds}",
     "interval": "Interval {interval}",
+    "interval_of": "Interval {interval}/{intervals}",
     "elapsed": "{elapsed} / {planned}",
     "end": "End",
     "end_confirm": "End the workout?",

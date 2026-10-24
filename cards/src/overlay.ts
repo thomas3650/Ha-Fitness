@@ -36,7 +36,8 @@ export interface SessionView {
   next_phase: { kind: PhaseKind; duration: number } | null;
   /** One per participant, in participant order. */
   stations: { current: SessionStation; next: SessionStation | null }[] | null;
-  totals: { planned: number; rounds: number };
+  /** `stations` is the intervals per round; older add-ons leave it out. */
+  totals: { planned: number; rounds: number; stations?: number };
   started_at: string;
   ended_at: string | null;
   rounds_completed: number;
@@ -82,6 +83,8 @@ let flow: FlowElement | undefined;
 let savedOverflow = "";
 /** When each view arrived (`Date.now()`); a flow opened later counts from that, not from the hand-over. */
 const arrivals = new WeakMap<SessionView, number>();
+/** For each unavailable state, when the controller first learned the add-on was gone (`Date.now()`). */
+const losses = new WeakMap<SessionState, number>();
 
 const subscription = new WsSubscription<SessionState>("ha_fitness/session/subscribe", (message) => {
   // A refused subscription counts as unreachable; like the integration, it keeps the last view so
@@ -92,6 +95,8 @@ const subscription = new WsSubscription<SessionState>("ha_fitness/session/subscr
 function receive(next: SessionState): void {
   // The refused path repeats the last view object; it keeps its first arrival.
   if (next.session && !arrivals.has(next.session)) arrivals.set(next.session, Date.now());
+  // An outage starts at its first unavailable message; the ones after it carry that time on.
+  if (!next.available) losses.set(next, (!current.available ? losses.get(current) : undefined) ?? Date.now());
   current = next;
   if (flow) flow.state = next;
   for (const listener of [...listeners]) listener(next);
@@ -112,6 +117,11 @@ export function state(): SessionState {
 /** The local time (`Date.now()`) the controller received `view`, or undefined for a view it never had. */
 export function receivedAt(view: SessionView): number | undefined {
   return arrivals.get(view);
+}
+
+/** The local time (`Date.now()`) the outage `state` belongs to began, or undefined for a state it never had. */
+export function lostAt(state: SessionState): number | undefined {
+  return losses.get(state);
 }
 
 /** Call `listener` with every new state. Returns the unsubscribe. */

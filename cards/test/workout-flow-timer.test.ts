@@ -631,3 +631,93 @@ test("a session's first view clears an alert from details", async () => {
   expect(queryByRole(root(flow), "progressbar")).not.toBeNull();
   expect(queryByRole(root(flow), "alert")).toBeNull();
 });
+
+test("the header shows the intervals out of the stations when the view has them", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
+  expect(hasText(flow, "Interval 1/3")).toBe(true);
+  document.body.replaceChildren();
+
+  const en = await mount(fakeHass("en"), view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
+  expect(hasText(en.flow, "Interval 1/3")).toBe(true);
+});
+
+test("unreachable with no session keeps the ring counting", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view());
+  await wait(flow, 2_000);
+
+  await push(flow, null, false);
+  expect(hasText(flow, "HA Fitness kan ikke nås")).toBe(true);
+  expect(ringState(flow).now).toBe("43");
+  await wait(flow, 3_000);
+  expect(ringState(flow).now).toBe("40");
+});
+
+test("unreachable with a new view object, a fresh stamp and the same revision keeps counting", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view());
+  await wait(flow, 2_000);
+
+  await push(flow, view({ server_time: "2026-10-24T08:00:02.000Z" }), false);
+  expect(ringState(flow).now).toBe("43");
+  await wait(flow, 3_000);
+  expect(ringState(flow).now).toBe("40");
+});
+
+test("get ready shows the work word at the countdown's local zero", async () => {
+  const fake = fakeHass("da");
+  const countdown = view({
+    revision: 1,
+    phase: phase({ index: 0, kind: "countdown", round: 1, duration: 10, ends_at: "2026-10-24T08:00:10.000Z" }),
+    next_phase: { kind: "work", duration: 45 },
+  });
+  const { flow } = await mount(fake, countdown);
+  expect(hasText(flow, "ARBEJD")).toBe(false);
+  expect(hasText(flow, "10")).toBe(true);
+
+  await wait(flow, 10_000);
+  expect(hasText(flow, "ARBEJD")).toBe(true);
+});
+
+test("a late view of an older session can't pull the flow back", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view({ id: 8, revision: 1, phase: phase({ round: 1 }) }));
+  expect(hasText(flow, "Runde 1/5")).toBe(true);
+
+  await push(flow, view({ id: 7, revision: 30, phase: phase({ round: 4 }) }));
+  expect(hasText(flow, "Runde 1/5")).toBe(true);
+});
+
+test("Luk counts from when the controller first learned the add-on was gone", async () => {
+  let deliver: (message: SessionState) => void = () => undefined;
+  const connection = {
+    subscribeMessage: vi.fn(async (callback: (message: SessionState) => void) => {
+      deliver = callback;
+      return () => undefined;
+    }),
+  };
+  const fake = fakeHass("da");
+  overlay.setHass({ ...fake.hass, connection } as unknown as overlay.OverlayHass);
+  await vi.advanceTimersByTimeAsync(0);
+  const last = view({ revision: 50 });
+  deliver({ available: true, session: last });
+  await vi.advanceTimersByTimeAsync(1_000);
+  deliver({ available: false, session: last });
+  await vi.advanceTimersByTimeAsync(5_000);
+  // A second unavailable message during the outage doesn't start it over.
+  deliver({ available: false, session: last });
+  await vi.advanceTimersByTimeAsync(10_000);
+
+  // Fortsæt 15 s into the outage: Luk shows at once.
+  overlay.open({ kind: "resume" });
+  const flow = getByRole(document.body, "dialog").firstElementChild as FlowElement;
+  await settle(flow);
+  try {
+    expect(hasText(flow, "HA Fitness kan ikke nås")).toBe(true);
+    expect(button(flow, "Luk")).toBeTruthy();
+  } finally {
+    overlay.close();
+    deliver({ available: true, session: null });
+  }
+});

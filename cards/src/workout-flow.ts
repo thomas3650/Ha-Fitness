@@ -10,6 +10,7 @@ import {
   type SessionState,
   type SessionStation,
   type SessionView,
+  lostAt,
   receivedAt,
 } from "./overlay";
 import { ring } from "./ring";
@@ -435,7 +436,7 @@ export class WorkoutFlow extends LitElement {
 
   protected override willUpdate(changed: PropertyValues<this>): void {
     if (changed.has("state")) {
-      this.watchReach(this.state?.available !== false);
+      this.watchReach(this.state);
       this.take(this.state?.session ?? undefined);
     }
     if (changed.has("result")) this.take(this.result);
@@ -476,17 +477,21 @@ export class WorkoutFlow extends LitElement {
     this.doneTimer = setTimeout(() => this.close(), DONE_MS);
   }
 
-  /** Note when the add-on became unreachable; Luk shows 10 s after that, until it is back. */
-  private watchReach(available: boolean): void {
-    if (available) {
+  /**
+   * Note when the add-on became unreachable: when the controller first learned it, or now. Luk shows
+   * 10 s after that, until it is back.
+   */
+  private watchReach(state: SessionState | undefined): void {
+    if (!state || state.available) {
       clearTimeout(this.unreachableTimer);
       this.unreachableTimer = undefined;
       this.unreachableSince = undefined;
       return;
     }
     if (this.unreachableSince !== undefined) return;
-    this.unreachableSince = Date.now();
-    this.unreachableTimer = setTimeout(() => this.requestUpdate(), UNREACHABLE_MS);
+    this.unreachableSince = lostAt(state) ?? Date.now();
+    const wait = Math.max(0, this.unreachableSince + UNREACHABLE_MS - Date.now());
+    this.unreachableTimer = setTimeout(() => this.requestUpdate(), wait);
   }
 
   private reachable(): boolean {
@@ -500,7 +505,7 @@ export class WorkoutFlow extends LitElement {
     this.onClose?.();
   }
 
-  /** Keep the newer of the flow's view and `view`: a higher revision, or another session. */
+  /** Keep the newer of the flow's view and `view`: a higher revision, or a newer session. */
   private take(view: SessionView | undefined): void {
     if (!view) return;
     // Every message's stamp corrects the clock, applied or not, as of when the message arrived:
@@ -511,6 +516,8 @@ export class WorkoutFlow extends LitElement {
       this.offset = Date.parse(view.server_time) - (receivedAt(view) ?? Date.now());
     }
     const newest = this.newest;
+    // A late view of an older session can't pull the flow back.
+    if (newest && view.id < newest.id) return;
     if (newest && newest.id === view.id && newest.revision >= view.revision) return;
     // An alert belongs to the session it came from.
     if (newest?.id !== view.id) this.error = undefined;
@@ -962,7 +969,11 @@ export class WorkoutFlow extends LitElement {
     return html`
       <header class="top">
         <span>${this.t("flow.round", { round, rounds: view.totals.rounds })}</span>
-        <span>${this.t("flow.interval", { interval })}</span>
+        <span>
+          ${view.totals.stations === undefined
+            ? this.t("flow.interval", { interval })
+            : this.t("flow.interval_of", { interval, intervals: view.totals.stations })}
+        </span>
         <span class="elapsed">
           ${this.t("flow.elapsed", { elapsed: clock(this.elapsed(view)), planned: clock(view.totals.planned) })}
         </span>
