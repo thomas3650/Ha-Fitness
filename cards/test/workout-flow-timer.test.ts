@@ -988,7 +988,7 @@ test("the GIFs coming up are fetched ahead", async () => {
 // The music player (music spec §6.2).
 
 function music(state: MusicState["state"] = "playing"): MusicState {
-  return { playlist_name: "Workout Mix", speaker: "media_player.stue", speaker_name: "Stue", state };
+  return { playlist_name: "Workout Mix", speaker: "media_player.living_room", speaker_name: "Stue", state };
 }
 
 function player(flow: FlowElement, name = "Musik"): HTMLElement {

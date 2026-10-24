@@ -114,7 +114,7 @@ function view(revision = 1, status: "running" | "paused" | "completed" | "ended"
 /** The music of a session, as the subscription sends it (music spec §5.4). */
 const playing = {
   playlist_name: "Workout Mix",
-  speaker: "media_player.stue",
+  speaker: "media_player.living_room",
   speaker_name: "Stue",
   state: "playing",
 };

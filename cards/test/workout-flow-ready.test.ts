@@ -314,7 +314,7 @@ test("get ready shows start stations; Start nu sends next; Annullér sends end a
 });
 
 test("get ready shows no player", async () => {
-  const music = { playlist_name: "Workout Mix", speaker: "media_player.stue", speaker_name: "Stue", state: "waiting" as const };
+  const music = { playlist_name: "Workout Mix", speaker: "media_player.living_room", speaker_name: "Stue", state: "waiting" as const };
   const { flow } = await mount(fakeHass("da"), { kind: "resume" }, { available: true, session: view(), music });
   // Get ready shows, and the music waits for the first work phase without a player.
   expect(button(flow, "Start nu")).toBeTruthy();

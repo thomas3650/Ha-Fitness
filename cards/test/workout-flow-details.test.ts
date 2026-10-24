@@ -707,13 +707,13 @@ test("a program no longer in the active list shows the not-found text with Tilba
 const mix = {
   playlist: "library://playlist/1",
   playlist_name: "Workout Mix",
-  speaker: "media_player.stue",
+  speaker: "media_player.living_room",
   volume: 40,
   shuffle: true,
 };
 const withMusic: Program = { ...onsdag, music: mix };
 const kitchen: Speaker = { entity_id: "media_player.kitchen", name: "Køkken", available: true };
-const stue: Speaker = { entity_id: "media_player.stue", name: "Stue", available: true };
+const stue: Speaker = { entity_id: "media_player.living_room", name: "Stue", available: true };
 
 function speakerSelect(flow: FlowElement, name = "Højttaler"): HTMLSelectElement {
   return getByRole(root(flow), "combobox", { name }) as HTMLSelectElement;
@@ -779,19 +779,19 @@ test("select defaults to program speaker, falls back to first available", async 
     fakeHass("da", [thomas, maria], [withMusic], [kitchen, { ...stue, available: false }]),
     details,
   );
-  expect(speakerSelect(own.flow).value).toBe("media_player.stue");
+  expect(speakerSelect(own.flow).value).toBe("media_player.living_room");
   document.body.replaceChildren();
 
   // Not listed: the first available one.
-  const away = { ...kitchen, entity_id: "media_player.away", name: "Væk", available: false };
+  const away = { ...kitchen, entity_id: "media_player.attic", name: "Væk", available: false };
   const fallback = await mount(fakeHass("da", [thomas, maria], [withMusic], [away, kitchen]), details);
   expect(speakerSelect(fallback.flow).value).toBe("media_player.kitchen");
   document.body.replaceChildren();
 
   // None available: the first listed.
-  const office = { ...away, entity_id: "media_player.office", name: "Kontor" };
+  const office = { ...away, entity_id: "media_player.garage", name: "Kontor" };
   const none = await mount(fakeHass("da", [thomas, maria], [withMusic], [away, office]), details);
-  expect(speakerSelect(none.flow).value).toBe("media_player.away");
+  expect(speakerSelect(none.flow).value).toBe("media_player.attic");
 });
 
 test("unavailable speaker is marked", async () => {
@@ -823,7 +823,7 @@ test("start sends the chosen speaker", async () => {
   const plain = fakeHass("da", [thomas, maria], [withMusic], [kitchen, stue]);
   const second = await mount(plain, details);
   await tap(second.flow, button(second.flow, "Start"));
-  expect(sessionCommands(plain)[0]).toMatchObject({ speaker: "media_player.stue" });
+  expect(sessionCommands(plain)[0]).toMatchObject({ speaker: "media_player.living_room" });
 });
 
 test("no speaker sent without the row", async () => {

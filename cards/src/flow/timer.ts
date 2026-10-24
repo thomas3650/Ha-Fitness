@@ -665,6 +665,7 @@ export const timerStyles = css`
        it, since they grow from 0 up to their text's width. */
     .timer-top.with-music {
       flex-wrap: wrap;
+      row-gap: 0;
     }
     .timer-top.with-music > .timer-pill {
       flex: 1 1 0;
@@ -675,8 +676,10 @@ export const timerStyles = css`
       order: 1;
       flex-basis: 100%;
     }
+    /* The break item takes a line of its own, so the gap above the player is its margin. */
     .timer-top.with-music > .music {
       order: 2;
+      margin-top: 12px;
     }
     /* Two people: both cards side by side, the ring below them. */
     .timer-duo {
