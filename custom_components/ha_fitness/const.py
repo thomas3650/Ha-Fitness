@@ -18,8 +18,16 @@ DEFAULT_URL: Final = "http://localhost:8765"
 DEVICE_NAME: Final = "HA Fitness"
 
 # The add-on's training-day events this version knows; each fires ha_fitness_training_day_<event>.
-TRAINING_DAY_EVENTS: Final = ("due", "skipped", "missed")
+TRAINING_DAY_EVENTS: Final = ("due", "skipped", "missed", "done")
 EVENT_PREFIX: Final = f"{DOMAIN}_training_day_"
+
+# The add-on's session events this version knows; each fires ha_fitness_<event>.
+SESSION_EVENTS: Final = (
+    "session_started",
+    "session_completed",
+    "session_ended",
+    "phase_changed",
+)
 
 # Sent on the dispatcher whenever what the add-on holds changes, or the entry loads or unloads.
 SIGNAL_UPDATE: Final = f"{DOMAIN}_update"

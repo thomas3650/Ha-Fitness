@@ -80,7 +80,11 @@ async def test_unknown_and_malformed_messages_are_ignored(
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: fake_addon.connects == 1)
 
-    await fake_addon.push({"type": "session", "data": {}})
+    await fake_addon.push({"type": "unknown", "data": {}})
+    await fake_addon.push({"type": "session"})
+    await fake_addon.push({"type": "session", "data": 5})
+    await fake_addon.push({"type": "event", "event": "phase_changed", "session": 5})
+    await fake_addon.push({"type": "event", "session": {}})
     await fake_addon.push({"type": "hello", "api_version": "3"})
     await fake_addon.push({"type": "today", "data": None})
     await fake_addon.push({"type": "event", "event": "due"})

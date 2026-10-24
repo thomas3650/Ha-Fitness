@@ -61,6 +61,17 @@
     "binary_sensor": {
       "training_open": {
         "name": "Træning åben"
+      },
+      "session_running": {
+        "name": "Træning i gang",
+        "state_attributes": {
+          "program": {
+            "name": "Program"
+          },
+          "participants": {
+            "name": "Deltagere"
+          }
+        }
       }
     }
   },

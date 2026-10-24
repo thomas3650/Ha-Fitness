@@ -1,4 +1,7 @@
-"""A fake HA Fitness add-on: the REST routes and the push channel of spec §3.5 to §3.7 and §4.2."""
+"""A fake HA Fitness add-on: the REST routes and the push channel of spec §3.5 to §3.7 and §4.2.
+
+Step 5 adds GET /api/v1/session and the session message (the workout spec §3.5).
+"""
 
 import asyncio
 import copy
@@ -25,6 +28,44 @@ TODAY_DUE: dict[str, Any] = {
 }
 
 
+# A running session in a work phase (spec §3.5's view); tests set server_time and copy it.
+SESSION_RUNNING: dict[str, Any] = {
+    "id": 7,
+    "revision": 4,
+    "status": "running",
+    "counted": False,
+    "program_name": "Onsdag",
+    "training_day_id": 12,
+    "participants": [{"id": 1, "name": "Thomas"}, {"id": 2, "name": "Mette"}],
+    "phase": {
+        "index": 3,
+        "kind": "work",
+        "round": 1,
+        "interval": 2,
+        "duration": 40,
+        "ends_at": "2026-10-28T17:00:40.000+00:00",
+        "remaining": None,
+    },
+    "next_phase": {"kind": "switch", "duration": 15},
+    "stations": [
+        {
+            "current": {"number": 2, "exercise_id": "0001", "name": "Squat"},
+            "next": {"number": 3, "exercise_id": "0002", "name": "Push-up"},
+        },
+        {
+            "current": {"number": 3, "exercise_id": "0002", "name": "Push-up"},
+            "next": {"number": 1, "exercise_id": "0003", "name": "Plank"},
+        },
+    ],
+    "totals": {"planned": 1500, "rounds": 5},
+    "started_at": "2026-10-28T16:58:00.000+00:00",
+    "ended_at": None,
+    "rounds_completed": 0,
+    "time_trained": 100,
+    "server_time": "2026-10-28T17:00:00.000+00:00",
+}
+
+
 class FakeAddon:
     """An aiohttp app that speaks the add-on's API; tests set its fields and drive the ws."""
 
@@ -36,6 +77,13 @@ class FakeAddon:
         self.today: dict[str, Any] = copy.deepcopy(TODAY_DUE)
         self.skip_status = 200
         self.old_addon = False
+        # The session view of spec §3.5, or None: what GET /session answers and the ws sends on connect.
+        self.session: dict[str, Any] | None = None
+        # True: an add-on from before sessions; /session gives 404 and the ws sends no session.
+        # Unlike old_addon, the ws itself works.
+        self.no_sessions = False
+        # False: leave the session message out on connect, so a test can send it later.
+        self.send_session = True
         # False: accept the ws but send nothing (no hello, no today).
         self.send_hello = True
         # False: never answer the client's pings, as a half-open connection wouldn't.
@@ -49,6 +97,7 @@ class FakeAddon:
         self.app.router.add_get("/api/v1/health", self._health)
         self.app.router.add_get("/api/v1/today", self._today)
         self.app.router.add_post("/api/v1/training-days/{id}/skip", self._skip)
+        self.app.router.add_get("/api/v1/session", self._session)
         self.app.router.add_get("/api/v1/ws", self._ws)
         self.app.on_shutdown.append(self._on_shutdown)
 
@@ -61,6 +110,11 @@ class FakeAddon:
         if self.old_addon:
             return web.json_response({"detail": "Not Found"}, status=404)
         return web.json_response(self.today)
+
+    async def _session(self, request: web.Request) -> web.Response:
+        if self.no_sessions:
+            return web.json_response({"detail": "Not Found"}, status=404)
+        return web.json_response(self.session)
 
     async def _skip(self, request: web.Request) -> web.Response:
         self.skip_user_agents.append(request.headers.get("User-Agent", ""))
@@ -97,6 +151,8 @@ class FakeAddon:
                     }
                 )
                 await ws.send_json({"type": "today", "data": self.today})
+                if self.send_session and not self.no_sessions:
+                    await ws.send_json({"type": "session", "data": self.session})
             async for _ in ws:  # the client sends nothing; wait for the close
                 pass
         finally:

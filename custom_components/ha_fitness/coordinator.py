@@ -17,12 +17,21 @@ from .client import (
     AddonHandshakeRejectedError,
     Hello,
     Message,
+    Session,
+    SessionEvent,
     Today,
     async_health,
     async_listen,
+    async_session_missing,
     async_today_missing,
 )
-from .const import DOMAIN, EVENT_PREFIX, SIGNAL_UPDATE, TRAINING_DAY_EVENTS
+from .const import (
+    DOMAIN,
+    EVENT_PREFIX,
+    SESSION_EVENTS,
+    SIGNAL_UPDATE,
+    TRAINING_DAY_EVENTS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,8 +50,10 @@ class FitnessCoordinator:
     """Keep the push channel to the add-on open, and tell listeners when what it holds changes.
 
     `connected` is true while a supported add-on is connected. `today` is the add-on's last
-    `today` message, and None while not connected. Each change is also sent on the dispatcher
-    (`SIGNAL_UPDATE`), which the card's subscription follows across entry reloads.
+    `today` message, and None while not connected. `session` is the add-on's last session view;
+    it is kept across a disconnect, so the card can go on counting down. `session_seen` is true
+    once a session message has come since the last connect. Each change is also sent on the
+    dispatcher (`SIGNAL_UPDATE`), which the cards' subscriptions follow across entry reloads.
     """
 
     def __init__(
@@ -56,11 +67,13 @@ class FitnessCoordinator:
         """Set up the coordinator; `async_start` connects."""
         self.hass = hass
         self.entry = entry
-        self.session = session
+        self.http_session = session
         self.url = url
         self.integration_version = integration_version
         self.connected = False
         self.today: dict[str, Any] | None = None
+        self.session: dict[str, Any] | None = None
+        self.session_seen = False
         self.addon_version: str | None = None
         self._listeners: list[CALLBACK_TYPE] = []
         self._attempt = 0
@@ -98,11 +111,16 @@ class FitnessCoordinator:
         """Return whether a supported add-on is connected and has sent what it holds."""
         return self.connected and self.today is not None
 
+    @property
+    def session_available(self) -> bool:
+        """Return whether a supported add-on is connected and has sent its session."""
+        return self.connected and self.session_seen
+
     async def _async_connect(self) -> None:
         """Hold one connection until it ends, then schedule the next attempt."""
         try:
             await async_listen(
-                self.session, self.url, self._handle_connect, self._handle_message
+                self.http_session, self.url, self._handle_connect, self._handle_message
             )
         except AddonHandshakeRejectedError:
             if await self._async_check_too_old():
@@ -126,8 +144,8 @@ class FitnessCoordinator:
     async def _async_check_too_old(self) -> bool:
         """Raise addon_too_old, and return True, when health answers but /today doesn't exist."""
         try:
-            await async_health(self.session, self.url)
-            too_old = await async_today_missing(self.session, self.url)
+            await async_health(self.http_session, self.url)
+            too_old = await async_today_missing(self.http_session, self.url)
         except AddonConnectionError:
             return False
         if too_old:
@@ -140,6 +158,25 @@ class FitnessCoordinator:
                 translation_key=ISSUE_ADDON_TOO_OLD,
             )
         return too_old
+
+    async def _async_probe_sessions(self) -> None:
+        """Raise addon_too_old when `/session` gives 404 while health answers (the workout spec §4)."""
+        try:
+            if not await async_session_missing(self.http_session, self.url):
+                return
+            await async_health(self.http_session, self.url)
+        except AddonConnectionError:
+            # The connection's own handling notices an outage; the next hello probes again.
+            _LOGGER.debug("The session probe could not reach the add-on")
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_ADDON_TOO_OLD,
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=ISSUE_ADDON_TOO_OLD,
+        )
 
     @callback
     def _handle_connect(self) -> None:
@@ -155,6 +192,13 @@ class FitnessCoordinator:
         elif isinstance(message, Today):
             self.today = message.data
             self._notify()
+        elif isinstance(message, Session):
+            self.session = message.data
+            self.session_seen = True
+            self._notify()
+        elif isinstance(message, SessionEvent):
+            if message.event in SESSION_EVENTS:
+                self.hass.bus.async_fire(f"{DOMAIN}_{message.event}", message.session)
         elif message.event in TRAINING_DAY_EVENTS:
             self.hass.bus.async_fire(EVENT_PREFIX + message.event, message.training_day)
 
@@ -187,6 +231,11 @@ class FitnessCoordinator:
         self.addon_version = hello.version
         self._update_sw_version(hello.version)
         self.connected = True
+        self.session_seen = False
+        # Every hello deletes addon_too_old above; the probe raises it again on an older add-on.
+        self.entry.async_create_background_task(
+            self.hass, self._async_probe_sessions(), f"{DOMAIN} session probe"
+        )
         self._notify()
 
     @callback
@@ -208,9 +257,10 @@ class FitnessCoordinator:
 
     @callback
     def _set_disconnected(self) -> None:
-        if self.connected or self.today is not None:
+        if self.connected or self.today is not None or self.session_seen:
             self.connected = False
             self.today = None
+            self.session_seen = False
             self._notify()
 
     @callback

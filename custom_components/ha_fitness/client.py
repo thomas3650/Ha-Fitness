@@ -58,7 +58,22 @@ class TrainingDayEvent:
     training_day: dict[str, Any]
 
 
-type Message = Hello | Today | TrainingDayEvent
+@dataclass(frozen=True, slots=True)
+class Session:
+    """The session view (the workout spec §3.5), or None when there is no session."""
+
+    data: dict[str, Any] | None
+
+
+@dataclass(frozen=True, slots=True)
+class SessionEvent:
+    """One event of a session: started, completed, ended or phase changed."""
+
+    event: str
+    session: dict[str, Any]
+
+
+type Message = Hello | Today | TrainingDayEvent | Session | SessionEvent
 
 
 async def async_health(session: aiohttp.ClientSession, url: str) -> dict[str, Any]:
@@ -73,15 +88,23 @@ async def async_health(session: aiohttp.ClientSession, url: str) -> dict[str, An
     return body
 
 
-async def async_today_missing(session: aiohttp.ClientSession, url: str) -> bool:
-    """Return whether `GET <url>/api/v1/today` gives 404, as on an add-on older than 0.2.0."""
+async def _async_missing(session: aiohttp.ClientSession, url: str, path: str) -> bool:
+    """Return whether `GET <url><path>` gives 404."""
     try:
-        async with session.get(
-            f"{url}/api/v1/today", timeout=HEALTH_TIMEOUT
-        ) as response:
+        async with session.get(f"{url}{path}", timeout=HEALTH_TIMEOUT) as response:
             return response.status == HTTPStatus.NOT_FOUND
     except (aiohttp.ClientError, TimeoutError) as err:
         raise AddonConnectionError(str(err)) from err
+
+
+async def async_today_missing(session: aiohttp.ClientSession, url: str) -> bool:
+    """Return whether `GET <url>/api/v1/today` gives 404, as on an add-on older than 0.2.0."""
+    return await _async_missing(session, url, "/api/v1/today")
+
+
+async def async_session_missing(session: aiohttp.ClientSession, url: str) -> bool:
+    """Return whether `GET <url>/api/v1/session` gives 404, as on an add-on from before sessions."""
+    return await _async_missing(session, url, "/api/v1/session")
 
 
 async def async_skip(
@@ -124,10 +147,18 @@ def parse_message(raw: Any) -> Message | None:
         case "today":
             if isinstance(data := raw.get("data"), dict):
                 return Today(data=data)
+        case "session":
+            # The key must be there: null means no session, a missing key is malformed.
+            if "data" in raw and (raw["data"] is None or isinstance(raw["data"], dict)):
+                return Session(data=raw["data"])
         case "event":
-            event, training_day = raw.get("event"), raw.get("training_day")
-            if isinstance(event, str) and isinstance(training_day, dict):
+            event = raw.get("event")
+            if not isinstance(event, str):
+                return None
+            if isinstance(training_day := raw.get("training_day"), dict):
                 return TrainingDayEvent(event=event, training_day=training_day)
+            if isinstance(session_data := raw.get("session"), dict):
+                return SessionEvent(event=event, session=session_data)
     return None
 
 

@@ -27,13 +27,13 @@ async def test_events_fired_with_data(
     """Due, skipped and missed become ha_fitness_training_day_<event>, with the day as data."""
     captured = {
         name: async_capture_events(hass, f"ha_fitness_training_day_{name}")
-        for name in ("due", "skipped", "missed", "done")
+        for name in ("due", "skipped", "missed", "unknown")
     }
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: is_open(hass))
 
-    # An event name this version doesn't know (done arrives in step 5) fires nothing.
-    await fake_addon.push({"type": "event", "event": "done", "training_day": DAY})
+    # An event name this version doesn't know fires nothing.
+    await fake_addon.push({"type": "event", "event": "unknown", "training_day": DAY})
     for name in ("due", "skipped", "missed"):
         day = {**DAY, "program_name": name}
         await fake_addon.push({"type": "event", "event": name, "training_day": day})
@@ -43,7 +43,7 @@ async def test_events_fired_with_data(
         assert [event.data for event in captured[name]] == [
             {**DAY, "program_name": name}
         ]
-    assert captured["done"] == []
+    assert captured["unknown"] == []
     await unload(hass, config_entry)
 
 

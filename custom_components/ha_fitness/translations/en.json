@@ -61,6 +61,17 @@
     "binary_sensor": {
       "training_open": {
         "name": "Training open"
+      },
+      "session_running": {
+        "name": "Session running",
+        "state_attributes": {
+          "program": {
+            "name": "Program"
+          },
+          "participants": {
+            "name": "Participants"
+          }
+        }
       }
     }
   },

@@ -49,7 +49,7 @@ async def _async_skip(call: ServiceCall) -> None:
     placeholders = {ATTR_TRAINING_DAY_ID: str(training_day_id)}
     try:
         await async_skip(
-            coordinator.session,
+            coordinator.http_session,
             coordinator.url,
             training_day_id,
             coordinator.integration_version,
