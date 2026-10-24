@@ -142,7 +142,10 @@ function colour(element: HTMLElement): string {
 /** The table of a panel: the header row, then each row as [header, this month, all time]. */
 function table(element: HTMLElement): string[][] {
   return getAllByRole(element, "row").map((row) =>
-    [...row.querySelectorAll("th, td")].map((cell) => text(cell)),
+    (["columnheader", "rowheader", "cell"] as const)
+      .flatMap((role) => queryAllByRole(row, role))
+      .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+      .map((cell) => text(cell)),
   );
 }
 
@@ -298,6 +301,21 @@ test("unreachable note keeps the last numbers", async () => {
   await push(fake, card, { available: true, stats: stats([thomas, maria]) });
   expect(lines(card)).toEqual([]);
   expect(queryByRole(root(card), "region", { name: "Thomas" })).not.toBeNull();
+});
+
+test("the unreachable note also shows with the no people and not started lines", async () => {
+  const fake = fakeHass("da", { available: true, stats: stats([], null) });
+  const card = await mount(fake);
+  expect(lines(card)).toEqual(["Ingen personer"]);
+
+  await push(fake, card, { available: false, stats: null });
+  expect(lines(card)).toEqual(["HA Fitness kan ikke nås", "Ingen personer"]);
+
+  await push(fake, card, { available: true, stats: stats([thomas], null) });
+  expect(lines(card)).toEqual(["Statistikken starter ved første træning"]);
+
+  await push(fake, card, { available: false, stats: stats([thomas], null) });
+  expect(lines(card)).toEqual(["HA Fitness kan ikke nås", "Statistikken starter ved første træning"]);
 });
 
 test("language option", async () => {

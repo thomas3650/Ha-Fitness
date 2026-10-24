@@ -262,12 +262,14 @@ export class StatsCard extends LitElement {
     if (this.available === undefined) return nothing;
     const line = (key: string) => html`<div class="muted" role="status">${this.t(key)}</div>`;
     if (!stats) return line("stats.unreachable");
-    if (!stats.people.length) return line("stats.no_people");
-    if (stats.counting_from === null) return line("stats.not_started");
+    // With older stats, the note says that what follows may be out of date, whichever line it is.
+    const note = this.available
+      ? nothing
+      : html`<div class="muted small" role="status">${this.t("stats.unreachable")}</div>`;
+    if (!stats.people.length) return html`${note}${line("stats.no_people")}`;
+    if (stats.counting_from === null) return html`${note}${line("stats.not_started")}`;
     return html`
-      ${this.available
-        ? nothing
-        : html`<div class="muted small" role="status">${this.t("stats.unreachable")}</div>`}
+      ${note}
       <div class="panels">${stats.people.map((person, index) => this.renderPanel(person, index))}</div>
     `;
   }
