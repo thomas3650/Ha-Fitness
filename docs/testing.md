@@ -80,7 +80,9 @@ Desktop must run.
      restart HA);
    - the Discovered card reads "HA Fitness", and setting it up from there creates the entry with no URL to type;
    - the three entities have their states, and the device shows the add-on's version;
-   - the today card on `http://localhost:7123/ha-fitness-dev` shows the open day.
+   - the today card is on `http://localhost:7123/ha-fitness-dev`, and edit mode shows its note. The full loop has no
+     dev routes, so `seed --today` refuses there: the card shows a row only when a program trains today, for example
+     one made in the MCP check.
 6. The MCP check (below) against `http://localhost:8765/mcp`.
 7. The backup check (below).
 8. `scripts/full-loop down` removes the container and its volumes. The next `up` downloads HA Core again.
@@ -116,7 +118,8 @@ On the dev dashboard `http://localhost:8123/ha-fitness-dev`, as the Danish user,
 and late days never show together, so they are separate steps.
 
 1. `scripts/seed --today`: one due row, the program's name over "5 øvelser · 5 runder · ca. … min", and Spring over.
-2. Skip with two taps: Spring over, then Ja. The card hides, and leaves no empty cell.
+2. Skip with two taps: Spring over, then Ja. Wait half a second before tapping Ja: it ignores taps until then. The
+   card hides, and leaves no empty cell.
 3. `scripts/seed --late`: the card comes back **without a reload**, and the row reads "Forfalden · <weekday> · …".
 4. Edit mode with nothing open: the card stays, with the note "Ingen træning i dag".
 5. Stop the add-on server alone (`kill "$(cat local/addon-server.pid)"`): the card shows "HA Fitness kan ikke nås".
