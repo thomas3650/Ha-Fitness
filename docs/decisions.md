@@ -440,6 +440,15 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Source:** [UI polish spec](superpowers/specs/2026-10-24-ui-polish-design.md) §2, §3.1 and §3.2; Thomas (§2, his
   screen review); Claude (§3), for Thomas's review on the PR, 2026-10-24
 
+### D55: A dev-only fake Music Assistant stands in for the real one in the loops
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** The fast loop and the full loop use a fake Music Assistant: a custom integration with the domain
+  `music_assistant` in `scripts/dev/fake_music_assistant/`. It is never shipped, and it copies the surface of HA
+  core's `music_assistant` that HA Fitness uses.
+- **Why:** Fixed players and playlists make the loops and the Chrome check repeatable with no real speakers. The real
+  Home Assistant stays untouched (hard rule 4).
+- **Source:** [music spec](superpowers/specs/2026-10-24-music-design.md) §7
+
 ### D56: House details are removed from merged docs
 - **Date:** 2026-10-25 · **Status:** active
 - **Decision:** Details of Thomas's Home Assistant (entity ids, HA users, dashboard ids, the host model and versions,

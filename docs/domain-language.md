@@ -21,7 +21,7 @@ spec already names.
 | **Rest between rounds** | Seconds of rest after a round, except the last. |
 | **Countdown** | Seconds before the first interval (0, 5 or 10). |
 | **Phase** | A stretch of the timer: countdown, work, switch or rest. Each has a fixed length; the session ends when the last work phase ends. |
-| **Plan** | What a session freezes at its start: the program's name, timing and stations, and the participants with their names. A later edit changes no running session and no history (D40). |
+| **Plan** | What a session freezes at its start: the program's name, timing and stations, the participants with their names, and the music with the start's speaker. A later edit changes no running session and no history (D40). |
 
 ## People and sessions
 
@@ -33,6 +33,14 @@ spec already names.
 | **Extra session** | A session started when nothing is due, or from the workout tab. It counts toward done and time trained, not toward the streak, and closes no training day. |
 | **Feeling** | How a workout felt, given on the finished screen: too easy, just right or too hard. Stored with the completed session, so Claude can read it when it adjusts a program. |
 | **Ended early** | A session stopped before its last work phase ended: with Slut or Annullér, or after 30 minutes paused. It counts as done if at least one full round was completed. |
+
+## Music
+
+| Term | Danish UI | Meaning |
+| --- | --- | --- |
+| **Speaker** | Højttaler | A Music Assistant player in Home Assistant, a `media_player` entity. A program names one; a session can start on another. |
+| **Playlist** | Playliste | A playlist in Music Assistant's library. A program stores its URI, which is played, and its name, which the screens show. |
+| **Music player** | Musikafspiller | The timer's small player in the header: the playlist, the speaker, and play, pause and next track. |
 
 ## Training days
 

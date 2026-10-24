@@ -22,12 +22,14 @@ from .schemas import (
     NewPerson,
     PeopleView,
     Person,
+    PlaylistOut,
     ProgramDocument,
     ProgramOut,
     ProgramSummary,
     SearchLimit,
     SessionHistory,
     SessionView,
+    SpeakerOut,
     Stats,
     TodayView,
     TrainingDayOut,
@@ -52,7 +54,9 @@ The program document:
 - rounds: 1-10, default 5.
 - work_seconds: 10-120, default 45. switch_seconds: 0-60, default 15. round_rest_seconds: 0-180, default 60.
 - countdown_seconds: 0, 5 or 10, default 5.
-- music: optional {"playlist", "speaker": "media_player.<name>", "volume": 0-100, "shuffle": false}.
+- music: optional {"playlist", "playlist_name", "speaker": "media_player.<name>", "volume": 0-100, "shuffle": false}.
+  Pick the speaker from list_speakers and the playlist from list_playlists: "playlist" is its uri, which is played,
+  and "playlist_name" (1-200 characters, optional) its name, which the screens show instead of the uri.
 Omitted fields get their defaults."""
 
 _YES_PROGRAM = "Show the program to the user and get a yes before calling."
@@ -237,6 +241,26 @@ old values.
         """
         with _tool_errors():
             return holder.get().people.set(people, _client(ctx))
+
+    @mcp.tool(annotations=_READ)
+    def list_speakers() -> list[SpeakerOut]:
+        """List Music Assistant's speakers in Home Assistant, sorted by name: {"entity_id", "name", "available"}.
+
+        A program's music.speaker is one of these entity ids. `available` is false while the speaker can't be
+        reached. An empty list means Music Assistant has no players, or isn't installed.
+        """
+        with _tool_errors():
+            return holder.get().music.speakers()
+
+    @mcp.tool(annotations=_READ)
+    def list_playlists(search: str | None = None) -> list[PlaylistOut]:
+        """List the playlists in Music Assistant's library, sorted by name: {"name", "uri"}; `search` filters by name.
+
+        A program's music.playlist is the uri and music.playlist_name the name. An empty list means no playlist
+        matched, or Music Assistant has no speakers.
+        """
+        with _tool_errors():
+            return holder.get().music.playlists(search)
 
     @mcp.tool(annotations=_READ)
     def get_change_log(limit: ChangeLogLimit = 20) -> list[ChangeEntry]:

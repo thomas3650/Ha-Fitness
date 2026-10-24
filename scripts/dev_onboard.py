@@ -1,6 +1,6 @@
-"""Onboard a fresh dev Home Assistant and add the HA Fitness entry; safe to run again.
+"""Onboard a fresh dev Home Assistant and add the HA Fitness and fake Music Assistant entries; safe to run again.
 
-Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry] [--token-file PATH]`
+Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry | --fake-music-only] [--token-file PATH]`
 
 - Refuses, before any request, unless the host of `--url` is `localhost` or `127.0.0.1`: it never talks to a real
   Home Assistant.
@@ -24,6 +24,13 @@ Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry] [--token-f
 - Unless `--no-entry`, creates the HA Fitness config entry through the user step, with the add-on server's URL
   `http://localhost:8765` (the fast loop's). The integration checks that the server answers there, so it must run
   (`scripts/develop` starts it). An entry that exists (`already_configured`) counts as done.
+- Unless `--no-entry`, then creates the entry of the dev-only fake Music Assistant (D55) when
+  `GET /api/config/config_entries/entry?domain=music_assistant` lists none. Its flow has no fields; only an entry
+  titled "Fake Music Assistant" counts. Anything else (a form, an abort, "Invalid handler") stops the script with an
+  error: the fake isn't installed, and core's real flow may have answered. `scripts/develop` links the fake;
+  `scripts/full-loop music` copies it. With `--no-entry` the fake may not be installed, so this step is skipped.
+- `--fake-music-only` logs in as `dev` on an onboarded HA and does only the fake's step: no onboarding, language,
+  timezone, token file or dashboard. `--token-file` is then unused.
 
 Every step that is already done is skipped, so a second run changes nothing.
 """
@@ -47,6 +54,9 @@ NAME = "dev"
 USERNAME = "dev"
 PASSWORD = "dev"  # A local dev instance only; never a real Home Assistant.
 DOMAIN = "ha_fitness"
+MUSIC_DOMAIN = "music_assistant"
+# The title of the fake Music Assistant's entry (scripts/dev/fake_music_assistant).
+FAKE_MUSIC_TITLE = "Fake Music Assistant"
 # The add-on server of the fast loop (`scripts/develop`), as the integration's entry stores it.
 ADDON_URL = "http://localhost:8765"
 DASHBOARD_URL_PATH = "ha-fitness-dev"
@@ -355,6 +365,48 @@ async def _add_entry(session: aiohttp.ClientSession, token: str) -> None:
     print(f"onboard: created the HA Fitness entry ({ADDON_URL})")
 
 
+async def _add_fake_music_entry(session: aiohttp.ClientSession, token: str) -> None:
+    """Create the fake Music Assistant's entry unless a `music_assistant` entry exists; fail on anything but the fake."""
+    headers = {"Authorization": f"Bearer {token}"}
+    async with session.get(
+        "/api/config/config_entries/entry",
+        params={"domain": MUSIC_DOMAIN},
+        headers=headers,
+    ) as response:
+        entries = await _json(response)
+    if entries:
+        print(f"onboard: the {MUSIC_DOMAIN} entry exists ({entries[0].get('title')})")
+        return
+    hint = (
+        "the fake Music Assistant isn't installed: scripts/develop links it, "
+        "scripts/full-loop music copies it"
+    )
+    try:
+        async with session.post(
+            "/api/config/config_entries/flow",
+            json={"handler": MUSIC_DOMAIN},
+            headers=headers,
+        ) as response:
+            result = await _json(response)
+    except OnboardError as err:
+        # For example "Invalid handler specified" when no music_assistant integration can be loaded.
+        raise OnboardError(f"{err}; {hint}") from err
+    if result.get("type") == "create_entry" and result.get("title") == FAKE_MUSIC_TITLE:
+        print(f"onboard: created the {FAKE_MUSIC_TITLE} entry")
+        return
+    if result.get("flow_id") and result.get("type") not in {"create_entry", "abort"}:
+        # A flow still open (core's real flow asks for a server). Abort it, or the next run finds it in progress. A
+        # created entry or an aborted flow is gone already.
+        async with session.delete(
+            f"/api/config/config_entries/flow/{result['flow_id']}", headers=headers
+        ) as response:
+            await _json(response)
+    raise OnboardError(
+        f"the {MUSIC_DOMAIN} config flow ended with {result.get('type')} "
+        f"({result.get('reason') or result.get('step_id') or result.get('title')}); {hint}"
+    )
+
+
 async def _add_dashboard(session: aiohttp.ClientSession, token: str) -> None:
     """Create the dev dashboard with the today card; keep the config of one that has it."""
     async with websocket(session, token) as call:
@@ -385,8 +437,13 @@ async def _add_dashboard(session: aiohttp.ClientSession, token: str) -> None:
         print(f"onboard: saved the today card on {DASHBOARD_URL_PATH}")
 
 
-async def _run(base: str, add_entry: bool, token_file: Path) -> None:
+async def _run(
+    base: str, add_entry: bool, token_file: Path, fake_music_only: bool
+) -> None:
     async with aiohttp.ClientSession(base_url=base) as session:
+        if fake_music_only:
+            await _add_fake_music_entry(session, await login(session, base))
+            return
         token = await _onboard(session, base)
         await _set_language(session, token)
         await _set_timezone(session, token)
@@ -394,6 +451,7 @@ async def _run(base: str, add_entry: bool, token_file: Path) -> None:
         await _add_dashboard(session, token)
         if add_entry:
             await _add_entry(session, token)
+            await _add_fake_music_entry(session, token)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -402,8 +460,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--url", default=DEFAULT_URL, help=f"Home Assistant URL (default {DEFAULT_URL})"
     )
-    parser.add_argument(
-        "--no-entry", action="store_true", help="don't create the HA Fitness entry"
+    entries = parser.add_mutually_exclusive_group()
+    entries.add_argument(
+        "--no-entry",
+        action="store_true",
+        help="don't create the HA Fitness and fake Music Assistant entries",
+    )
+    entries.add_argument(
+        "--fake-music-only",
+        action="store_true",
+        help="on an onboarded HA, only create the fake Music Assistant's entry",
     )
     parser.add_argument(
         "--token-file",
@@ -419,7 +485,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     try:
-        asyncio.run(_run(args.url.rstrip("/"), not args.no_entry, args.token_file))
+        asyncio.run(
+            _run(
+                args.url.rstrip("/"),
+                not args.no_entry,
+                args.token_file,
+                args.fake_music_only,
+            )
+        )
     except (OnboardError, aiohttp.ClientError, OSError) as err:
         print(f"onboard: {err}", file=sys.stderr)
         return 1

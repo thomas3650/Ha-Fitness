@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The fast loop: dev Home Assistant on http://localhost:8123 with the ha_fitness integration, the add-on
-# server on http://localhost:8765, and the cards rebuilt on every change.
+# The fast loop: dev Home Assistant on http://localhost:8123 with the ha_fitness integration and the fake
+# Music Assistant, the add-on server on http://localhost:8765, and the cards rebuilt on every change.
 #
 #   scripts/develop               build the cards once, start the cards watch and the add-on server in the
 #                                 background, then Home Assistant in the foreground
@@ -52,6 +52,9 @@ if [ ! -f config/configuration.yaml ]; then
   printf 'default_config:\n' > config/configuration.yaml
 fi
 ln -sfn "$root/custom_components/ha_fitness" config/custom_components/ha_fitness
+# The dev-only fake Music Assistant (D55). A custom integration overrides core's music_assistant, and HA logs a
+# warning about it.
+ln -sfn "$root/scripts/dev/fake_music_assistant" config/custom_components/music_assistant
 
 if [ "${1:-}" = "--setup-only" ]; then
   exit 0

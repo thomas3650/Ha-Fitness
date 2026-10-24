@@ -10,7 +10,9 @@ http://localhost:8765)
 - Creates the HA persons "Thomas" and "Elin" over the websocket (`person/create`) unless a person of that name
   exists, and finds their entity ids through the entity registry.
 - Sets them as the people on the server (`PUT /api/v1/people`) unless the server has exactly those people already.
-- Creates the program "Sample" (Wednesday, 5 body-weight stations) unless a program of that name exists.
+- Creates the program "Sample" (Wednesday, 5 body-weight stations, music on the fake Music Assistant's living-room
+  player) unless a program of that name exists. A Sample without music gets Sample's music, with the rest of its
+  document kept.
 
 A second run changes nothing.
 
@@ -57,6 +59,14 @@ SAMPLE: dict[str, Any] = {
     "stations": [
         {"exercise": exercise} for exercise in ("0662", "0514", "0630", "1460", "1160")
     ],
+    # A playlist and a player of the fake Music Assistant (`scripts/dev/fake_music_assistant/`).
+    "music": {
+        "playlist": "library://playlist/1",
+        "playlist_name": "Workout Mix",
+        "speaker": "media_player.fake_living_room",
+        "volume": 30,
+        "shuffle": False,
+    },
 }
 # Push-up and jump squat; the weekdays are set to today's when Kort is created.
 SHORT_NAME = "Kort"
@@ -161,17 +171,18 @@ async def _seed_server(server_url: str, people: list[dict[str, str]]) -> None:
             names = ", ".join(person["name"] for person in people)
             print(f"seed: set the people {names}")
 
-        async with session.get("/api/v1/programs") as response:
-            programs = await _json(response)
-        if any(
-            program["program"]["name"].casefold() == SAMPLE_NAME.casefold()
-            for program in programs
-        ):
-            print(f"seed: the program {SAMPLE_NAME} exists")
-        else:
+        sample = await _find_program(session, SAMPLE_NAME)
+        if sample is None:
             async with session.post("/api/v1/programs", json=SAMPLE) as response:
                 await _json(response)
             print(f"seed: created the program {SAMPLE_NAME}")
+        elif sample["program"]["music"] is None:
+            await _put_program(
+                session, sample["id"], {**sample["program"], "music": SAMPLE["music"]}
+            )
+            print(f"seed: gave the program {SAMPLE_NAME} its music")
+        else:
+            print(f"seed: the program {SAMPLE_NAME} exists")
 
 
 def _local_today() -> dt.date:

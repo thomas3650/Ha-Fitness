@@ -28,7 +28,11 @@ def start_session(
 ) -> SessionView:
     """Start a session: 404 `not_found`, 409 `conflict` or 422 `invalid` when the start is refused."""
     return services.sessions.start(
-        body.program_id, body.participants, body.training_day_id, client
+        body.program_id,
+        body.participants,
+        body.training_day_id,
+        client,
+        speaker=body.speaker,
     )
 
 

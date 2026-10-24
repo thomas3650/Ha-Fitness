@@ -6,6 +6,7 @@ from sqlalchemy import Engine
 
 from .library.media import MediaStore
 from .library.service import Library
+from .music import MusicService
 from .people import People
 from .programs import Programs
 from .sessions import Sessions
@@ -20,6 +21,7 @@ class Services:
     engine: Engine
     library: Library
     media: MediaStore
+    music: MusicService
     people: People
     programs: Programs
     sessions: Sessions
