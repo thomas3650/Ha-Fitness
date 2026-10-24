@@ -1,13 +1,90 @@
 {
   "config": {
+    "flow_title": "{name}",
     "step": {
       "user": {
         "title": "Opsæt HA Fitness",
-        "description": "HA Fitness tilføjer kort til cirkeltræning på dine dashboards. Der er intet at udfylde."
+        "description": "Angiv adressen på HA Fitness-appen. Under Supervisor er det ikke nødvendigt: appen findes af sig selv og vises under Fundet.",
+        "data": {
+          "url": "URL"
+        },
+        "data_description": {
+          "url": "Appens adresse."
+        }
+      },
+      "hassio_confirm": {
+        "title": "HA Fitness-app fundet",
+        "description": "Vil du opsætte HA Fitness med den app, Supervisor har fundet?"
       }
     },
+    "error": {
+      "cannot_connect": "HA Fitness-appen kan ikke nås på denne URL."
+    },
     "abort": {
-      "single_instance_allowed": "HA Fitness er allerede sat op. Det kan kun sættes op én gang."
+      "already_configured": "HA Fitness er allerede sat op."
+    }
+  },
+  "issues": {
+    "unsupported_api_version": {
+      "title": "HA Fitness-appen og integrationen passer ikke sammen",
+      "description": "HA Fitness-appen taler API-version {api_version}, og denne version af integrationen understøtter API-version {supported}. Opdater HA Fitness-integrationen i HACS, og genstart derefter Home Assistant. Indtil da er HA Fitness ikke tilgængelig."
+    },
+    "addon_too_old": {
+      "title": "HA Fitness-appen er for gammel",
+      "description": "Denne version af HA Fitness-integrationen kræver en nyere HA Fitness-app. Opdater HA Fitness-appen. Integrationen forbinder igen af sig selv."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "today": {
+        "name": "Træning i dag",
+        "state": {
+          "none": "Ingen",
+          "due": "Skal trænes",
+          "late": "Forfalden"
+        },
+        "state_attributes": {
+          "training_days": {
+            "name": "Træningsdage"
+          }
+        }
+      },
+      "next_training_day": {
+        "name": "Næste træningsdag",
+        "state_attributes": {
+          "programs": {
+            "name": "Programmer"
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "training_open": {
+        "name": "Træning åben"
+      }
+    }
+  },
+  "services": {
+    "skip": {
+      "name": "Spring træningsdag over",
+      "description": "Springer en åben træningsdag over med vilje. Den tæller ikke som en misset træningsdag.",
+      "fields": {
+        "training_day_id": {
+          "name": "Træningsdagens ID",
+          "description": "ID'et på en åben træningsdag, som vist i attributten Træningsdage på Træning i dag."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_found": {
+      "message": "Der findes ingen træningsdag med ID {training_day_id}."
+    },
+    "not_open": {
+      "message": "Træningsdag {training_day_id} er ikke længere åben."
+    },
+    "unavailable": {
+      "message": "HA Fitness-appen kan ikke nås."
     }
   }
 }

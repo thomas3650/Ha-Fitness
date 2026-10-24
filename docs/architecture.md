@@ -51,17 +51,37 @@ The cards are built into the integration: one bundle, released and versioned wit
   - **The Ingress page** at `/`: a status page, in English or Danish after the browser's language (D27).
   - **Hot backups** through a consistent snapshot, `<data folder>/backup/snapshot.db` (D31). The snapshot is also
     written at every shutdown (D43).
-- **Integration:** a config flow with one entry and nothing to enter. Setting up the entry serves
-  `custom_components/ha_fitness/frontend/` at `/ha_fitness_frontend/` and loads
-  `/ha_fitness_frontend/ha-fitness-cards.js?v=<integration version>` in the frontend. The version in the URL busts
-  browser caches after an update.
+- **Integration** (the [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §4; the code is the
+  source for the details):
+  - **One entry**, version 2, with the unique id `ha_fitness` and the add-on's URL as its data (D39). It comes from
+    the add-on's discovery (D28), which shows under "Discovered", or from the user step, which asks for the URL
+    (`http://localhost:8765` in the fast loop) and checks `GET /api/v1/health` first. A discovery for an existing entry
+    updates its URL and reloads it. A version 1 entry (0.1.0) is migrated to `http://localhost:8765`, and the next
+    discovery corrects that under the Supervisor.
+  - **The connection** to the add-on's push channel ([below](#the-integrations-side)). Setup never waits for the
+    add-on.
+  - **Entities** on one device "HA Fitness", whose software version is the add-on's version:
+    `sensor.ha_fitness_today` (`none`, `due` or `late`, with the open days in `training_days`),
+    `sensor.ha_fitness_next_training_day` (a date, with `programs`) and `binary_sensor.ha_fitness_training_open`. The
+    entity ids are set in the code, so they are the same in every HA language
+    ([why](ha-notes.md#the-integration)). The two attributes aren't recorded.
+  - **The service** `ha_fitness.skip` (`training_day_id`) and the **events** `ha_fitness_training_day_due`,
+    `_skipped` and `_missed`, with the training day as data.
+  - **The card's subscription** `ha_fitness/today/subscribe`, a websocket command: the add-on's `today` data at once
+    and after each change, `null` while the add-on can't be used.
+  - **The cards bundle:** setting up the entry serves `custom_components/ha_fitness/frontend/` at
+    `/ha_fitness_frontend/` and loads `/ha_fitness_frontend/ha-fitness-cards.js?v=<integration version>` in the
+    frontend. The version in the URL busts browser caches after an update.
 - **Cards:** Vite builds `cards/src/index.ts` into `custom_components/ha_fitness/frontend/ha-fitness-cards.js`.
   Importing a card registers its custom element (`ha-fitness-<name>-card`). The texts come from `cards/src/i18n/`
-  (`en.json` is the base, `da.json` Danish) and follow the HA user's language (D11).
+  (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the HA user's language
+  (D11, D38).
+  - **"Træning i dag"** (`custom:ha-fitness-today-card`) shows one row per open training day, with a two-tap Spring
+    over. It hides itself when nothing is open, except in edit mode, and shows one line while the add-on can't be
+    reached (step 4 spec §6).
 
-Not built yet: stats; the integration's side of the connection (taking the discovery, D28; a
-configured URL in the fast loop; the push channel's subscription); entities and services. Each comes with its feature
-spec.
+Not built yet: the integration's side of sessions and the workout flow (step 5, parts E and F), and stats. Each
+comes with its feature spec.
 
 ### Routing in the add-on server
 
@@ -81,7 +101,8 @@ spec.
 - The integration supports the current and the previous API version. If it finds another, it raises an HA repair issue
   saying which part to update.
 - No non-major release of one part may require a newer version of the other part. The two are installed and updated
-  separately (D8), in any order.
+  separately (D8), in any order. While both parts are 0.x, an integration release may need a newer add-on, through
+  the `addon_too_old` repair issue (D37). From 1.0.0 on the rule holds without exception.
 - REST and MCP are thin adapters over one service layer in the add-on; the integration uses the same REST API (D3).
 - The push channel `/api/v1/ws` is part of the contract, under the same API version. Its `hello` message carries the
   `api_version`. Both sides ignore message types they don't know, so a new message type isn't a breaking change.
@@ -101,6 +122,23 @@ spec.
 ```json
 {"type": "event", "event": "skipped", "training_day": {"id": 12, "program_id": 3, "program_name": "Onsdag", "date": "2026-10-28"}}
 ```
+
+### The integration's side
+
+- **One client per entry** holds the websocket, with a 30 s heartbeat (a ping the add-on answers). It reconnects after
+  1, 2, 5 and 10 s, then every 30 s. The first failed connect of an outage logs one warning.
+- **On `hello`** it checks `api_version`. It speaks version 1. On another version it raises a repair issue, and the
+  entities stay unavailable.
+- **REST calls** (the skip) send `User-Agent: ha_fitness/<integration version>`, so the add-on's change log names
+  the integration.
+- **While disconnected, or on an unsupported version,** every entity is unavailable and the card's subscription sends
+  `null`.
+- **The repair issues**, both errors that the user fixes by updating a part. Each is deleted once a supported add-on
+  connects.
+  - `unsupported_api_version`: the add-on speaks another API version. It says to update the integration.
+  - `addon_too_old`: the ws handshake is refused with an HTTP status, `GET /api/v1/health` answers and
+    `GET /api/v1/today` gives 404. That is an add-on from before step 4 (D37). It says to update the add-on, and the
+    client keeps retrying.
 
 ## Data the add-on reads from HA
 
