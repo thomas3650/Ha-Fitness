@@ -85,6 +85,28 @@
           "description": "The ID of an open training day, as shown in the Training days attribute of Training today."
         }
       }
+    },
+    "start_session": {
+      "name": "Start session",
+      "description": "Starts a workout with a program for one or two people. Only one session runs at a time.",
+      "fields": {
+        "program_id": {
+          "name": "Program ID",
+          "description": "The ID of an active program."
+        },
+        "participants": {
+          "name": "Participants",
+          "description": "The IDs of the one or two people who train, in station order."
+        },
+        "training_day_id": {
+          "name": "Training day ID",
+          "description": "The open training day this session is for. Leave it out for an extra session."
+        }
+      }
+    },
+    "end_session": {
+      "name": "End session",
+      "description": "Ends the running or paused session."
     }
   },
   "exceptions": {
@@ -96,6 +118,15 @@
     },
     "unavailable": {
       "message": "The HA Fitness app can't be reached."
+    },
+    "session_not_found": {
+      "message": "The program, a person or the training day doesn't exist."
+    },
+    "session_conflict": {
+      "message": "The session can't do that now. Another session may be running, the program may be inactive, or the training day may not be open."
+    },
+    "session_invalid": {
+      "message": "Choose one or two different people, and no more people than the program has stations."
     }
   }
 }

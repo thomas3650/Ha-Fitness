@@ -12,6 +12,7 @@ from homeassistant.loader import async_get_integration
 from .cards import async_register_cards, async_unregister_cards
 from .const import DEFAULT_URL, DEVICE_NAME, DOMAIN, SIGNAL_UPDATE, UNIQUE_ID
 from .coordinator import FitnessCoordinator
+from .media import MediaView
 from .services import async_setup_services
 from .websocket_api import async_setup_websocket_api
 
@@ -23,9 +24,13 @@ type HaFitnessConfigEntry = ConfigEntry[FitnessCoordinator]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the service and the card's subscription, which exist without a loaded entry."""
+    """Register the services, the cards' commands and the media proxy, once per HA run.
+
+    They exist without a loaded entry, and answer unavailable until one is loaded.
+    """
     async_setup_services(hass)
     async_setup_websocket_api(hass)
+    hass.http.register_view(MediaView())
     return True
 
 

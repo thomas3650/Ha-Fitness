@@ -7,3 +7,25 @@ skip:
         number:
           min: 1
           mode: box
+start_session:
+  fields:
+    program_id:
+      required: true
+      example: 3
+      selector:
+        number:
+          min: 1
+          mode: box
+    participants:
+      required: true
+      example: "[1, 2]"
+      selector:
+        object:
+    training_day_id:
+      required: false
+      example: 12
+      selector:
+        number:
+          min: 1
+          mode: box
+end_session:

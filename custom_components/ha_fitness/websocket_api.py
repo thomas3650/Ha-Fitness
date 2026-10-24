@@ -1,20 +1,38 @@
-"""The cards' subscriptions: today (step 4 spec §4.5) and the session (the workout spec §4)."""
+"""The cards' websocket commands (the workout spec §4).
+
+The subscriptions to today (step 4 spec §4.5) and to the session; the session command; the
+programs and people lists. None needs an admin: the wallpanel user isn't one.
+"""
 
 from datetime import datetime
 from typing import Any
 
 from homeassistant.components import websocket_api
 from homeassistant.components.websocket_api.connection import ActiveConnection
-from homeassistant.components.websocket_api.decorators import websocket_command
+from homeassistant.components.websocket_api.decorators import (
+    async_response,
+    websocket_command,
+)
 from homeassistant.components.websocket_api.messages import event_message
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 import probatio
 
+from .client import (
+    AddonConnectionError,
+    SessionRefusedError,
+    async_people,
+    async_programs,
+    async_session_command,
+    async_start_session,
+)
 from .const import DOMAIN, SIGNAL_UPDATE
+from .coordinator import FitnessCoordinator, usable_coordinator
 
 _MISSING = object()
+
+SESSION_COMMANDS = ("start", "pause", "resume", "next", "previous", "end")
 
 
 @callback
@@ -22,6 +40,9 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     """Register the websocket commands."""
     websocket_api.async_register_command(hass, ws_subscribe_today)
     websocket_api.async_register_command(hass, ws_subscribe_session)
+    websocket_api.async_register_command(hass, ws_session_command)
+    websocket_api.async_register_command(hass, ws_programs)
+    websocket_api.async_register_command(hass, ws_people)
 
 
 def _current_today(hass: HomeAssistant) -> dict[str, Any] | None:
@@ -141,3 +162,139 @@ def ws_subscribe_session(
     )
     connection.send_result(msg["id"])
     send()
+
+
+def _send_error(connection: ActiveConnection, msg_id: int, code: str) -> None:
+    """Send one of the codes not_found, conflict, invalid or unavailable, with its translation key."""
+    key = "unavailable" if code == "unavailable" else f"session_{code}"
+    connection.send_error(
+        msg_id,
+        code,
+        f"HA Fitness: {code}",
+        translation_key=key,
+        translation_domain=DOMAIN,
+    )
+
+
+def _usable(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> FitnessCoordinator | None:
+    """Return the usable coordinator, or send unavailable and return None."""
+    coordinator = usable_coordinator(hass)
+    if coordinator is None:
+        _send_error(connection, msg["id"], "unavailable")
+    return coordinator
+
+
+@websocket_command(
+    {
+        probatio.Required("type"): "ha_fitness/session/command",
+        probatio.Required("command"): probatio.In(SESSION_COMMANDS),
+        probatio.Optional("program_id"): int,
+        probatio.Optional("participants"): [int],
+        probatio.Optional("training_day_id"): int,
+    }
+)
+@async_response
+async def ws_session_command(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Relay a command to the add-on and return the session view.
+
+    `start` needs `program_id` and `participants`; the add-on checks the rest. A refusal keeps the
+    add-on's code (not_found, conflict, invalid); anything else that fails is unavailable.
+    """
+    command: str = msg["command"]
+    if command == "start" and ("program_id" not in msg or "participants" not in msg):
+        _send_error(connection, msg["id"], "invalid")
+        return
+    if (coordinator := _usable(hass, connection, msg)) is None:
+        return
+    try:
+        if command == "start":
+            view = await async_start_session(
+                coordinator.http_session,
+                coordinator.url,
+                msg["program_id"],
+                msg["participants"],
+                msg.get("training_day_id"),
+                coordinator.integration_version,
+            )
+        else:
+            view = await async_session_command(
+                coordinator.http_session,
+                coordinator.url,
+                command,
+                coordinator.integration_version,
+            )
+    except SessionRefusedError as err:
+        _send_error(connection, msg["id"], err.code)
+        return
+    except AddonConnectionError:
+        _send_error(connection, msg["id"], "unavailable")
+        return
+    connection.send_result(msg["id"], view)
+
+
+def _program(stored: dict[str, Any]) -> dict[str, Any]:
+    """Return one stored program (step 3's ProgramOut) in the shape of the workout spec §4."""
+    program = stored["program"]
+    return {
+        "id": stored["id"],
+        "name": program["name"],
+        "rounds": program["rounds"],
+        "work_seconds": program["work_seconds"],
+        "switch_seconds": program["switch_seconds"],
+        "round_rest_seconds": program["round_rest_seconds"],
+        "countdown_seconds": program["countdown_seconds"],
+        # A half minute rounds up, as step 3's total_minutes does.
+        "total_minutes": (stored["total_seconds"] + 30) // 60,
+        "stations": [
+            {"exercise_id": station["exercise"], "name": name}
+            for station, name in zip(
+                program["stations"], stored["station_names"], strict=True
+            )
+        ],
+    }
+
+
+@websocket_command({probatio.Required("type"): "ha_fitness/programs"})
+@async_response
+async def ws_programs(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the active programs, in the add-on's order (by name)."""
+    if (coordinator := _usable(hass, connection, msg)) is None:
+        return
+    try:
+        stored = await async_programs(coordinator.http_session, coordinator.url)
+    except AddonConnectionError:
+        _send_error(connection, msg["id"], "unavailable")
+        return
+    connection.send_result(
+        msg["id"], [_program(item) for item in stored if item["program"]["active"]]
+    )
+
+
+@websocket_command({probatio.Required("type"): "ha_fitness/people"})
+@async_response
+async def ws_people(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the people, in the add-on's (colour) order, each `{id, name}`."""
+    if (coordinator := _usable(hass, connection, msg)) is None:
+        return
+    try:
+        stored = await async_people(coordinator.http_session, coordinator.url)
+    except AddonConnectionError:
+        _send_error(connection, msg["id"], "unavailable")
+        return
+    connection.send_result(
+        msg["id"], [{"id": person["id"], "name": person["name"]} for person in stored]
+    )

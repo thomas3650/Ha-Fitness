@@ -291,3 +291,15 @@ class FitnessCoordinator:
                 # One failing listener doesn't keep the change from the others.
                 _LOGGER.warning("Error in an HA Fitness listener", exc_info=True)
         async_dispatcher_send(self.hass, SIGNAL_UPDATE)
+
+
+def usable_coordinator(hass: HomeAssistant) -> FitnessCoordinator | None:
+    """Return the loaded entry's coordinator while its add-on is usable, else None.
+
+    Usable means connected, speaking a supported API version, and with today received.
+    """
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        coordinator: FitnessCoordinator = entry.runtime_data
+        if coordinator.available:
+            return coordinator
+    return None

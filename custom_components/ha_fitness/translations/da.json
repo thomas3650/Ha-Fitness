@@ -85,6 +85,28 @@
           "description": "ID'et på en åben træningsdag, som vist i attributten Træningsdage på Træning i dag."
         }
       }
+    },
+    "start_session": {
+      "name": "Start træning",
+      "description": "Starter en træning med et program for en eller to personer. Der kører kun én træning ad gangen.",
+      "fields": {
+        "program_id": {
+          "name": "Programmets ID",
+          "description": "ID'et på et aktivt program."
+        },
+        "participants": {
+          "name": "Deltagere",
+          "description": "ID'erne på de en eller to personer, der træner, i stationernes rækkefølge."
+        },
+        "training_day_id": {
+          "name": "Træningsdagens ID",
+          "description": "Den åbne træningsdag, træningen er til. Udelad den for en ekstra træning."
+        }
+      }
+    },
+    "end_session": {
+      "name": "Afslut træning",
+      "description": "Afslutter træningen, der kører eller er sat på pause."
     }
   },
   "exceptions": {
@@ -96,6 +118,15 @@
     },
     "unavailable": {
       "message": "HA Fitness-appen kan ikke nås."
+    },
+    "session_not_found": {
+      "message": "Programmet, en person eller træningsdagen findes ikke."
+    },
+    "session_conflict": {
+      "message": "Træningen kan ikke det lige nu. En anden træning kører måske, programmet er måske ikke aktivt, eller træningsdagen er måske ikke åben."
+    },
+    "session_invalid": {
+      "message": "Vælg en eller to forskellige personer, og ikke flere personer, end programmet har stationer."
     }
   }
 }
