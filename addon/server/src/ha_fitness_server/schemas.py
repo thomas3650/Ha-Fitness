@@ -160,15 +160,29 @@ class StationIn(BaseModel):
     exercise: str
 
 
+# A speaker: a media player's entity id (spec §5.1); `Sessions.start` checks a start's speaker against it too.
+SPEAKER_PATTERN = r"^media_player\.[a-z0-9_]+$"
+
+
 class Music(BaseModel):
-    """A program's music (spec §5.1), stored now and used in step 7; not checked against HA."""
+    """A program's music (spec §5.1; music spec §4.1); not checked against HA when written.
+
+    `playlist` is what is played; `playlist_name` is the name the screens show, null for none.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     playlist: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
     ]
-    speaker: Annotated[str, StringConstraints(pattern=r"^media_player\.[a-z0-9_]+$")]
+    playlist_name: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+        ]
+        | None
+    ) = None
+    speaker: Annotated[str, StringConstraints(pattern=SPEAKER_PATTERN)]
     volume: Annotated[int, Field(ge=0, le=100)] | None = None
     shuffle: bool = False
 
@@ -310,6 +324,8 @@ class NewSession(BaseModel):
     program_id: int
     participants: list[int]
     training_day_id: int | None = None
+    # Overrides the program's speaker for this session (music spec §4.2); the service checks the pattern.
+    speaker: str | None = None
 
 
 class SessionParticipantOut(BaseModel):
@@ -389,6 +405,8 @@ class SessionView(BaseModel):
     server_time: UtcMillis
     # How a completed session felt; null on a live view and on a finished one not rated (UI refresh spec §3.3).
     feeling: Feeling | None
+    # The program's music frozen at the start, with the start's speaker; null without music (music spec §4.2).
+    music: Music | None
 
 
 class FeelingIn(BaseModel):

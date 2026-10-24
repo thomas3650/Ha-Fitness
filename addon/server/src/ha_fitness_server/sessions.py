@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import math
+import re
 from typing import Any, cast, get_args
 
 from pydantic import BaseModel
@@ -30,7 +31,9 @@ from .models import (
 from .people import MAX_PEOPLE, People
 from .programs import Programs
 from .schemas import (
+    SPEAKER_PATTERN,
     Feeling,
+    Music,
     NextPhase,
     PhaseKind,
     ProgramOut,
@@ -90,6 +93,8 @@ class Plan(BaseModel):
     round_rest_seconds: int
     countdown_seconds: int
     participants: list[PlanParticipant]
+    # The program's music with the start's speaker (music spec §4.2); a plan stored before step 7 reads as null.
+    music: Music | None = None
 
 
 @dataclass(frozen=True)
@@ -108,9 +113,19 @@ class Phase:
     next_offset: int | None
 
 
-def build_plan(program: ProgramOut, participants: Sequence[tuple[int, str]]) -> Plan:
-    """Freeze a program and its participants, given as (id, name) in people order, into a plan."""
+def build_plan(
+    program: ProgramOut,
+    participants: Sequence[tuple[int, str]],
+    speaker: str | None = None,
+) -> Plan:
+    """Freeze a program and its participants, given as (id, name) in people order, into a plan.
+
+    The music is the program's, with `speaker` in place of its speaker when given; null when the program has none.
+    """
     document = program.program
+    music = document.music
+    if music is not None and speaker is not None:
+        music = music.model_copy(update={"speaker": speaker})
     return Plan(
         program_id=program.id,
         program_name=document.name,
@@ -128,6 +143,7 @@ def build_plan(program: ProgramOut, participants: Sequence[tuple[int, str]]) -> 
         participants=[
             PlanParticipant(id=person_id, name=name) for person_id, name in participants
         ],
+        music=music,
     )
 
 
@@ -255,15 +271,20 @@ class Sessions:
         participants: list[int],
         training_day_id: int | None,
         client: str,
+        speaker: str | None = None,
     ) -> SessionView:
         """Freeze the plan and start at phase 0; log it (spec §3.3).
 
+        `speaker` replaces the program's speaker in the frozen music; a program without music ignores it.
+
         Raise `SessionError`: 404 `not_found` for an unknown program, person or day; 409 `conflict` while a session
         is running or paused, for an inactive program, or a day that isn't open or is another program's; 422
-        `invalid` for an empty list, more than two, duplicates, or more people than stations.
+        `invalid` for a speaker that isn't `media_player.<name>`, an empty list, more than two, duplicates, or more
+        people than stations.
         """
         with self._training_days.lock:
             self._training_days.reconcile_now()
+            self._check_speaker(speaker)
             self._check_list(participants)
             program = self._program(program_id)
             people = self._participants(participants)
@@ -282,7 +303,7 @@ class Sessions:
                     raise SessionError(409, "conflict", "A session is already running")
                 if training_day_id is not None:
                     self._check_day(db_session, training_day_id, program_id)
-                plan = build_plan(program, people)
+                plan = build_plan(program, people, speaker)
                 first = phases(plan)[0]
                 row = WorkoutSession(
                     plan=plan.model_dump(mode="json"),
@@ -712,6 +733,16 @@ class Sessions:
         return messages
 
     @staticmethod
+    def _check_speaker(speaker: str | None) -> None:
+        """Refuse a speaker that isn't a media player's entity id, as 422 `invalid` (music spec §4.2)."""
+        if speaker is not None and re.fullmatch(SPEAKER_PATTERN, speaker) is None:
+            raise SessionError(
+                422,
+                "invalid",
+                f"speaker must be a media player (media_player.<name>), got {speaker}",
+            )
+
+    @staticmethod
     def _check_list(participants: list[int]) -> None:
         """Refuse an empty list, more than two people, or a person given twice, as 422 `invalid`."""
         if not participants:
@@ -826,6 +857,7 @@ class Sessions:
             time_trained=time_trained(row, now),
             server_time=now,
             feeling=cast(Feeling | None, row.feeling),
+            music=plan.music,
         )
 
     @staticmethod
@@ -888,6 +920,7 @@ class Sessions:
             time_trained=time_trained(row, now),
             server_time=now,
             feeling=None,
+            music=plan.music,
         )
 
 

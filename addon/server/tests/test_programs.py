@@ -1,12 +1,16 @@
 """Tests for the programs (spec §5, §3.5 station resolution, §6 change log)."""
 
 from datetime import datetime
+import json
 from pathlib import Path
 import sqlite3
 from typing import Any
 
+from ha_fitness_server.db import DATABASE_NAME
 import httpx
 import pytest
+
+from tests.conftest import MakeApp, running
 
 PROGRAMS = "/api/v1/programs"
 CHANGES = "/api/v1/changes"
@@ -374,7 +378,63 @@ async def test_music_defaults(client: httpx.AsyncClient) -> None:
     """Music without volume and shuffle keeps the speaker's volume and doesn't shuffle."""
     music = {"playlist": "Workout", "speaker": "media_player.kitchen"}
     body = await _create(client, music=music)
-    assert body["program"]["music"] == {**music, "volume": None, "shuffle": False}
+    assert body["program"]["music"] == {
+        **music,
+        "playlist_name": None,
+        "volume": None,
+        "shuffle": False,
+    }
+
+
+async def test_playlist_name_defaults_to_null_and_is_validated(
+    client: httpx.AsyncClient,
+) -> None:
+    """`playlist_name` is null by default, stripped when given, and 1 to 200 characters (music spec §4.1)."""
+    music = {"playlist": "library://playlist/1", "speaker": "media_player.kitchen"}
+    without = await _create(client, name="Uden", music=music)
+    named = await _create(
+        client, name="Med", music={**music, "playlist_name": "  Workout Mix  "}
+    )
+    longest = await _create(
+        client, name="Lang", music={**music, "playlist_name": "x" * 200}
+    )
+    too_long = await client.post(
+        PROGRAMS, json=_program("For lang", music={**music, "playlist_name": "x" * 201})
+    )
+    empty = await client.post(
+        PROGRAMS, json=_program("Tom", music={**music, "playlist_name": "   "})
+    )
+    assert without["program"]["music"]["playlist_name"] is None
+    assert named["program"]["music"]["playlist_name"] == "Workout Mix"
+    assert longest["program"]["music"]["playlist_name"] == "x" * 200
+    assert too_long.status_code == 422, too_long.text
+    assert empty.status_code == 422, empty.text
+
+
+async def test_old_program_without_playlist_name(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """A program stored before step 7 has music without `playlist_name`; it reads as null (music spec §4.1)."""
+    music = {"playlist": "Workout", "speaker": "media_player.kitchen"}
+    async with running(make_app()) as client:
+        created = await _create(client, music=music)
+    # Raw-database setup only: the document as step 3 stored it, without `playlist_name`.
+    with sqlite3.connect(tmp_path / DATABASE_NAME) as connection:
+        connection.execute(
+            "UPDATE programs SET document = json_remove(document, '$.music.playlist_name')"
+        )
+        [document] = connection.execute("SELECT document FROM programs").fetchone()
+    connection.close()
+    assert "playlist_name" not in json.loads(document)["music"]
+    async with running(make_app()) as client:
+        response = await client.get(f"{PROGRAMS}/{created['id']}")
+    assert response.status_code == 200, response.text
+    assert response.json()["program"]["music"] == {
+        **music,
+        "playlist_name": None,
+        "volume": None,
+        "shuffle": False,
+    }
 
 
 async def test_change_log_program_actions(client: httpx.AsyncClient) -> None:

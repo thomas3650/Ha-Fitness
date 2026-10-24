@@ -3,10 +3,12 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+import json
 from pathlib import Path
 import sqlite3
 from typing import Any
 
+from ha_fitness_server.db import DATABASE_NAME
 import httpx
 import pytest
 
@@ -75,11 +77,15 @@ async def _start(
     program_id: int,
     participants: list[int],
     training_day_id: int | None = None,
+    *,
+    speaker: str | None = None,
 ) -> httpx.Response:
-    """Start a session as the client `test-agent`."""
+    """Start a session as the client `test-agent`, with `speaker` in the body when given."""
     body: dict[str, Any] = {"program_id": program_id, "participants": participants}
     if training_day_id is not None:
         body["training_day_id"] = training_day_id
+    if speaker is not None:
+        body["speaker"] = speaker
     return await client.post(SESSION, json=body, headers={"User-Agent": "test-agent"})
 
 
@@ -140,6 +146,7 @@ async def test_start_returns_view_at_phase_0(make_app: MakeApp) -> None:
         "totals": {"planned": 1725, "rounds": 5, "stations": 5},
         "started_at": None,
         "ended_at": None,
+        "music": None,
         "rounds_completed": 0,
         "time_trained": 0,
         "server_time": "2026-10-28T08:00:00.000Z",
@@ -367,3 +374,117 @@ async def test_start_with_missing_exercise_names_it_by_id(
         "exercise_id": added.json()["id"],
         "name": added.json()["id"],
     }
+
+
+# A program's music as stored, all keys given (music spec §4.1).
+MUSIC: dict[str, Any] = {
+    "playlist": "library://playlist/1",
+    "playlist_name": "Workout Mix",
+    "speaker": "media_player.living_room",
+    "volume": 30,
+    "shuffle": True,
+}
+
+
+async def test_start_with_speaker_freezes_that_speaker(make_app: MakeApp) -> None:
+    """A start with a speaker freezes the program's music with that speaker; the program keeps its own."""
+    async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
+        [thomas] = await _set_people(client, THOMAS)
+        program = await _create(client, "Onsdag", music=MUSIC)
+        response = await _start(
+            client, program["id"], [thomas], speaker="media_player.kitchen"
+        )
+        current = (await client.get(SESSION)).json()
+        stored = (await client.get(f"{PROGRAMS}/{program['id']}")).json()
+    assert response.status_code == 201, response.text
+    frozen = {**MUSIC, "speaker": "media_player.kitchen"}
+    assert response.json()["music"] == frozen
+    assert current["music"] == frozen
+    assert stored["program"]["music"] == MUSIC
+
+
+async def test_start_without_speaker_freezes_program_speaker(
+    make_app: MakeApp,
+) -> None:
+    """A start without a speaker freezes the program's music as it is; a later program change doesn't touch it."""
+    async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
+        [thomas] = await _set_people(client, THOMAS)
+        program = await _create(client, "Onsdag", music=MUSIC)
+        response = await _start(client, program["id"], [thomas])
+        document = {**program["program"], "music": None}
+        changed = await client.put(f"{PROGRAMS}/{program['id']}", json=document)
+        assert changed.status_code == 200, changed.text
+        current = (await client.get(SESSION)).json()
+    assert response.status_code == 201, response.text
+    assert response.json()["music"] == MUSIC
+    assert current["music"] == MUSIC
+
+
+async def test_start_speaker_ignored_without_music(make_app: MakeApp) -> None:
+    """A speaker for a program without music is ignored: the session's music is null."""
+    async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
+        [thomas] = await _set_people(client, THOMAS)
+        program = await _create(client, "Onsdag", music=None)
+        response = await _start(
+            client, program["id"], [thomas], speaker="media_player.kitchen"
+        )
+    assert response.status_code == 201, response.text
+    assert response.json()["music"] is None
+
+
+@pytest.mark.parametrize("music", [MUSIC, None])
+async def test_start_bad_speaker_is_422(
+    make_app: MakeApp, music: dict[str, Any] | None
+) -> None:
+    """A speaker that isn't `media_player.<name>` is 422 `invalid`, with or without music; nothing starts."""
+    async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
+        [thomas] = await _set_people(client, THOMAS)
+        program = await _create(client, "Onsdag", music=music)
+        changes_before = (await client.get(CHANGES)).json()
+        response = await _start(client, program["id"], [thomas], speaker="kitchen")
+        current = (await client.get(SESSION)).json()
+        changes_after = (await client.get(CHANGES)).json()
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "invalid"
+    assert set(detail) == {"code", "message"}
+    assert current is None
+    assert changes_after == changes_before
+
+
+async def test_history_keeps_music(make_app: MakeApp) -> None:
+    """A finished session keeps its music: in `GET /session` and in the history."""
+    async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
+        [thomas] = await _set_people(client, THOMAS)
+        program = await _create(client, "Onsdag", music=MUSIC)
+        assert (await _start(client, program["id"], [thomas])).status_code == 201
+        ended = await client.post(
+            f"{SESSION}/end", headers={"User-Agent": "test-agent"}
+        )
+        assert ended.status_code == 200, ended.text
+        current = (await client.get(SESSION)).json()
+        history = (await client.get("/api/v1/sessions")).json()
+    assert ended.json()["status"] == "ended"
+    assert current["music"] == MUSIC
+    assert [session["music"] for session in history["sessions"]] == [MUSIC]
+
+
+async def test_old_plan_without_music_reads_null(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """A session stored before step 7 has no `music` in its plan; its view reads `music: null` (spec §4.2)."""
+    clock = FrozenClock(WEDNESDAY_9)
+    async with started(clock, make_app) as client:
+        [thomas] = await _set_people(client, THOMAS)
+        program = await _create(client, "Onsdag", music=MUSIC)
+        assert (await _start(client, program["id"], [thomas])).status_code == 201
+    # Raw-database setup only: the plan as step 5 stored it, without `music`.
+    with sqlite3.connect(tmp_path / DATABASE_NAME) as connection:
+        connection.execute("UPDATE sessions SET plan = json_remove(plan, '$.music')")
+        [plan] = connection.execute("SELECT plan FROM sessions").fetchone()
+    connection.close()
+    assert "music" not in json.loads(plan)
+    async with started(clock, make_app) as client:
+        current = (await client.get(SESSION)).json()
+    assert current["program_name"] == "Onsdag"
+    assert current["music"] is None
