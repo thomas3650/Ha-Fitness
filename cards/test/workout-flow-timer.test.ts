@@ -707,9 +707,9 @@ test("Luk counts from when the controller first learned the add-on was gone", as
   await vi.advanceTimersByTimeAsync(5_000);
   // A second unavailable message during the outage doesn't start it over.
   deliver({ available: false, session: last });
-  await vi.advanceTimersByTimeAsync(10_000);
+  await vi.advanceTimersByTimeAsync(6_000);
 
-  // Fortsæt 15 s into the outage: Luk shows at once.
+  // Fortsæt 11 s into the outage, 6 s after its second message: Luk shows at once.
   overlay.open({ kind: "resume" });
   const flow = getByRole(document.body, "dialog").firstElementChild as FlowElement;
   await settle(flow);
