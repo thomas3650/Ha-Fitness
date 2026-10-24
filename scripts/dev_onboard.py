@@ -394,9 +394,9 @@ async def _add_fake_music_entry(session: aiohttp.ClientSession, token: str) -> N
     if result.get("type") == "create_entry" and result.get("title") == FAKE_MUSIC_TITLE:
         print(f"onboard: created the {FAKE_MUSIC_TITLE} entry")
         return
-    if result.get("type") in {"form", "menu"}:
-        # Core's real flow asks for a server. Abort it, or the next run finds it in progress. An aborted flow is
-        # gone already.
+    if result.get("flow_id") and result.get("type") not in {"create_entry", "abort"}:
+        # A flow still open (core's real flow asks for a server). Abort it, or the next run finds it in progress. A
+        # created entry or an aborted flow is gone already.
         async with session.delete(
             f"/api/config/config_entries/flow/{result['flow_id']}", headers=headers
         ) as response:

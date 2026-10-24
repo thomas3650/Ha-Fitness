@@ -45,10 +45,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Add the three players."""
-    players = [FakePlayer(*player) for player in PLAYERS]
-    for player in players:
-        hass.data[DATA_PLAYERS][player.entity_id] = player
-    async_add_entities(players)
+    async_add_entities(FakePlayer(*player) for player in PLAYERS)
 
 
 class FakePlayer(MediaPlayerEntity):
@@ -77,6 +74,14 @@ class FakePlayer(MediaPlayerEntity):
     def extra_state_attributes(self) -> Mapping[str, Any]:
         """Return `mass_player_type`; HA leaves it out while the player is unavailable."""
         return {"mass_player_type": "player"}
+
+    async def async_added_to_hass(self) -> None:
+        """Register the player under its entity id, for `fake_set_available`; a renamed entity is added again."""
+        self.hass.data[DATA_PLAYERS][self.entity_id] = self
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Forget the player, at unload or before a rename."""
+        self.hass.data[DATA_PLAYERS].pop(self.entity_id, None)
 
     def set_available(self, available: bool) -> None:
         """Make the player available or unavailable (`music_assistant.fake_set_available`)."""
