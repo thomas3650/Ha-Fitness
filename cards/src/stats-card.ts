@@ -162,6 +162,11 @@ export class StatsCard extends LitElement {
     this.config = config;
   }
 
+  /** The full width of a section, so two panels fit side by side; never under half of it. */
+  getGridOptions(): { columns: "full"; min_columns: number } {
+    return { columns: "full", min_columns: 6 };
+  }
+
   getCardSize(): number {
     return this.panelsShown ? 4 : 1;
   }

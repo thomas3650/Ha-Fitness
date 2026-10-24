@@ -31,6 +31,7 @@ interface CardElement extends HTMLElement {
   setConfig(config: { type: string; language?: string }): void;
   hass?: unknown;
   getCardSize(): number;
+  getGridOptions(): { columns?: number | "full"; min_columns?: number };
   updateComplete: Promise<boolean>;
 }
 
@@ -172,6 +173,11 @@ test("the card picker lists the card in English", () => {
   const entry = window.customCards?.find((card) => card.type === TAG);
   expect(entry?.name).toBe("HA Fitness – stats");
   expect(entry?.description).toBeTruthy();
+});
+
+test("takes the full width of a section", async () => {
+  const card = await mount(fakeHass());
+  expect(card.getGridOptions()).toEqual({ columns: "full", min_columns: 6 });
 });
 
 test("subscribes to ha_fitness/stats/subscribe", async () => {
