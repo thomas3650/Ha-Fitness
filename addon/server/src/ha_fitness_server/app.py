@@ -3,8 +3,10 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from typing import TypedDict
+import logging
+from typing import Any, TypedDict
 
+import anyio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastmcp.utilities.lifespan import combine_lifespans
@@ -23,9 +25,26 @@ from .people import People
 from .programs import Programs
 from .services import Services, ServicesHolder
 from .settings import Settings
+from .training_days import TrainingDays
+
+_LOGGER = logging.getLogger(__name__)
 
 API_VERSION: int = 1
 _ALL_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+
+
+def _no_publish(message: dict[str, Any]) -> None:
+    """Drop a push message; the push channel arrives with the websocket."""
+
+
+async def _run_scheduler(training_days: TrainingDays, interval: float) -> None:
+    """Reconcile every `interval` seconds in a worker thread; a failed run is logged and the next one still runs."""
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await anyio.to_thread.run_sync(training_days.reconcile_now)
+        except Exception:
+            _LOGGER.exception("The scheduler run failed")
 
 
 class Health(TypedDict):
@@ -50,12 +69,13 @@ def create_app(
     system clock. Tests pass fakes.
     """
     holder = ServicesHolder()
+    the_clock = clock or SystemClock()
     mcp = build_mcp(holder)
     mcp_app = mcp.http_app(path="/mcp")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Open the database and start the media download; stop the download and close the database at the end."""
+        """Open the database, reconcile, then start the scheduler and the media download; stop both at the end."""
         engine = open_database(settings.data_dir)
         app.state.engine = engine
         library = Library(engine)
@@ -63,22 +83,29 @@ def create_app(
         ha = HaClient(
             settings.ha_url, settings.ha_token, settings.ha_token_file, ha_transport
         )
+        training_days = TrainingDays(engine, the_clock, settings.timezone, _no_publish)
         holder.set(
             Services(
                 engine=engine,
                 library=library,
                 media=media,
                 people=People(engine, ha),
-                programs=Programs(engine, library),
+                programs=Programs(engine, library, training_days),
+                training_days=training_days,
             )
+        )
+        training_days.reconcile_now()
+        scheduler = asyncio.create_task(
+            _run_scheduler(training_days, settings.scheduler_interval)
         )
         download = asyncio.create_task(media.download_missing(library.media_files()))
         try:
             yield
         finally:
-            download.cancel()
-            with suppress(asyncio.CancelledError):
-                await download
+            for task in (scheduler, download):
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
             engine.dispose()
 
     app = FastAPI(
@@ -91,7 +118,7 @@ def create_app(
     app.state.mcp = mcp
     app.state.ha_transport = ha_transport
     app.state.media_transport = media_transport
-    app.state.clock = clock or SystemClock()
+    app.state.clock = the_clock
     app.state.supervisor_transport = supervisor_transport
 
     @app.get("/api/v1/health")

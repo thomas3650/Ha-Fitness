@@ -216,3 +216,7 @@ async def test_migration_0002_keeps_programs(make_app: MakeApp, tmp_path: Path) 
     connection.close()
     async with running(make_app()) as client:
         assert await _program_names(client) == ["Onsdag"]
+        response = await client.get(
+            "/api/v1/training-days", params={"from": "2026-10-01", "to": "2026-10-31"}
+        )
+        assert response.status_code == 200

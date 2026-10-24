@@ -1,5 +1,6 @@
 """The Pydantic models REST and MCP share, so both expose one JSON schema."""
 
+import datetime as dt
 from datetime import datetime
 from typing import Annotated, Literal, Self
 
@@ -234,3 +235,43 @@ class ProgramSummary(BaseModel):
     station_count: int
     rounds: int
     total_minutes: int
+
+
+class TrainingDayOut(BaseModel):
+    """A stored training day (step 4 spec §3.1); `program_id` is null after the program is deleted."""
+
+    id: int
+    program_id: int | None
+    program_name: str
+    date: dt.date
+    status: Literal["open", "done", "missed", "skipped"]
+    created_at: datetime
+    closed_at: datetime | None
+
+
+class OpenDay(BaseModel):
+    """An open training day in `GET /today`: due on its date, late after; the program fields are as it is now."""
+
+    id: int
+    program_id: int
+    program_name: str
+    date: dt.date
+    state: Literal["due", "late"]
+    station_count: int
+    rounds: int
+    total_minutes: int
+
+
+class NextTraining(BaseModel):
+    """The first date after today on which an active program trains, with those programs' names."""
+
+    date: dt.date
+    programs: list[str]
+
+
+class TodayView(BaseModel):
+    """Body of `GET /api/v1/today` (step 4 spec §3.5)."""
+
+    date: dt.date
+    open: list[OpenDay]
+    next: NextTraining | None
