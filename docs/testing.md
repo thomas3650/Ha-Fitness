@@ -52,11 +52,10 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    never has them. `POST /api/v1/dev/training-days` with `{"program_id", "date"}` opens a day on today or an earlier
    date, or reopens the one there is. `DELETE /api/v1/dev/training-days?date=` removes every training day of that date,
    open or closed.
-7. **A short run**, after `scripts/seed --short`: start Kort on its day for today and let it run to the end, about
-   25 s. Through REST, take the person ids from `GET /api/v1/people` and Kort's day (`id`, `program_id`) from
-   `GET /api/v1/today`. Then `POST /api/v1/session` with `{"program_id", "participants": [person ids],
-   "training_day_id"}`, and follow it with `GET /api/v1/session`. When it completes, `GET /api/v1/today` no longer
-   lists Kort's day. With the workout flow's cards, Start on the today card runs the same path.
+7. **A short run**, after `scripts/seed --short`: Start on Kort's row in the today card, choose the people, and let
+   it run to the end, about 25 s. When it completes, the today card no longer shows Kort. Without a browser, the same
+   path through REST: `POST /api/v1/session` with `{"program_id", "participants": [person ids from
+   GET /api/v1/people], "training_day_id"}` (Kort's day from `GET /api/v1/today`), then `GET /api/v1/session`.
 8. `scripts/develop stop` stops all three.
 
 `scripts/smoke` starts the dev HA once in the foreground (150 s, `SMOKE_SECONDS` to change), and fails if HA doesn't
