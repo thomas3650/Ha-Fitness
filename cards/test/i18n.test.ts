@@ -69,15 +69,17 @@ test("the English fallback picks the English plural", () => {
 });
 
 test("the day's line, due and late", () => {
-  const line = localize("da", "today.summary", {
-    stations: localize("da", "today.stations", { count: 5 }),
-    rounds: localize("da", "today.rounds", { count: 5 }),
-    minutes: localize("da", "today.minutes", { count: 29 }),
-  });
-  expect(line).toBe("5 øvelser · 5 runder · ca. 29 min");
-  expect(
-    localize("da", "today.late", { weekday: localize("da", "weekday.wednesday"), summary: line }),
-  ).toBe("Forfalden · onsdag · 5 øvelser · 5 runder · ca. 29 min");
+  const summary = (language: string) =>
+    localize(language, "today.short_summary", {
+      stations: localize(language, "today.stations", { count: 5 }),
+      minutes: localize(language, "today.short_minutes", { count: 29 }),
+    });
+  expect(summary("da")).toBe("5 øvelser · 29 min");
+  expect(summary("en")).toBe("5 exercises · 29 min");
+  expect(localize("da", "today.due")).toBe("I dag");
+  expect(localize("en", "today.due")).toBe("Today");
+  expect(localize("da", "today.late", { weekday: localize("da", "weekday.wednesday") })).toBe("Forfalden · onsdag");
+  expect(localize("en", "today.late", { weekday: localize("en", "weekday.wednesday") })).toBe("Late · Wednesday");
 });
 
 test("the card's fixed texts in Danish", () => {

@@ -12,20 +12,26 @@
     "description": "Pr. person: i træk, gennemførte og missede træninger og træningstid, denne måned og i alt."
   },
   "today": {
+    "title": "TRÆNING",
     "stations_one": "{count} øvelse",
     "stations_other": "{count} øvelser",
     "rounds_one": "{count} runde",
     "rounds_other": "{count} runder",
     "minutes": "ca. {count} min",
     "summary": "{stations} · {rounds} · {minutes}",
-    "late": "Forfalden · {weekday} · {summary}",
+    "short_summary": "{stations} · {minutes}",
+    "short_minutes": "{count} min",
+    "due": "I dag",
+    "late": "Forfalden · {weekday}",
     "start": "Start",
     "skip": "Spring over",
     "skip_confirm": "Spring over?",
     "yes": "Ja",
     "no": "Nej",
     "nothing_open": "Ingen træning i dag",
-    "unreachable": "HA Fitness kan ikke nås"
+    "unreachable": "HA Fitness kan ikke nås",
+    "week": "Denne uge",
+    "streak_label": "Streak: {list}"
   },
   "session": {
     "running": "Træning i gang · {program}",

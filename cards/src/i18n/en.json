@@ -12,20 +12,26 @@
     "description": "Per person: the streak, workouts done, missed and time trained, this month and all time."
   },
   "today": {
+    "title": "TRAINING",
     "stations_one": "{count} exercise",
     "stations_other": "{count} exercises",
     "rounds_one": "{count} round",
     "rounds_other": "{count} rounds",
     "minutes": "about {count} min",
     "summary": "{stations} · {rounds} · {minutes}",
-    "late": "Late · {weekday} · {summary}",
+    "short_summary": "{stations} · {minutes}",
+    "short_minutes": "{count} min",
+    "due": "Today",
+    "late": "Late · {weekday}",
     "start": "Start",
     "skip": "Skip",
     "skip_confirm": "Skip?",
     "yes": "Yes",
     "no": "No",
     "nothing_open": "No training today",
-    "unreachable": "HA Fitness can't be reached"
+    "unreachable": "HA Fitness can't be reached",
+    "week": "This week",
+    "streak_label": "Streak: {list}"
   },
   "session": {
     "running": "Workout in progress · {program}",

@@ -82,7 +82,8 @@ const NO_SESSION = { available: true, session: null };
  * A fake of home-assistant-js-websocket's connection. The today card's `ha_fitness/today/subscribe`
  * and the page's `ha_fitness/session/subscribe` (the overlay controller's) are kept apart:
  * `subscribeMessage`, `listeners` and `unsubscribes` are the today subscription's, and
- * `subscribeSession` and `pushSession` the session's. Like the integration, the session
+ * `subscribeSession` and `pushSession` the session's, and `subscribeStats` and `pushStats` the
+ * stats' (`ha_fitness/stats/subscribe`), which sends nothing until the test does. Like the integration, the session
  * subscription sends at once: `{available: true, session: null}` unless the test says otherwise.
  * `fire` sends a connection event such as `ready` (sent after a reconnect).
  */
@@ -90,6 +91,7 @@ function fakeConnection(initialSession: unknown = NO_SESSION) {
   const listeners: Listener[] = [];
   const unsubscribes: ReturnType<typeof vi.fn>[] = [];
   const sessionListeners: Listener[] = [];
+  const statsListeners: Listener[] = [];
   const events = new Map<string, Set<(...args: unknown[]) => void>>();
   const subscribeMessage = vi.fn<
     (callback: Listener, message: unknown, options?: unknown) => Promise<() => void>
@@ -108,11 +110,17 @@ function fakeConnection(initialSession: unknown = NO_SESSION) {
     void Promise.resolve().then(() => callback(initialSession));
     return Promise.resolve(vi.fn());
   });
+  const subscribeStats = vi.fn<
+    (callback: Listener, message: unknown, options?: unknown) => Promise<() => void>
+  >((callback) => {
+    statsListeners.push(callback);
+    return Promise.resolve(vi.fn());
+  });
   const connection = {
     subscribeMessage(callback: Listener, message: { type: string }, options?: unknown) {
-      return message.type === "ha_fitness/session/subscribe"
-        ? subscribeSession(callback, message, options)
-        : subscribeMessage(callback, message, options);
+      if (message.type === "ha_fitness/session/subscribe") return subscribeSession(callback, message, options);
+      if (message.type === "ha_fitness/stats/subscribe") return subscribeStats(callback, message, options);
+      return subscribeMessage(callback, message, options);
     },
     addEventListener(type: string, callback: (...args: unknown[]) => void) {
       if (!events.has(type)) events.set(type, new Set());
@@ -126,6 +134,7 @@ function fakeConnection(initialSession: unknown = NO_SESSION) {
     connection,
     subscribeMessage,
     subscribeSession,
+    subscribeStats,
     listeners,
     unsubscribes,
     listenerCount: (type: string) => events.get(type)?.size ?? 0,
@@ -142,6 +151,12 @@ function fakeConnection(initialSession: unknown = NO_SESSION) {
     pushSession(message: unknown) {
       const listener = sessionListeners.at(-1);
       if (!listener) throw new Error("nothing has subscribed to the session");
+      listener(message);
+    },
+    /** Send a message on the newest stats subscription. */
+    pushStats(message: unknown) {
+      const listener = statsListeners.at(-1);
+      if (!listener) throw new Error("the card has not subscribed to the stats");
       listener(message);
     },
   };
@@ -255,22 +270,22 @@ test("due and late rows in da and en", async () => {
 
   await push(card, fake, today([wednesday, strength]));
   expect(rows(card).map(text)).toEqual([
-    "Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over",
-    "Styrke 1 øvelse · 3 runder · ca. 12 min Start Spring over",
+    "Onsdag I dag 5 øvelser · 29 min Start Spring over",
+    "Styrke I dag 1 øvelse · 12 min Start Spring over",
   ]);
 
   await push(card, fake, today([{ ...wednesday, state: "late" }], "2026-10-29"));
   expect(rows(card).map(text)).toEqual([
-    "Onsdag Forfalden · onsdag · 5 øvelser · 5 runder · ca. 29 min Start Spring over",
+    "Onsdag Forfalden · onsdag 5 øvelser · 29 min Start Spring over",
   ]);
 
   const english = fakeHass("en");
   const englishCard = await mount(english);
   await push(englishCard, english, today([wednesday]));
-  expect(rows(englishCard).map(text)).toEqual(["Onsdag 5 exercises · 5 rounds · about 29 min Start Skip"]);
+  expect(rows(englishCard).map(text)).toEqual(["Onsdag Today 5 exercises · 29 min Start Skip"]);
   await push(englishCard, english, today([{ ...wednesday, state: "late" }], "2026-10-29"));
   expect(rows(englishCard).map(text)).toEqual([
-    "Onsdag Late · Wednesday · 5 exercises · 5 rounds · about 29 min Start Skip",
+    "Onsdag Late · Wednesday 5 exercises · 29 min Start Skip",
   ]);
 });
 
@@ -328,7 +343,7 @@ test("hides when nothing open and returns when a day opens", async () => {
   expect(card.hidden).toBe(false);
   expect(card.style.display).toBe("");
   expect(events).toEqual([HIDE, SHOW]);
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
 });
 
 test("subscribes once and unsubscribes when removed", async () => {
@@ -354,10 +369,10 @@ test("in preview never hides and shows the note", async () => {
     await push(card, fake, today([]));
     expect(card.hidden).toBe(false);
     expect(events).toEqual([]);
-    expect(text(root(card))).toBe("Ingen træning i dag");
+    expect(text(root(card))).toBe("TRÆNING Ingen træning i dag");
 
     await push(card, fake, today([wednesday]));
-    expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+    expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
   }
 
   // A card already hidden comes back when it is shown in the editor.
@@ -368,7 +383,7 @@ test("in preview never hides and shows the note", async () => {
   card.preview = true;
   await card.updateComplete;
   expect(card.hidden).toBe(false);
-  expect(text(root(card))).toBe("Ingen træning i dag");
+  expect(text(root(card))).toBe("TRÆNING Ingen træning i dag");
 });
 
 test("one tap never skips", async () => {
@@ -380,7 +395,7 @@ test("one tap never skips", async () => {
   await wait(card, 0);
 
   expect(fake.callService).not.toHaveBeenCalled();
-  expect(text(rows(card)[0])).toBe("Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over? Ja Nej");
+  expect(text(rows(card)[0])).toBe("Onsdag I dag 5 øvelser · 29 min Spring over? Ja Nej");
 });
 
 test("Nej in place of Spring over", async () => {
@@ -443,7 +458,7 @@ test("Ja calls skip with notifyOnError false", async () => {
 
   finish({});
   await push(card, fake, today([wednesday]));
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
 });
 
 test("10 s timeout cancels", async () => {
@@ -497,12 +512,12 @@ test("unreachable line", async () => {
   await push(card, fake, null);
   expect(card.hidden).toBe(false);
   expect(rows(card)).toEqual([]);
-  expect(text(root(card))).toBe("HA Fitness kan ikke nås");
+  expect(text(root(card))).toBe("TRÆNING HA Fitness kan ikke nås");
 
   const english = fakeHass("en");
   const englishCard = await mount(english);
   await push(englishCard, english, null);
-  expect(text(root(englishCard))).toBe("HA Fitness can't be reached");
+  expect(text(root(englishCard))).toBe("TRAINING HA Fitness can't be reached");
 });
 
 test("a subscription the integration refuses shows the unreachable line", async () => {
@@ -511,7 +526,7 @@ test("a subscription the integration refuses shows the unreachable line", async 
   const card = await mount(fake);
   await wait(card, 0);
   expect(card.hidden).toBe(false);
-  expect(text(root(card))).toBe("HA Fitness kan ikke nås");
+  expect(text(root(card))).toBe("TRÆNING HA Fitness kan ikke nås");
 });
 
 test("retries a refused subscription after 5, 10 and 30 s, then every 30 s", async () => {
@@ -519,7 +534,7 @@ test("retries a refused subscription after 5, 10 and 30 s, then every 30 s", asy
   for (let i = 0; i < 4; i++) fake.subscribeMessage.mockRejectedValueOnce({ code: "unknown_command" });
   const card = await mount(fake);
   await wait(card, 0);
-  expect(text(root(card))).toBe("HA Fitness kan ikke nås");
+  expect(text(root(card))).toBe("TRÆNING HA Fitness kan ikke nås");
 
   // The n-th retry comes this many ms after the refusal before it.
   for (const [delay, calls] of [
@@ -535,7 +550,7 @@ test("retries a refused subscription after 5, 10 and 30 s, then every 30 s", asy
   }
 
   await push(card, fake, today([wednesday]));
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
   await wait(card, 120_000);
   expect(fake.subscribeMessage).toHaveBeenCalledTimes(5);
 });
@@ -557,7 +572,7 @@ test("a reconnect subscribes at once and starts the waits over", async () => {
   expect(fake.subscribeMessage).toHaveBeenCalledTimes(5);
 
   await push(card, fake, today([wednesday]));
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
 });
 
 test("stops retrying and listening when removed", async () => {
@@ -565,8 +580,8 @@ test("stops retrying and listening when removed", async () => {
   fake.subscribeMessage.mockRejectedValue({ code: "unknown_command" });
   const card = await mount(fake);
   await wait(card, 0);
-  // The card's listener and the page-wide overlay controller's.
-  expect(fake.listenerCount("ready")).toBe(2);
+  // The card's two listeners (today and stats) and the page-wide overlay controller's.
+  expect(fake.listenerCount("ready")).toBe(3);
 
   card.remove();
   // The overlay controller keeps its own subscription; the card's listener is gone.
@@ -593,10 +608,10 @@ test("subscribes again when the connection is ready after a reconnect", async ()
   // A late message on the old subscription is ignored.
   fake.listeners[0](today([]));
   await card.updateComplete;
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
 
   await push(card, fake, today([strength]));
-  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Styrke I dag 1 øvelse · 12 min Start Spring over"]);
 });
 
 test("a new connection replaces the old subscription", async () => {
@@ -614,11 +629,11 @@ test("a new connection replaces the old subscription", async () => {
   // A late message on the old connection is ignored.
   fake.push(today([]));
   await card.updateComplete;
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
 
   other.push(today([strength]));
   await card.updateComplete;
-  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Styrke I dag 1 øvelse · 12 min Start Spring over"]);
 });
 
 test("subscribes again when put back on the page", async () => {
@@ -638,7 +653,7 @@ test("subscribes again when put back on the page", async () => {
 
   await push(card, fake, today([strength]));
   expect(card.hidden).toBe(false);
-  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Start Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Styrke I dag 1 øvelse · 12 min Start Spring over"]);
 });
 
 test("a day that closes while asking drops its question", async () => {
@@ -658,7 +673,7 @@ test("language option wins", async () => {
   const card = await mount(fake, { language: "da" });
   await push(card, fake, today([{ ...wednesday, state: "late" }], "2026-10-29"));
   expect(rows(card).map(text)).toEqual([
-    "Onsdag Forfalden · onsdag · 5 øvelser · 5 runder · ca. 29 min Start Spring over",
+    "Onsdag Forfalden · onsdag 5 øvelser · 29 min Start Spring over",
   ]);
 
   // HA translates service errors in the system language; the card uses its own texts.
@@ -670,19 +685,25 @@ test("language option wins", async () => {
   expect(text(getByRole(root(card), "alert"))).toBe("Træningsdagen er allerede afsluttet.");
 });
 
-test("grid options 2 rows per day", async () => {
+test("the grid rows follow the days", async () => {
+  // One row for the top line and the ring, then two per day (or for the session row).
   const fake = fakeHass();
   const card = await mount(fake);
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 2 });
-  expect(card.getCardSize()).toBe(2);
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 3 });
+  expect(card.getCardSize()).toBe(3);
 
   await push(card, fake, today([wednesday]));
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 2 });
-  expect(card.getCardSize()).toBe(2);
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 3 });
+  expect(card.getCardSize()).toBe(3);
 
   await push(card, fake, today([wednesday, strength]));
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
-  expect(card.getCardSize()).toBe(4);
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 5 });
+  expect(card.getCardSize()).toBe(5);
+
+  fake.pushSession({ available: true, session: sessionView("running") });
+  await card.updateComplete;
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 3 });
+  expect(card.getCardSize()).toBe(3);
 });
 
 test("is offered in the card picker, in English", () => {
@@ -870,7 +891,7 @@ test("after a completed view the today card shows no Fortsæt and hides when not
     fake.pushSession({ available: true, session: sessionView(status) });
     await card.updateComplete;
     expect(queryByRole(root(card), "button", { name: "Fortsæt" })).toBeNull();
-    expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+    expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
 
     await push(card, fake, today([]));
     expect(card.hidden).toBe(true);
@@ -890,8 +911,8 @@ test("today card visible during extra session with nothing open", async () => {
   await card.updateComplete;
   expect(card.hidden).toBe(false);
   expect(card.style.display).toBe("");
-  expect(text(root(card))).toBe("Træning i gang · Onsdag Fortsæt");
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 2 });
+  expect(text(root(card))).toBe("TRÆNING Træning i gang · Onsdag Fortsæt");
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 3 });
 
   // The add-on unreachable: the last view still counts as active, so the card stays.
   fake.pushSession({ available: false, session: sessionView("paused", null) });
@@ -907,7 +928,7 @@ test("today card visible during extra session with nothing open", async () => {
 test("a card that connects during a session shows Fortsæt at once", async () => {
   const fake = fakeHass("da", { available: true, session: sessionView("running") });
   const first = await mount(fake);
-  expect(text(root(first))).toBe("Træning i gang · Onsdag Fortsæt");
+  expect(text(root(first))).toBe("TRÆNING Træning i gang · Onsdag Fortsæt");
 
   // A second card on the page: the controller already holds the session.
   const second = document.createElement("ha-fitness-today-card") as unknown as CardElement;
@@ -916,7 +937,7 @@ test("a card that connects during a session shows Fortsæt at once", async () =>
   document.body.append(second);
   await second.updateComplete;
   expect(second.hidden).toBe(false);
-  expect(text(root(second))).toBe("Træning i gang · Onsdag Fortsæt");
+  expect(text(root(second))).toBe("TRÆNING Træning i gang · Onsdag Fortsæt");
 });
 
 test("the card's language option carries into the flow, from Start and from Fortsæt", async () => {
@@ -934,4 +955,207 @@ test("the card's language option carries into the flow, from Start and from Fort
   getByRole(root(card), "button", { name: "Fortsæt" }).click();
   await wait(card, 0);
   expect(getByRole(flowRoot(), "button", { name: "Slut" })).toBeTruthy();
+});
+
+/** A stats message in the shape of `ha_fitness/stats/subscribe` (spec §5.1). */
+function statsMessage(
+  people: { name: string; streak: number }[],
+  options: { available?: boolean; countingFrom?: string | null } = {},
+) {
+  const zero = { done: 0, extra: 0, missed: 0, skipped: 0, time_trained: 0 };
+  return {
+    available: options.available ?? true,
+    stats: {
+      counting_from: options.countingFrom === undefined ? "2026-10-01" : options.countingFrom,
+      month: "2026-10",
+      people: people.map((person, index) => ({
+        id: index + 1,
+        name: person.name,
+        person_entity_id: `person.p${index + 1}`,
+        streak: person.streak,
+        all_time: zero,
+        this_month: zero,
+      })),
+    },
+  };
+}
+
+async function pushStats(card: CardElement, fake: Fake, message: unknown): Promise<void> {
+  fake.pushStats(message);
+  await card.updateComplete;
+}
+
+function streakBadge(card: CardElement): HTMLElement | null {
+  return queryByRole(root(card), "img", { name: /^Streak/ });
+}
+
+function weekRing(card: CardElement, name: string): HTMLElement | null {
+  return queryByRole(root(card), "progressbar", { name });
+}
+
+test("streak badge shows initials, numbers and an accessible name", async () => {
+  const fake = fakeHass("da");
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+  expect(fake.subscribeStats).toHaveBeenCalledWith(
+    expect.any(Function),
+    { type: "ha_fitness/stats/subscribe" },
+    { resubscribe: false },
+  );
+
+  await pushStats(card, fake, statsMessage([{ name: "Thomas", streak: 6 }, { name: "Elin", streak: 4 }]));
+  const badge = getByRole(root(card), "img", { name: "Streak: Thomas 6, Elin 4" });
+  expect(text(badge)).toBe("T 6 E 4");
+  // The top line: the title on the left, the badge on the right.
+  expect(text(root(card)).startsWith("TRÆNING T 6 E 4")).toBe(true);
+
+  const english = fakeHass("en");
+  const englishCard = await mount(english);
+  await push(englishCard, english, today([wednesday]));
+  await pushStats(englishCard, english, statsMessage([{ name: "Elin", streak: 0 }]));
+  expect(text(getByRole(root(englishCard), "img", { name: "Streak: Elin 0" }))).toBe("E 0");
+  expect(text(root(englishCard)).startsWith("TRAINING E 0")).toBe(true);
+});
+
+test("two-letter initials on a clash", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+  await pushStats(card, fake, statsMessage([{ name: "Thomas", streak: 6 }, { name: "Tina", streak: 2 }]));
+  const badge = getByRole(root(card), "img", { name: "Streak: Thomas 6, Tina 2" });
+  expect(text(badge)).toBe("Th 6 Ti 2");
+});
+
+test("streak badge hidden before counting, while stats are unavailable or refused, and with no people", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+  // No stats message yet.
+  expect(streakBadge(card)).toBeNull();
+
+  const people = [{ name: "Thomas", streak: 6 }];
+  await pushStats(card, fake, statsMessage(people, { countingFrom: null }));
+  expect(streakBadge(card)).toBeNull();
+
+  await pushStats(card, fake, statsMessage(people));
+  expect(streakBadge(card)).not.toBeNull();
+
+  await pushStats(card, fake, statsMessage(people, { available: false }));
+  expect(streakBadge(card)).toBeNull();
+
+  await pushStats(card, fake, { available: false, stats: null });
+  expect(streakBadge(card)).toBeNull();
+
+  await pushStats(card, fake, statsMessage([]));
+  expect(streakBadge(card)).toBeNull();
+
+  // A refused subscription.
+  const refused = fakeHass();
+  refused.subscribeStats.mockRejectedValue({ code: "unknown_command" });
+  const refusedCard = await mount(refused);
+  await push(refusedCard, refused, today([wednesday]));
+  await wait(refusedCard, 0);
+  expect(streakBadge(refusedCard)).toBeNull();
+  expect(rows(refusedCard).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
+});
+
+test("stats alone never show a hidden card", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([]));
+  await pushStats(card, fake, statsMessage([{ name: "Thomas", streak: 6 }]));
+  expect(card.hidden).toBe(true);
+});
+
+test("week ring shows done of planned", async () => {
+  const fake = fakeHass("da");
+  const card = await mount(fake);
+  await push(card, fake, { ...today([wednesday]), week: { done: 2, planned: 4 } });
+  const ring = weekRing(card, "Denne uge")!;
+  expect(ring).not.toBeNull();
+  expect(ring.getAttribute("aria-valuenow")).toBe("2");
+  expect(ring.getAttribute("aria-valuemax")).toBe("4");
+  expect(text(ring)).toBe("2/4 Denne uge");
+
+  const english = fakeHass("en");
+  const englishCard = await mount(english);
+  await push(englishCard, english, { ...today([wednesday]), week: { done: 5, planned: 4 } });
+  const englishRing = weekRing(englishCard, "This week")!;
+  expect(englishRing.getAttribute("aria-valuenow")).toBe("5");
+  expect(text(englishRing)).toBe("5/4 This week");
+});
+
+test("no ring without week or with planned 0", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  // An older add-on sends no week (spec §4): the card still works, with no ring.
+  await push(card, fake, today([wednesday]));
+  expect(queryByRole(root(card), "progressbar")).toBeNull();
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
+
+  await push(card, fake, { ...today([wednesday]), week: { done: 0, planned: 0 } });
+  expect(queryByRole(root(card), "progressbar")).toBeNull();
+});
+
+test("due day says I dag, late day keeps Forfalden", async () => {
+  const fake = fakeHass("da");
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday, { ...strength, state: "late", date: "2026-10-23" }]));
+  expect(rows(card).map(text)).toEqual([
+    "Onsdag I dag 5 øvelser · 29 min Start Spring over",
+    "Styrke Forfalden · fredag 1 øvelse · 12 min Start Spring over",
+  ]);
+
+  const english = fakeHass("en");
+  const englishCard = await mount(english);
+  await push(englishCard, english, today([wednesday, { ...strength, state: "late", date: "2026-10-23" }]));
+  expect(rows(englishCard).map(text)).toEqual([
+    "Onsdag Today 5 exercises · 29 min Start Skip",
+    "Styrke Late · Friday 1 exercise · 12 min Start Skip",
+  ]);
+});
+
+test("Start comes before Spring over, and Spring over keeps its two taps", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+
+  const row = rows(card)[0];
+  const [start, skip] = getAllByRole(row, "button");
+  expect([text(start), text(skip)]).toEqual(["Start", "Spring over"]);
+  // The buttons come after the day's text, under it.
+  expect(text(row)).toBe("Onsdag I dag 5 øvelser · 29 min Start Spring over");
+
+  await tap(card, skip);
+  expect(fake.callService).not.toHaveBeenCalled();
+  expect(text(rows(card)[0])).toBe("Onsdag I dag 5 øvelser · 29 min Spring over? Ja Nej");
+  await wait(card, 500);
+  await tap(card, getByRole(rows(card)[0], "button", { name: "Ja" }));
+  expect(fake.callService).toHaveBeenCalledWith("ha_fitness", "skip", { training_day_id: 12 }, undefined, false);
+});
+
+test("several open days share one top line and ring", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, { ...today([wednesday, strength]), week: { done: 1, planned: 3 } });
+  await pushStats(card, fake, statsMessage([{ name: "Thomas", streak: 6 }]));
+
+  expect(rows(card)).toHaveLength(2);
+  expect(queryAllByRole(root(card), "progressbar")).toHaveLength(1);
+  expect(queryAllByRole(root(card), "img", { name: /^Streak/ })).toHaveLength(1);
+  expect(text(root(card)).match(/TRÆNING/g)).toHaveLength(1);
+});
+
+test("session row replaces the days but keeps the top line", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, { ...today([wednesday, strength]), week: { done: 2, planned: 4 } });
+  await pushStats(card, fake, statsMessage([{ name: "Thomas", streak: 6 }]));
+
+  fake.pushSession({ available: true, session: sessionView("running") });
+  await card.updateComplete;
+  expect(rows(card).map(text)).toEqual(["Træning i gang · Onsdag Fortsæt"]);
+  expect(getByRole(root(card), "img", { name: "Streak: Thomas 6" })).toBeTruthy();
+  expect(weekRing(card, "Denne uge")?.getAttribute("aria-valuenow")).toBe("2");
+  expect(text(root(card)).startsWith("TRÆNING T 6")).toBe(true);
 });

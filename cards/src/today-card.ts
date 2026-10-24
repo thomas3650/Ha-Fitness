@@ -1,11 +1,14 @@
-import { LitElement, type PropertyValues, css, html, nothing } from "lit";
+import { LitElement, type PropertyValues, css, html, nothing, svg } from "lit";
 
 import { unlockAudio } from "./audio";
 import { type Vars, localize } from "./i18n";
+import { iconButton } from "./icon-button";
 import { type LanguageConfig, type LanguageHass, cardLanguage } from "./language";
 import * as overlay from "./overlay";
 import { type SessionView, isActive } from "./overlay";
-import { type Connection, type OpenDay, type Today, TodaySubscription } from "./today-data";
+import { initials, personColor } from "./people";
+import type { PersonStats, StatsMessage } from "./stats-card";
+import { type Connection, type OpenDay, type Today, TodaySubscription, WsSubscription } from "./today-data";
 
 /** The part of Home Assistant's `hass` object this card uses. */
 interface Hass extends LanguageHass {
@@ -54,6 +57,11 @@ const ARM_MS = 500;
 const CONFIRM_MS = 10_000;
 const ERROR_MS = 5_000;
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+/** The week ring's size and stroke, in px. */
+const WEEK_SIZE = 88;
+const WEEK_STROKE = 8;
+const WEEK_RADIUS = (WEEK_SIZE - WEEK_STROKE) / 2;
+const WEEK_CIRCUMFERENCE = 2 * Math.PI * WEEK_RADIUS;
 /** The service errors with a text of their own; any other error gets the general text. */
 const KNOWN_ERRORS = new Set(["not_found", "not_open", "unavailable"]);
 
@@ -70,8 +78,9 @@ function errorKey(error: unknown): string {
 }
 
 /**
- * "Træning i dag": the open training days, each with Start and a two-step Spring over (step 4
- * spec §6). While a session is active it shows "Træning i gang" and Fortsæt instead (spec §5.1).
+ * "Træning i dag" (UI refresh spec §2.1): a top line with the title and the people's streaks, the
+ * week ring, and the open training days, each with Start and a two-step Spring over (step 4 spec
+ * §6). While a session is active the days give way to "Træning i gang" and Fortsæt (step 5 §5.1).
  */
 export class TodayCard extends LitElement {
   static override properties = {
@@ -81,6 +90,7 @@ export class TodayCard extends LitElement {
     config: { state: true },
     today: { state: true },
     session: { state: true },
+    stats: { state: true },
     error: { state: true },
   };
 
@@ -94,12 +104,17 @@ export class TodayCard extends LitElement {
   declare today?: Today | null;
   /** The page's active session (running or paused), from the overlay controller. */
   declare session?: SessionView;
+  /** The last stats message: nothing yet (undefined), or null while the subscription is refused. */
+  declare stats?: StatsMessage | null;
   declare error?: string;
 
   /** HA's `hui-card` keeps a hidden card in the DOM only if it asks, and the card must stay subscribed. */
   readonly connectedWhileHidden = true;
 
   private readonly subscription = new TodaySubscription((today) => this.receive(today));
+  private readonly statsSubscription = new WsSubscription<StatsMessage>("ha_fitness/stats/subscribe", (message) => {
+    this.stats = message;
+  });
   private readonly confirming = new Map<number, Confirming>();
   private errorTimer?: ReturnType<typeof setTimeout>;
   private stopListening?: () => void;
@@ -108,23 +123,95 @@ export class TodayCard extends LitElement {
     :host {
       display: block;
     }
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px 0;
+    }
+    .title {
+      font-size: 0.875em;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      color: var(--secondary-text-color);
+    }
+    .streak {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      color: var(--primary-text-color);
+    }
+    .streak ha-icon {
+      --mdc-icon-size: 20px;
+      color: var(--warning-color);
+    }
+    .person {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .middle {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 4px 16px 4px;
+    }
+    .week {
+      position: relative;
+      flex: none;
+      width: ${WEEK_SIZE}px;
+      height: ${WEEK_SIZE}px;
+      margin: 8px 0;
+    }
+    .week svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .week .track {
+      stroke: var(--divider-color);
+    }
+    .week .done {
+      stroke: var(--success-color);
+    }
+    .week .numbers {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .week .count {
+      font-size: 1.375em;
+      font-weight: 700;
+      color: var(--primary-text-color);
+    }
+    .week .label {
+      font-size: 0.75em;
+      color: var(--secondary-text-color);
+    }
+    .days {
+      flex: 1;
+      min-width: 0;
+    }
     ul {
       list-style: none;
       margin: 0;
       padding: 0;
     }
     li {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 12px 16px;
+      padding: 8px 0 12px;
     }
     li + li {
       border-top: 1px solid var(--divider-color);
-    }
-    .text {
-      flex: 1;
-      min-width: 0;
     }
     .name {
       font-size: 1.5em;
@@ -136,17 +223,34 @@ export class TodayCard extends LitElement {
       color: var(--secondary-text-color);
     }
     .muted {
-      padding: 16px;
+      padding: 16px 0;
     }
     .actions {
       display: flex;
       align-items: center;
       gap: 8px;
+      margin-top: 8px;
+    }
+    /* Start, or the question and Ja, fill the space before the last place. */
+    .lead {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .lead button {
+      flex: 1;
     }
     .question {
       color: var(--primary-text-color);
+      white-space: nowrap;
     }
     button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
       min-height: 48px;
       min-width: 64px;
       padding: 0 16px;
@@ -156,10 +260,15 @@ export class TodayCard extends LitElement {
       color: var(--primary-color);
       font: inherit;
       font-weight: 500;
+      white-space: nowrap;
       cursor: pointer;
     }
-    /* Spring over and Nej share one place and width, wide enough for either text in both languages. */
+    button ha-icon {
+      --mdc-icon-size: 20px;
+    }
+    /* Spring over and Nej share the last place and its width, wide enough for either text in both languages. */
     button.slot {
+      flex: none;
       width: 9em;
       padding: 0 12px;
     }
@@ -181,13 +290,13 @@ export class TodayCard extends LitElement {
     this.config = config;
   }
 
-  /** Two rows of HA's grid per open day, so a name, a line and a 48 px button fit. */
+  /** One row of HA's grid for the top line and the ring, then two per open day (or for the session row). */
   getGridOptions(): { columns: "full"; rows: number } {
-    return { columns: "full", rows: 2 * this.rowCount };
+    return { columns: "full", rows: 1 + 2 * this.rowCount };
   }
 
   getCardSize(): number {
-    return 2 * this.rowCount;
+    return 1 + 2 * this.rowCount;
   }
 
   override connectedCallback(): void {
@@ -199,6 +308,7 @@ export class TodayCard extends LitElement {
     // Hidden before the first render, so a day with no training never shows an empty cell.
     this.syncHidden();
     this.subscription.connect(this.hass?.connection);
+    this.statsSubscription.connect(this.hass?.connection);
   }
 
   override disconnectedCallback(): void {
@@ -206,17 +316,20 @@ export class TodayCard extends LitElement {
     this.stopListening?.();
     this.stopListening = undefined;
     this.subscription.disconnect();
+    this.statsSubscription.disconnect();
     for (const id of [...this.confirming.keys()]) this.endConfirm(id);
     clearTimeout(this.errorTimer);
     this.error = undefined;
     // Put back on the page, the card waits for fresh data from a new subscription.
     this.today = undefined;
+    this.stats = undefined;
   }
 
   protected override willUpdate(changed: PropertyValues<this>): void {
     if (changed.has("hass") && this.isConnected && this.hass) {
       overlay.setHass(this.hass);
       this.subscription.connect(this.hass.connection);
+      this.statsSubscription.connect(this.hass.connection);
     }
   }
 
@@ -326,34 +439,130 @@ export class TodayCard extends LitElement {
     }, ERROR_MS);
   }
 
-  private line(day: OpenDay): string {
-    const summary = this.t("today.summary", {
+  /** "I dag", or "Forfalden · fredag" for a late day. */
+  private stateLine(day: OpenDay): string {
+    if (day.state !== "late") return this.t("today.due");
+    return this.t("today.late", { weekday: this.t(`weekday.${weekdayOf(day.date)}`) });
+  }
+
+  /** "5 øvelser · 29 min". */
+  private summaryLine(day: OpenDay): string {
+    return this.t("today.short_summary", {
       stations: this.t("today.stations", { count: day.station_count }),
-      rounds: this.t("today.rounds", { count: day.rounds }),
-      minutes: this.t("today.minutes", { count: day.total_minutes }),
+      minutes: this.t("today.short_minutes", { count: day.total_minutes }),
     });
-    if (day.state !== "late") return summary;
-    return this.t("today.late", { weekday: this.t(`weekday.${weekdayOf(day.date)}`), summary });
+  }
+
+  /** The people whose streaks the badge shows, or none while there is nothing to show. */
+  private get streakPeople(): PersonStats[] {
+    const stats = this.stats;
+    if (!stats?.available || !stats.stats || stats.stats.counting_from === null) return [];
+    return stats.stats.people;
+  }
+
+  private renderStreak() {
+    const people = this.streakPeople;
+    if (!people.length) return nothing;
+    const letters = initials(people.map((person) => person.name));
+    const list = people.map((person) => `${person.name} ${person.streak}`).join(", ");
+    // A colour dot never stands alone: each number has its person's initial.
+    return html`
+      <span class="streak" role="img" aria-label=${this.t("today.streak_label", { list })}>
+        <ha-icon icon="mdi:lightning-bolt" aria-hidden="true"></ha-icon>
+        ${people.map(
+          (person, index) =>
+            html`<span class="person" aria-hidden="true"
+                ><span class="dot" style="background: ${personColor(index)}"></span>${letters[index]}
+                ${person.streak}</span
+              > `,
+        )}
+      </span>
+    `;
+  }
+
+  /** The week ring: done of planned this week; none from an older add-on or with nothing planned. */
+  private renderWeek() {
+    const week = this.today?.week;
+    if (!week || week.planned <= 0) return nothing;
+    const fraction = Math.min(1, Math.max(0, week.done / week.planned));
+    const centre = WEEK_SIZE / 2;
+    const label = this.t("today.week");
+    return html`
+      <div
+        class="week"
+        role="progressbar"
+        aria-label=${label}
+        aria-valuemin="0"
+        aria-valuemax=${week.planned}
+        aria-valuenow=${week.done}
+      >
+        <svg viewBox="0 0 ${WEEK_SIZE} ${WEEK_SIZE}" aria-hidden="true">
+          ${svg`
+            <circle class="track" cx=${centre} cy=${centre} r=${WEEK_RADIUS} stroke-width=${WEEK_STROKE} fill="none" />
+            <circle
+              class="done"
+              cx=${centre}
+              cy=${centre}
+              r=${WEEK_RADIUS}
+              stroke-width=${WEEK_STROKE}
+              fill="none"
+              stroke-linecap="round"
+              stroke-dasharray=${WEEK_CIRCUMFERENCE}
+              stroke-dashoffset=${WEEK_CIRCUMFERENCE * (1 - fraction)}
+              transform="rotate(-90 ${centre} ${centre})"
+            />
+          `}
+        </svg>
+        <div class="numbers">
+          <span class="count">${week.done}/${week.planned}</span>
+          <span class="label">${label}</span>
+        </div>
+      </div>
+    `;
   }
 
   private renderActions(day: OpenDay) {
     const confirming = this.confirming.get(day.id);
     if (!confirming) {
-      // Start sits before Spring over, at the same size, so Spring over (and Nej after it) keeps the last place.
+      // Start comes first and fills the row; Spring over keeps the last place, where Nej comes after the first tap.
       return html`
-        <button class="slot yes" @click=${() => this.start(day)}>${this.t("today.start")}</button>
-        <button class="slot" @click=${() => this.ask(day.id)}>${this.t("today.skip")}</button>
+        <div class="lead">
+          ${iconButton({
+            icon: "mdi:play",
+            label: this.t("today.start"),
+            text: this.t("today.start"),
+            className: "yes",
+            onClick: () => this.start(day),
+          })}
+        </div>
+        ${iconButton({
+          icon: "mdi:debug-step-over",
+          label: this.t("today.skip"),
+          text: this.t("today.skip"),
+          className: "slot",
+          onClick: () => this.ask(day.id),
+        })}
       `;
     }
     // While it asks, Start is hidden: the row holds only the question, Ja and Nej. Nej is last and as wide as Spring over (the "slot"), so a double tap lands on Nej.
     return html`
-      <span class="question">${this.t("today.skip_confirm")}</span>
-      <button class="yes" ?disabled=${confirming.busy} @click=${() => this.skip(day.id)}>
-        ${this.t("today.yes")}
-      </button>
-      <button class="slot" ?disabled=${confirming.busy} @click=${() => this.endConfirm(day.id)}>
-        ${this.t("today.no")}
-      </button>
+      <div class="lead">
+        <span class="question">${this.t("today.skip_confirm")}</span>
+        ${iconButton({
+          label: this.t("today.yes"),
+          text: this.t("today.yes"),
+          className: "yes",
+          disabled: confirming.busy,
+          onClick: () => void this.skip(day.id),
+        })}
+      </div>
+      ${iconButton({
+        label: this.t("today.no"),
+        text: this.t("today.no"),
+        className: "slot",
+        disabled: confirming.busy,
+        onClick: () => this.endConfirm(day.id),
+      })}
     `;
   }
 
@@ -361,18 +570,24 @@ export class TodayCard extends LitElement {
     return html`
       <ul>
         <li>
-          <div class="text">
-            <div class="name">${this.t("session.running", { program: session.program_name })}</div>
-          </div>
+          <div class="name">${this.t("session.running", { program: session.program_name })}</div>
           <div class="actions">
-            <button class="slot yes" @click=${() => this.resume()}>${this.t("session.resume")}</button>
+            <div class="lead">
+              ${iconButton({
+                icon: "mdi:play",
+                label: this.t("session.resume"),
+                text: this.t("session.resume"),
+                className: "yes",
+                onClick: () => this.resume(),
+              })}
+            </div>
           </div>
         </li>
       </ul>
     `;
   }
 
-  private renderBody() {
+  private renderDays() {
     if (this.session) return this.renderSession(this.session);
     const today = this.today;
     if (today === null) return html`<div class="muted">${this.t("today.unreachable")}</div>`;
@@ -382,10 +597,9 @@ export class TodayCard extends LitElement {
         ${today.open.map(
           (day) => html`
             <li>
-              <div class="text">
-                <div class="name">${day.program_name}</div>
-                <div class="line">${this.line(day)}</div>
-              </div>
+              <div class="name">${day.program_name}</div>
+              <div class="line">${this.stateLine(day)}</div>
+              <div class="line">${this.summaryLine(day)}</div>
               <div class="actions">${this.renderActions(day)}</div>
             </li>
           `,
@@ -403,7 +617,14 @@ export class TodayCard extends LitElement {
     return html`
       <ha-card>
         ${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}
-        ${this.renderBody()}
+        <div class="top">
+          <span class="title">${this.t("today.title")}</span>
+          ${this.renderStreak()}
+        </div>
+        <div class="middle">
+          ${this.renderWeek()}
+          <div class="days">${this.renderDays()}</div>
+        </div>
       </ha-card>
     `;
   }

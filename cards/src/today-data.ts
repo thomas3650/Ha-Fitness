@@ -16,6 +16,8 @@ export interface Today {
   date: string;
   open: OpenDay[];
   next: { date: string; programs: string[] } | null;
+  /** This week's counted days done and planned (UI refresh spec §3.1); missing from an older add-on. */
+  week?: { done: number; planned: number };
 }
 
 /** The part of home-assistant-js-websocket's `Connection` the subscription uses. */
