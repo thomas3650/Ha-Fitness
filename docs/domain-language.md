@@ -35,7 +35,7 @@ spec already names.
 
 | Term | Danish UI | Meaning |
 | --- | --- | --- |
-| **Training day** | | One program on one of its weekdays, created at 00:00 HA time. |
+| **Training day** | | One program on one of its weekdays (one local date). Created at 00:00 HA time, and also during the day when a program is created, switched on, or gets today's weekday (D34). |
 | **Due** | | Today's training day, not done yet. |
 | **Late** | Forfalden | A due day that has passed untouched. It stays visible until the next training day of any program begins. |
 | **Missed** | | A late day closed because the next training day began. |

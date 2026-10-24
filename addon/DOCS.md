@@ -24,6 +24,17 @@ Check that the add-on runs: `http://<your-home-assistant>:8765/api/v1/health` an
 
 Keep port 8765 on your local network. Don't expose it to the internet, for example through a tunnel.
 
+## Discovery
+
+At every start the add-on tells Home Assistant where its API is (Supervisor discovery). Home Assistant then offers to
+set up the HA Fitness integration, with the right address, so you never type a URL. If the message can't be sent, the
+add-on writes a warning to its log and keeps running; the next start tries again.
+
+## Timezone
+
+The add-on follows Home Assistant's timezone (*Settings → System → General*). It decides which date a training day
+belongs to and when midnight is. A changed timezone takes effect when the add-on restarts. There is no option to set.
+
 ## Making programs with Claude
 
 Claude reaches the add-on over MCP at `http://<your-home-assistant>:8765/mcp`. Add it to Claude Code under the name
