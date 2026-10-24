@@ -262,8 +262,9 @@ async def test_subscription_unavailable_keeps_last_view(
     config_entry: MockConfigEntry,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """While the add-on is unreachable the subscription sends available false and the last view."""
-    view = _view(server_time=_iso(_freeze_on_whole_second(freezer)))
+    """While the add-on is unreachable the subscription sends available false and the last view, still fresh."""
+    start = _freeze_on_whole_second(freezer)
+    view = _view(server_time=_iso(start))
     fake_addon.session = view
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: _state(hass) == "on")
@@ -271,9 +272,17 @@ async def test_subscription_unavailable_keeps_last_view(
     first = await _subscribe(client)
     assert first["available"] is True
 
+    freezer.tick(timedelta(seconds=20))
     await fake_addon.close_ws()
     message = (await client.receive_json())["event"]
-    assert message == {"available": False, "session": view}
+    assert message == {
+        "available": False,
+        "session": {
+            **view,
+            "server_time": _iso(start + timedelta(seconds=20)),
+            "time_trained": 120,
+        },
+    }
     await unload(hass, config_entry)
 
 

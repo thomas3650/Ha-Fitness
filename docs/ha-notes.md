@@ -67,7 +67,6 @@ fit no doc stay in [`notes.md`](notes.md).
 - **Authenticated images.** An `<img src>` request sends no `Authorization` header, so a view with `requires_auth`
   answers it 401. The cards load the media proxy's files with `hass.fetchWithAuth(url)`, which adds the token, and
   show the body through an object URL (`URL.createObjectURL`). An object URL holds its blob until it is revoked.
-
 - **Hiding a card.** HA's `hui-card` hides a card when the card element sets the `hidden` attribute and fires
   `card-visibility-changed` (`detail: {value: <visible>}`, bubbling and composed); HA's own cards also set
   `display: none`. A card that is only `display: none` keeps its grid cell, which shows as an empty space.

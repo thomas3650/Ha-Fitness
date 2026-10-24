@@ -55,9 +55,10 @@ The cards are built into the integration: one bundle, released and versioned wit
   source for the details):
   - **One entry**, version 2, with the unique id `ha_fitness` and the add-on's URL as its data (D39). It comes from
     the add-on's discovery (D28), which shows under "Discovered", or from the user step, which asks for the URL
-    (`http://localhost:8765` in the fast loop) and checks `GET /api/v1/health` first. A discovery for an existing entry
-    updates its URL and reloads it. A version 1 entry (0.1.0) is migrated to `http://localhost:8765`, and the next
-    discovery corrects that under the Supervisor.
+    (`http://localhost:8765` in the fast loop) and checks `GET /api/v1/health` first. The user step aborts when any
+    entry exists. A discovery for an existing entry updates its URL and reloads it. A version 1 entry (0.1.0) is
+    migrated to `http://localhost:8765` at its setup. A discovery that comes before that setup gives the unmigrated
+    entry the version 2 shape and its URL in place, so the setup skips the migration.
   - **The connection** to the add-on's push channel ([below](#the-integrations-side)). Setup never waits for the
     add-on.
   - **Entities** on one device "HA Fitness", whose software version is the add-on's version:
@@ -160,7 +161,8 @@ The integration relays it.
 - **`binary_sensor.ha_fitness_session_running`** is on while the view's status is `running` or `paused`, and off for
   `null` or a finished view. It is unavailable unless the session is available, so it is also unavailable between a
   connect and the first `session` message. Its attributes `program` (the program's name) and `participants`
-  (`[{id, name}]`) are set only while it is on, and they aren't recorded.
+  (`[{id, name}]`) are always there: the view's values while it is on, `null` and `[]` when it is off. They aren't
+  recorded.
 - **The events** `ha_fitness_session_started`, `_session_completed`, `_session_ended` and `_phase_changed` carry the
   add-on's event `session` as data. The add-on's `done` fires `ha_fitness_training_day_done`, with the training day.
 - **The services.**

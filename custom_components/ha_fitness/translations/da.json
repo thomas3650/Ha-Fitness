@@ -96,7 +96,7 @@
         },
         "participants": {
           "name": "Deltagere",
-          "description": "ID'erne på de en eller to personer, der træner, i stationernes rækkefølge."
+          "description": "ID'erne på de en eller to personer, der træner. De tager stationerne i personernes egen rækkefølge."
         },
         "training_day_id": {
           "name": "Træningsdagens ID",
@@ -114,7 +114,7 @@
       "message": "Der findes ingen træningsdag med ID {training_day_id}."
     },
     "not_open": {
-      "message": "Træningsdag {training_day_id} er ikke længere åben."
+      "message": "Træningsdag {training_day_id} er ikke åben, eller en træning for den kører."
     },
     "unavailable": {
       "message": "HA Fitness-appen kan ikke nås."

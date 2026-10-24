@@ -14,8 +14,10 @@ _LOGGER = logging.getLogger(__name__)
 HEALTH_TIMEOUT = aiohttp.ClientTimeout(total=10)
 # A skip is a small write; the same bound.
 SKIP_TIMEOUT = aiohttp.ClientTimeout(total=10)
-# Session commands and the programs and people lists are small too.
+# Session commands are small too.
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
+# The programs and people lists: a little longer, as the add-on's GET /people waits up to 10 s on HA.
+LIST_TIMEOUT = aiohttp.ClientTimeout(total=15)
 # A GIF can be a few megabytes.
 MEDIA_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
@@ -232,7 +234,7 @@ async def async_session_command(
 async def _async_get_json(session: aiohttp.ClientSession, url: str, path: str) -> Any:
     try:
         async with session.get(
-            f"{url}{path}", timeout=REQUEST_TIMEOUT, raise_for_status=True
+            f"{url}{path}", timeout=LIST_TIMEOUT, raise_for_status=True
         ) as response:
             return await response.json()
     except (aiohttp.ClientError, TimeoutError, ValueError) as err:

@@ -62,7 +62,8 @@ class HaFitnessConfigFlow(ConfigFlow, domain=DOMAIN):
                     entry,
                     data={CONF_URL: url},
                     unique_id=UNIQUE_ID,
-                    version=self.VERSION,
+                    # The shape written is version 2's, so a later VERSION still migrates it.
+                    version=2,
                 )
                 return self.async_abort(reason="already_configured")
         await self.async_set_unique_id(UNIQUE_ID)
