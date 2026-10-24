@@ -38,7 +38,7 @@ spec already names.
 | --- | --- | --- |
 | **Training day** | | One program on one of its weekdays (one local date). Created at 00:00 HA time, and also during the day when a program is created, switched on, or gets today's weekday (D34). |
 | **Due** | | Today's training day, not done yet. |
-| **Late** | Forfalden | A due day that has passed untouched. It stays visible until the next training day of any program begins. |
+| **Late** | Forfalden | A due day that has passed untouched. It stays visible until the next training day of any program begins, unless a session for it is running or paused (D42). |
 | **Missed** | | A late day closed because the next training day began. |
 | **Skipped** | | A training day closed on purpose with Spring over (one confirmation, no reason). |
 | **Done** | | A training day closed by a counted session. |
