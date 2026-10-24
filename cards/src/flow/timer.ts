@@ -75,11 +75,16 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
   const stations = view.stations ?? [];
   const one = stations.length === 1;
   return html`
-    ${renderHeader(ctx, phase.round, phase.interval, one)} ${renderReach(t, ctx.reach)} ${renderSound(t, ctx.sound)}
+    ${renderHeader(ctx, phase.round, phase.interval, one)}
+    ${renderReach(t, ctx.reach)} ${renderSound(t, ctx.sound)}
     ${renderError(ctx.error)}
-    ${one
-      ? renderSolo(ctx, theRing)
-      : html`<div class="timer-duo">${renderCard(ctx, 0)} ${theRing} ${renderCard(ctx, 1)}</div>`}
+    ${
+      one
+        ? renderSolo(ctx, theRing)
+        : html`<div class="timer-duo">
+            ${renderCard(ctx, 0)} ${theRing} ${renderCard(ctx, 1)}
+          </div>`
+    }
     <div class="timer-controls">
       ${iconButton({
         icon: "mdi:skip-previous",
@@ -123,7 +128,12 @@ function renderWhole(ctx: TimerContext) {
  * The top row: the round and station pills (two people: the interval), PAUSET while paused, the
  * elapsed time against the planned, and Slut with its question.
  */
-function renderHeader(ctx: TimerContext, round: number, interval: number, one: boolean) {
+function renderHeader(
+  ctx: TimerContext,
+  round: number,
+  interval: number,
+  one: boolean,
+) {
   const { t, view } = ctx;
   const stations = view.totals.stations;
   const where = one
@@ -135,20 +145,30 @@ function renderHeader(ctx: TimerContext, round: number, interval: number, one: b
       : t("flow.interval_of", { interval, intervals: stations });
   return html`
     <header class="timer-top">
-      <span class="timer-pill">${t("flow.round", { round, rounds: view.totals.rounds })}</span>
+      <span class="timer-pill"
+        >${t("flow.round", { round, rounds: view.totals.rounds })}</span
+      >
       <span class="timer-pill">${where}</span>
       ${view.status === "paused" ? html`<span class="timer-pill paused">${t("flow.paused")}</span>` : nothing}
       <span class="elapsed">
         ${t("flow.elapsed", { elapsed: clock(ctx.elapsed), planned: clock(view.totals.planned) })}
       </span>
       <span class="end">
-        ${ctx.asking
-          ? html`
-              <span class="question">${t("flow.end_confirm")}</span>
-              <button @click=${() => ctx.onConfirmEnd()}>${t("flow.yes")}</button>
-              <button class="slot" @click=${() => ctx.onKeepGoing()}>${t("flow.no")}</button>
-            `
-          : html`<button class="slot" @click=${() => ctx.onAskEnd()}>${t("flow.end")}</button>`}
+        ${
+          ctx.asking
+            ? html`
+                <span class="question">${t("flow.end_confirm")}</span>
+                <button @click=${() => ctx.onConfirmEnd()}>
+                  ${t("flow.yes")}
+                </button>
+                <button class="slot" @click=${() => ctx.onKeepGoing()}>
+                  ${t("flow.no")}
+                </button>
+              `
+            : html`<button class="slot" @click=${() => ctx.onAskEnd()}>
+                ${t("flow.end")}
+              </button>`
+        }
       </span>
     </header>
   `;
@@ -168,11 +188,17 @@ function renderSolo(ctx: TimerContext, theRing: TemplateResult) {
   return html`
     <div class="timer-solo">
       <section class="timer-now" aria-label=${person?.name ?? ""}>
-        ${moving ? html`<span class="timer-move">${t("flow.go_to_next")}</span>` : nothing}
+        <span
+          class="timer-move"
+          style=${moving ? "" : "visibility: hidden"}
+          aria-hidden=${moving ? "false" : "true"}
+          >${moving ? t("flow.go_to_next") : "\u00a0"}</span
+        >
         ${renderImage(ctx.imageOf, station.current, "gif", "gif")}
         <span class="exercise">${station.current.name}</span>
       </section>
-      ${theRing} ${station.next ? renderNext(ctx, station.next, moving) : nothing}
+      ${theRing}
+      ${station.next ? renderNext(ctx, station.next, moving) : nothing}
     </div>
   `;
 }
@@ -218,15 +244,19 @@ function renderCard(ctx: TimerContext, index: number) {
       <div class="duo-who">
         <span class="duo-number">${index + 1}</span>
         <span class="duo-name">${person.name}</span>
-        <span class="duo-station">${t("flow.station", { number: station.current.number })}</span>
+        <span class="duo-station"
+          >${t("flow.station", { number: station.current.number })}</span
+        >
       </div>
       ${renderImage(ctx.imageOf, station.current, "gif", "gif")}
       <span class="duo-exercise">${station.current.name}</span>
-      ${station.next
-        ? html`<span class="duo-next">
-            ${t("flow.next_station", { number: station.next.number, exercise: station.next.name })}
-          </span>`
-        : nothing}
+      ${
+        station.next
+          ? html`<span class="duo-next">
+              ${t("flow.next_station", { number: station.next.number, exercise: station.next.name })}
+            </span>`
+          : nothing
+      }
     </section>
   `;
 }
@@ -243,6 +273,9 @@ export const timerStyles = css`
   .timer-top > span,
   .timer-top .question {
     white-space: nowrap;
+  }
+  .timer-top .end {
+    flex: none;
   }
   .timer-pill {
     padding: 10px 18px;
@@ -415,6 +448,7 @@ export const timerStyles = css`
     width: 100%;
     height: 280px;
     object-fit: contain;
+    background: #fff;
   }
   .ring {
     position: relative;
@@ -501,11 +535,17 @@ export const timerStyles = css`
   }
   /* A portrait tablet (about 800 px wide): nothing scrolls sideways. */
   @container (max-width: 1000px) {
-    /* Slut, and its question in its place, get a line of their own, right-aligned, so Nej
-       lands where Slut was. */
-    .timer-top .end {
-      flex-basis: 100%;
-      justify-content: flex-end;
+    /* The top row stays on one line: the pills shrink and wrap their text, the elapsed time and
+       Slut keep their room on the right. */
+    .timer-top {
+      flex-wrap: nowrap;
+    }
+    .timer-top > .timer-pill {
+      white-space: normal;
+      min-width: 0;
+    }
+    .timer-top > .elapsed {
+      flex: none;
     }
     /* Two people: both cards side by side, the ring below them. */
     .timer-duo {

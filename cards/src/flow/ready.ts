@@ -122,6 +122,15 @@ function renderStarts(ctx: ReadyContext): TemplateResult {
 
 /* Landscape: the ring on the left, the cards on the right. Portrait (800 px wide): they stack. */
 export const readyStyles = css`
+  .ready-actions button.main {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  .ready-actions button.main ha-icon {
+    --mdc-icon-size: 32px;
+  }
   .ready-top {
     display: flex;
     align-items: center;

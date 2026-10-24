@@ -417,7 +417,7 @@ test("done closes by itself after 60 s, and a tap on a feeling starts that over"
   const { flow, onClose } = await mount(fake, running());
   await push(flow, completed());
 
-  // A later push of the same view doesn't start the 60 s over.
+  // Pushes of the same view in between.
   await wait(flow, 30_000);
   await push(flow, completed());
   await wait(flow, 20_000);
