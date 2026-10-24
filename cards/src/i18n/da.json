@@ -7,6 +7,10 @@
     "name": "HA Fitness – træning",
     "description": "De aktive programmer, hver med Start. Viser Fortsæt, mens en træning er i gang."
   },
+  "picker_stats": {
+    "name": "HA Fitness – statistik",
+    "description": "Pr. person: i træk, gennemførte og missede træninger og træningstid, denne måned og i alt."
+  },
   "today": {
     "stations_one": "{count} øvelse",
     "stations_other": "{count} øvelser",
@@ -29,6 +33,22 @@
   },
   "workout": {
     "no_programs": "Ingen aktive programmer",
+    "unreachable": "HA Fitness kan ikke nås"
+  },
+  "stats": {
+    "streak_one": "{count} i træk",
+    "streak_other": "{count} i træk",
+    "this_month": "Denne måned",
+    "all_time": "I alt",
+    "done": "Gennemført",
+    "missed": "Missede",
+    "time": "Tid",
+    "extra": "· {count} ekstra",
+    "skipped": "· {count} sprunget over",
+    "hours_minutes": "{hours} t {minutes} min",
+    "minutes": "{minutes} min",
+    "no_people": "Ingen personer",
+    "not_started": "Statistikken starter ved første træning",
     "unreachable": "HA Fitness kan ikke nås"
   },
   "weekday": {

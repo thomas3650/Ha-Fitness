@@ -2,7 +2,12 @@ import { afterEach, expect, test, vi } from "vitest";
 
 // HA's frontend replaces `window.customElements` with a scoped registry polyfill once it boots.
 // The cards must land in that registry, not in the one the page started with.
-const TAGS = ["ha-fitness-today-card", "ha-fitness-workout-card", "ha-fitness-workout-flow"];
+const TAGS = [
+  "ha-fitness-today-card",
+  "ha-fitness-workout-card",
+  "ha-fitness-stats-card",
+  "ha-fitness-workout-flow",
+];
 
 /** A stand-in for HA's polyfill: a registry of its own that knows only what is defined in it. */
 function polyfillRegistry() {
@@ -34,5 +39,9 @@ test("on an HA page the cards wait for HA's frontend, then register in its regis
   vi.stubGlobal("customElements", registry);
   await vi.advanceTimersByTimeAsync(50);
   for (const tag of TAGS) expect(registry.get(tag), tag).toBeDefined();
-  expect(window.customCards?.map((card) => card.type)).toEqual(["ha-fitness-today-card", "ha-fitness-workout-card"]);
+  expect(window.customCards?.map((card) => card.type)).toEqual([
+    "ha-fitness-today-card",
+    "ha-fitness-workout-card",
+    "ha-fitness-stats-card",
+  ]);
 });
