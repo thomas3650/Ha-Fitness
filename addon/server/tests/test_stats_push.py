@@ -263,8 +263,8 @@ def test_completed_day_session_publishes_stats(make_app: MakeApp) -> None:
             _hello(ws)
             _start(tc, program_id, thomas, day_id)
             _finish(tc, clock, at(WEDNESDAY_9, SMALL_END))
-            _known(tc, program_id, thomas)
-            [before, *_, stats, _, _] = _next(
+            _window_passes(tc, clock, at(WEDNESDAY_9, SMALL_END))
+            [before, *_, stats, _] = _next(
                 ws,
                 "stats",
                 *KNOWN,
@@ -273,7 +273,7 @@ def test_completed_day_session_publishes_stats(make_app: MakeApp) -> None:
                 "event:done",
                 "today",
                 "stats",
-                *KNOWN,
+                "session",
             )
         body = tc.get(STATS).json()
     assert before["data"]["counting_from"] is None
@@ -366,18 +366,24 @@ def test_first_counted_session_extra_publishes_stats(make_app: MakeApp) -> None:
 
 
 def test_people_change_publishes_stats(make_app: MakeApp) -> None:
-    """A rename publishes one `stats` with the new name, though `today` stays the same."""
+    """A rename publishes one `stats` with the new name, though `today` stays the same.
+
+    It connects while a finished view still shows, so the known next message is the null push, which doesn't
+    reconcile: only the rename's own reconcile can publish the `stats`.
+    """
     clock = FrozenClock(WEDNESDAY_9)
     with _client(make_app, clock) as tc:
         thomas = _thomas(tc)
         program_id = _program(tc, "Lille", ["wed"])
+        _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
         with tc.websocket_connect(WS) as ws:
             _hello(ws)
             assert _thomas(tc, "Tom") == thomas
-            _known(tc, program_id, thomas)
-            [before, stats, *_] = _next(ws, "stats", "stats", *KNOWN)
+            _window_passes(tc, clock, at(WEDNESDAY_9, SMALL_END))
+            [before, stats, null] = _next(ws, "stats", "stats", "session")
     assert _thomas_stats(before)["name"] == "Thomas"
     assert _thomas_stats(stats)["name"] == "Tom"
+    assert null["data"] is None
 
 
 def test_uncounted_end_publishes_no_stats(make_app: MakeApp) -> None:
