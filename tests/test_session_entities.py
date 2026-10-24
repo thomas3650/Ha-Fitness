@@ -1,6 +1,7 @@
 """Tests for the session relay: the session-running sensor, the events and the session subscription."""
 
 from datetime import datetime, timedelta
+import logging
 from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
@@ -72,7 +73,10 @@ async def _push_session(fake_addon: FakeAddon, view: dict[str, Any] | None) -> N
 
 @pytest.mark.usefixtures("cards_bundle")
 async def test_sensor_unavailable_until_first_session_message_then_on_off(
-    hass: HomeAssistant, fake_addon: FakeAddon, config_entry: MockConfigEntry
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Unavailable until the first session message; on while running or paused, else off."""
     fake_addon.send_session = False
@@ -86,6 +90,13 @@ async def test_sensor_unavailable_until_first_session_message_then_on_off(
     await fake_addon.push({"type": "today", "data": {**fake_addon.today, "open": []}})
     await wait_for(hass, lambda: not is_open(hass))
     assert _state(hass) == STATE_UNAVAILABLE
+    # Nothing went wrong on the way: the guard dropped them, no listener choked on them.
+    assert not [
+        record
+        for record in caplog.records
+        if record.name.startswith("custom_components.ha_fitness")
+        and record.levelno >= logging.WARNING
+    ]
 
     await _push_session(fake_addon, _view())
     await wait_for(hass, lambda: _state(hass) == "on")
@@ -190,6 +201,12 @@ async def test_subscription_fresh_server_time_and_time_trained(
     assert _without_server_time({**session, "time_trained": 100}) == (
         _without_server_time(view)
     )
+
+    # Whole seconds, as the add-on sends: 130.6 s is 131.
+    freezer.tick(timedelta(milliseconds=600))
+    third = (await _subscribe(client))["session"]
+    assert third["time_trained"] == 131
+    assert isinstance(third["time_trained"], int)
 
     # A push that differs only in server_time sends nothing; the next real change is next.
     await _push_session(fake_addon, {**view, "server_time": _iso(dt_util.utcnow())})

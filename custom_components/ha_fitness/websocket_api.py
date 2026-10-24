@@ -101,8 +101,9 @@ def _without_server_time(view: dict[str, Any] | None) -> dict[str, Any] | None:
 def _fresh(view: dict[str, Any] | None) -> dict[str, Any] | None:
     """Return a copy of the view with HA's now as server_time.
 
-    While the session runs past the countdown, time trained moves on by the same difference, so
-    the card's elapsed time is right however long ago the add-on sent the view.
+    While the session runs past the countdown, time trained moves on by the same difference, in
+    whole seconds as the add-on sends it, so the card's elapsed time is right however long ago
+    the add-on sent the view.
     """
     if view is None:
         return None
@@ -117,7 +118,7 @@ def _fresh(view: dict[str, Any] | None) -> dict[str, Any] | None:
         and isinstance(trained, int | float)
         and (sent_at := _parse_time(view.get("server_time"))) is not None
     ):
-        fresh["time_trained"] = round(trained + (now - sent_at).total_seconds(), 3)
+        fresh["time_trained"] = round(trained + (now - sent_at).total_seconds())
     return fresh
 
 
