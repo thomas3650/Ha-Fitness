@@ -29,11 +29,6 @@ interface CardElement extends HTMLElement {
   updateComplete: Promise<boolean>;
 }
 
-/** The flow element the overlay controller put in its dialog. */
-interface FlowElement extends HTMLElement {
-  mode?: unknown;
-}
-
 const stations = (count: number) =>
   Array.from({ length: count }, (_, i) => ({ exercise_id: `000${i + 1}`, name: `Øvelse ${i + 1}` }));
 
@@ -171,8 +166,22 @@ function theDialog(): HTMLDialogElement | null {
   return dialogs[0] ?? null;
 }
 
-function flowMode(): unknown {
-  return (theDialog()?.querySelector("ha-fitness-workout-flow") as FlowElement | null)?.mode;
+
+/** The shadow root of the flow in the open overlay, for queries. */
+function flowRoot(): HTMLElement {
+  const flow = theDialog()?.firstElementChild;
+  expect(flow?.shadowRoot).toBeTruthy();
+  return flow!.shadowRoot as unknown as HTMLElement;
+}
+
+/** The `ha_fitness/session/command` messages sent so far. */
+function sessionCommands(fake: { callWS: { mock: { calls: [Message][] } } }): Message[] {
+  return fake.callWS.mock.calls.map(([message]) => message).filter((message) => message.type === "ha_fitness/session/command");
+}
+
+/** The overlay shows the running or paused session: the timer with Slut, not the details' Start. */
+function showsTimer(): boolean {
+  return queryByRole(flowRoot(), "button", { name: "Slut" }) !== null && queryByRole(flowRoot(), "button", { name: "Start" }) === null;
 }
 
 /** The calls of `resume()` on the page's audio contexts so far; each unlock of a locked page makes one. */
@@ -253,7 +262,8 @@ test("no programs, and an unreachable add-on", async () => {
   flaky.programs = new Error("unavailable");
   getByRole(rows(flakyCard)[0], "button", { name: "Start" }).click();
   await settle(flakyCard);
-  expect(flowMode()).toEqual({ kind: "details", programId: 3 });
+  expect(theDialog()?.open).toBe(true);
+  expect(text(getByRole(flowRoot(), "alert"))).toBe("HA Fitness kan ikke nås. Prøv igen senere.");
 });
 
 test("workout card Start opens details without training day", async () => {
@@ -269,9 +279,14 @@ test("workout card Start opens details without training day", async () => {
   await settle(card);
   expect(opened).toEqual([before + 1]);
   expect(theDialog()?.open).toBe(true);
-  expect(flowMode()).toEqual({ kind: "details", programId: 4 });
-  // Nothing starts until the flow's own Start.
-  expect(fake.callWS.mock.calls.some(([message]) => message.type === "ha_fitness/session/command")).toBe(false);
+  expect(text(flowRoot())).toContain("Styrke");
+  // Nothing starts until the flow's own Start, which starts an extra session: no training day.
+  expect(sessionCommands(fake)).toEqual([]);
+  getByRole(flowRoot(), "button", { name: "Start" }).click();
+  await settle(card);
+  expect(sessionCommands(fake)).toEqual([
+    { type: "ha_fitness/session/command", command: "start", program_id: 4, participants: [1] },
+  ]);
 });
 
 test("workout card Fortsæt", async () => {
@@ -292,7 +307,8 @@ test("workout card Fortsæt", async () => {
     // Synchronously, in the tap: the audio unlocked before the overlay opened.
     expect(resumes()).toBe(before + 1);
     expect(opened).toEqual([before + 1]);
-    expect(flowMode()).toEqual({ kind: "resume" });
+    await settle(card);
+    expect(showsTimer()).toBe(true);
     overlay.close();
   }
 

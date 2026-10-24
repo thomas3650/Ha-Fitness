@@ -457,3 +457,14 @@ test("Tryk for lyd goes when the audio runs, however it was unlocked", async () 
   await settle(flow);
   expect(queryByRole(root(flow), "button", { name: "Tryk for lyd" })).toBeNull();
 });
+
+test("a clock correction never loses a tone that was waiting", async () => {
+  const flow = await mount(fakeHass(), view());
+  // 0.15 s before the beep at 41 s (4 s left).
+  await wait(flow, 40_850);
+
+  // The same revision again, stamped 0.2 s ahead: on the corrected clock the beep at 41 s is due
+  // already. It plays at once instead of being dropped; the ones ahead move by the 0.2 s.
+  await push(flow, view({ server_time: at(41.05) }));
+  expect(live()).toEqual([...beeps(40, 40.85, 41.8, 42.8, 43.8), { kind: "rest", start: 44.8 }]);
+});
