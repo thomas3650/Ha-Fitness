@@ -87,7 +87,7 @@ function renderRing(ctx: ReadyContext): TemplateResult {
     value: countdown.seconds,
     fraction: countdown.fraction,
     color: RING_COLORS[countdown.kind],
-    wordColor: PHASE_TEXT_COLORS.countdown,
+    wordColor: PHASE_TEXT_COLORS[countdown.kind],
   });
 }
 
