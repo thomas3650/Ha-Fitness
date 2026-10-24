@@ -122,6 +122,21 @@ async def test_completed(make_app: MakeApp) -> None:
     assert _statuses(listed) == {("Lille", "2026-10-28"): "done"}
 
 
+async def test_tick_completion_closes_day_at_the_deadline(make_app: MakeApp) -> None:
+    """A completion by a late tick closes the day at the session's `ended_at`, the last deadline, not at the tick."""
+    clock = FrozenClock(WEDNESDAY_9)
+    async with started(clock, make_app) as client:
+        [thomas] = await set_people(client, THOMAS)
+        program = await create_small(client, "Lille")
+        day_id = await open_day(client, program["id"])
+        await start(client, program["id"], [thomas], day_id)
+        clock.set(at(WEDNESDAY_9, SMALL_END + 30))
+        done = await current(client)
+        [day] = await days(client, "2026-10-28", "2026-10-28")
+    assert datetime.fromisoformat(day["closed_at"]) == at(WEDNESDAY_9, SMALL_END)
+    assert datetime.fromisoformat(done["ended_at"]) == at(WEDNESDAY_9, SMALL_END)
+
+
 async def test_done_late_and_not_late_across_midnight(make_app: MakeApp) -> None:
     """Done late: a late day's session starts on a later local date. Across midnight: it starts on the day's date.
 

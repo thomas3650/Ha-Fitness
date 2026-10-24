@@ -227,6 +227,7 @@ def test_tick_moves_several_phases_without_drift_one_event_per_tick(
         with tc.websocket_connect("/api/v1/ws") as ws:
             assert ws.receive_json()["type"] == "hello"
             assert ws.receive_json()["type"] == "today"
+            assert ws.receive_json()["type"] == "session"
             # 5 + 10 + 5 s puts it at the start of phase 3; 3 s more is inside it.
             clock.set(WEDNESDAY_9 + timedelta(seconds=23))
             view = tc.get(SESSION).json()

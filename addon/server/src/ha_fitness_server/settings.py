@@ -12,6 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8765
 DEFAULT_SCHEDULER_INTERVAL = 60.0
+DEFAULT_SESSION_TICK_MAX = 1.0
 UTC_ZONE = ZoneInfo("UTC")
 DEFAULT_DATA_DIR = Path("/data")
 SUPERVISOR_HA_URL = "http://supervisor/core"
@@ -26,7 +27,8 @@ class Settings:
 
     HA is reached at `ha_url` (the server adds `/api`) with `ha_token`, or with the token read from `ha_token_file` at
     each call. Without a URL HA is not configured. `timezone` gives the local dates of training days (spec §3.2);
-    `supervisor_token` is for the Supervisor's discovery API.
+    `supervisor_token` is for the Supervisor's discovery API. The session loop wakes at a phase's deadline, and at
+    least every `session_tick_max` seconds (step 5 spec §3.2).
     """
 
     port: int
@@ -38,6 +40,7 @@ class Settings:
     timezone: ZoneInfo = UTC_ZONE
     dev: bool = False
     scheduler_interval: float = DEFAULT_SCHEDULER_INTERVAL
+    session_tick_max: float = DEFAULT_SESSION_TICK_MAX
     supervisor_token: str | None = None
 
     @classmethod

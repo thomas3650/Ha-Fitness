@@ -55,12 +55,26 @@ SMALL_STARTS = [0, 5, 15, 20, 30, 35, 55, 65, 70]
 SMALL_END = 80
 
 
-def make_session_app(clock: FrozenClock, make_app: MakeApp) -> FastAPI:
-    """Build an app in Copenhagen time on the frozen clock, reaching a fake HA so people can be set."""
+def make_session_app(
+    clock: FrozenClock,
+    make_app: MakeApp,
+    settings_overrides: dict[str, Any] | None = None,
+    **create_app_kwargs: Any,
+) -> FastAPI:
+    """Build an app in Copenhagen time on the frozen clock, reaching a fake HA so people can be set.
+
+    `settings_overrides` replaces more `Settings` fields; the other keywords go to `create_app`.
+    """
     return make_app(
-        settings_overrides={"timezone": ZONE, "ha_url": HA_URL, "ha_token": TOKEN},
+        settings_overrides={
+            "timezone": ZONE,
+            "ha_url": HA_URL,
+            "ha_token": TOKEN,
+            **(settings_overrides or {}),
+        },
         ha_transport=FakeHa().transport(),
         clock=clock,
+        **create_app_kwargs,
     )
 
 

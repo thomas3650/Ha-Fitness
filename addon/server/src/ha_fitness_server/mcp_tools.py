@@ -10,7 +10,7 @@ from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from . import changes
-from .errors import Conflict, Invalid, NotFound, Unavailable
+from .errors import Conflict, Invalid, NotFound, SessionError, Unavailable
 from .schemas import (
     ChangeEntry,
     ChangeLogLimit,
@@ -26,6 +26,8 @@ from .schemas import (
     ProgramOut,
     ProgramSummary,
     SearchLimit,
+    SessionHistory,
+    SessionView,
     TodayView,
     TrainingDayOut,
 )
@@ -70,9 +72,18 @@ def _client(ctx: Context) -> str:
 
 @contextmanager
 def _tool_errors() -> Iterator[None]:
-    """Turn the services' errors into a `ToolError` with REST's `detail`: a text as it is, a dict as JSON."""
+    """Turn the services' errors into a `ToolError` with REST's `detail`: a text as it is, a dict as JSON.
+
+    A `SessionError` sends its `{code, message}` as JSON.
+    """
     try:
         yield
+    except SessionError as error:
+        raise ToolError(
+            json.dumps(
+                {"code": error.code, "message": error.message}, ensure_ascii=False
+            )
+        ) from error
     except Invalid as error:
         detail = error.detail
         text = (
@@ -250,5 +261,23 @@ old values.
         """
         with _tool_errors():
             return holder.get().training_days.skip(training_day_id, _client(ctx))
+
+    @mcp.tool(annotations=_READ)
+    def get_session() -> SessionView | None:
+        """Return the running or paused workout session, else the one finished under 5 minutes ago, else null.
+
+        Read-only: the workout runs on the tablet, and no tool starts or steers it.
+        """
+        with _tool_errors():
+            return holder.get().sessions.current()
+
+    @mcp.tool(annotations=_READ)
+    def list_sessions(limit: int = 20) -> SessionHistory:
+        """Return the finished sessions, newest first, and `counting_from`, the date the counting starts (or null).
+
+        `limit` is 1-100, default 20.
+        """
+        with _tool_errors():
+            return holder.get().sessions.finished(limit)
 
     return mcp

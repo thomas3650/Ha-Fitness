@@ -52,6 +52,8 @@ FINISHED_VIEW_KEPT = timedelta(minutes=5)
 TICK_WRITE = timedelta(seconds=5)
 # `previous` restarts a work phase once it has run this many seconds; before, it goes back one (spec §3.3).
 RESTART_AFTER = 3
+# A session paused this long is ended (spec §3.2's pause limit).
+PAUSE_LIMIT = timedelta(minutes=30)
 MAX_HISTORY = 100
 # The app's one row in `app_state` (migration 0003).
 _APP_STATE_ID = 1
@@ -238,6 +240,9 @@ class Sessions:
         self._programs = programs
         self._people = people
         self._publish = publish
+        # The finished session whose view `GET /session` still shows; the loop pushes `session: null` when it goes,
+        # unless a new session has started, which sends its own view.
+        self._shown: int | None = None
 
     def start(
         self,
@@ -264,10 +269,10 @@ class Sessions:
                     "invalid",
                     f"{len(people)} participants, but {program.program.name} has {station_count} station(s)",
                 )
-            messages: list[dict[str, Any]] = []
             now = self._clock.now()
+            self._tick_alone(now)
+            messages: list[dict[str, Any]] = []
             with session(self._engine) as db_session:
-                messages += self._tick(db_session, now)
                 if self._active(db_session) is not None:
                     raise SessionError(409, "conflict", "A session is already running")
                 if training_day_id is not None:
@@ -304,32 +309,86 @@ class Sessions:
             self._send(messages)
             return view
 
-    def tick(self, now: datetime | None = None) -> None:
-        """Move a running session on to the phase of `now` (the clock's time by default) and publish the change."""
+    def tick(self, now: datetime | None = None) -> float | None:
+        """Move the session on to `now` (the clock's time by default) and publish the change; for the session loop.
+
+        It also ends a session paused too long, and publishes `session: null` once a finished view's 5 minutes are
+        over. It returns the seconds until the running session's phase deadline, or None when nothing runs.
+        """
         with self._training_days.lock:
             moment = self._clock.now() if now is None else now
+            wait: float | None = None
             with session(self._engine) as db_session:
                 messages = self._tick(db_session, moment)
+                row = self._active(db_session)
+                if row is not None and row.status == SessionStatus.RUNNING:
+                    duration = phases(Plan.model_validate(row.plan))[
+                        row.phase_index
+                    ].duration
+                    deadline = row.phase_started_at + timedelta(seconds=duration)
+                    wait = max(0.0, (deadline - moment).total_seconds())
+                elif row is None and self._shown is not None:
+                    shown = db_session.get(WorkoutSession, self._shown)
+                    if (
+                        shown is None
+                        or shown.ended_at is None
+                        or moment - shown.ended_at >= FINISHED_VIEW_KEPT
+                    ):
+                        messages.append({"type": "session", "data": None})
+                        self._shown = None
+            self._send(messages)
+            return wait
+
+    def recover(self) -> None:
+        """At the start: pause a session still running after a crash at its `last_tick_at` (spec §3.2).
+
+        The time the add-on was down then counts as a pause, and the pause limit applies at once. A finished view still
+        inside its 5 minutes gets its `session: null` from the loop.
+        """
+        with self._training_days.lock:
+            now = self._clock.now()
+            messages: list[dict[str, Any]] = []
+            with session(self._engine) as db_session:
+                row = self._active(db_session)
+                if row is not None and row.status == SessionStatus.RUNNING:
+                    row.status = SessionStatus.PAUSED
+                    row.paused_at = row.last_tick_at
+                    messages += self._changed(row, now, phase_changed=False)
+                messages += self._tick(db_session, now)
+                last = self._last_finished(db_session)
+                if (
+                    last is not None
+                    and last.ended_at is not None
+                    and now - last.ended_at < FINISHED_VIEW_KEPT
+                ):
+                    self._shown = last.id
+            self._send(messages)
+
+    def pause_for_shutdown(self) -> None:
+        """At shutdown: tick, then pause a running session now (spec §3.2), so the next start resumes from here."""
+        with self._training_days.lock:
+            now = self._clock.now()
+            self._tick_alone(now)
+            with session(self._engine) as db_session:
+                row = self._active(db_session)
+                messages = (
+                    self._pause(row, now)
+                    if row is not None and row.status == SessionStatus.RUNNING
+                    else []
+                )
             self._send(messages)
 
     def current(self) -> SessionView | None:
         """Tick, then return the running or paused session, else the last one finished under 5 minutes ago, else None."""
         with self._training_days.lock:
             now = self._clock.now()
+            self._tick_alone(now)
             with session(self._engine) as db_session:
-                messages = self._tick(db_session, now)
                 row = self._active(db_session)
                 if row is not None:
                     view: SessionView | None = self._view(row, now)
                 else:
-                    last = db_session.scalar(
-                        select(WorkoutSession)
-                        .where(WorkoutSession.ended_at.is_not(None))
-                        .order_by(
-                            WorkoutSession.ended_at.desc(), WorkoutSession.id.desc()
-                        )
-                        .limit(1)
-                    )
+                    last = self._last_finished(db_session)
                     recent = (
                         last is not None
                         and last.ended_at is not None
@@ -340,7 +399,6 @@ class Sessions:
                         if recent and last is not None
                         else None
                     )
-            self._send(messages)
             return view
 
     def finished(self, limit: int = 20) -> SessionHistory:
@@ -354,8 +412,8 @@ class Sessions:
             )
         with self._training_days.lock:
             now = self._clock.now()
+            self._tick_alone(now)
             with session(self._engine) as db_session:
-                messages = self._tick(db_session, now)
                 rows = db_session.scalars(
                     select(WorkoutSession)
                     .where(WorkoutSession.status.not_in(ACTIVE_SESSION_STATUSES))
@@ -364,11 +422,9 @@ class Sessions:
                 )
                 sessions = [self._finished_view(db_session, row, now) for row in rows]
                 state = db_session.get_one(AppState, _APP_STATE_ID)
-                history = SessionHistory(
+                return SessionHistory(
                     counting_from=state.counting_from, sessions=sessions
                 )
-            self._send(messages)
-            return history
 
     def command(self, name: str, client: str) -> SessionView:
         """Tick, then run `pause`, `resume`, `next`, `previous` or `end` (spec §3.3) and return the view.
@@ -379,8 +435,9 @@ class Sessions:
             raise SessionError(404, "not_found", f"Unknown session command {name}")
         with self._training_days.lock:
             now = self._clock.now()
+            self._tick_alone(now)
+            messages: list[dict[str, Any]] = []
             with session(self._engine) as db_session:
-                messages = self._tick(db_session, now)
                 row = self._active(db_session)
                 if row is None:
                     raise SessionError(409, "conflict", "No session is running")
@@ -400,6 +457,12 @@ class Sessions:
             self._send(messages)
             return view
 
+    def _tick_alone(self, now: datetime) -> None:
+        """Tick in a transaction of its own and publish it, so a refused command after it can't undo the tick."""
+        with session(self._engine) as db_session:
+            messages = self._tick(db_session, now)
+        self._send(messages)
+
     def _send(self, messages: list[dict[str, Any]]) -> None:
         """Publish the messages of a committed change, then `today` if a day was closed."""
         for message in messages:
@@ -412,11 +475,18 @@ class Sessions:
 
         Several phases may pass; it returns one `session` message and one `phase_changed` event for the phase it ends
         on, or the finish's messages when the last work phase passed. It writes `last_tick_at` every 5 s and at every
-        change. A paused session waits for S3's pause limit.
+        change. A session paused for `PAUSE_LIMIT` is ended at the limit, with the client `addon`.
         """
         row = self._active(db_session)
-        if row is None or row.status != SessionStatus.RUNNING:
+        if row is None:
             return []
+        if row.paused_at is not None:
+            limit = row.paused_at + PAUSE_LIMIT
+            if now < limit:
+                return []
+            return self._finish(
+                db_session, row, limit, now, SessionStatus.ENDED, "addon"
+            )
         plan_phases = phases(Plan.model_validate(row.plan))
         moved = False
         while True:
@@ -557,7 +627,7 @@ class Sessions:
                 state.counting_from = self._training_days.local_date(at)
             if row.training_day_id is not None:
                 done = self._training_days.close_done(
-                    db_session, row.training_day_id, now
+                    db_session, row.training_day_id, at
                 )
         names = ", ".join(person.name for person in plan.participants)
         rounds = f"{row.rounds_completed} of {plan.rounds} rounds"
@@ -572,6 +642,7 @@ class Sessions:
             ),
         )
         db_session.flush()
+        self._shown = row.id
         view = self._finished_view(db_session, row, now)
         messages.append(_session_message(view))
         if completed:
@@ -637,6 +708,16 @@ class Sessions:
                 "conflict",
                 f"Training day {day_id} belongs to another program",
             )
+
+    @staticmethod
+    def _last_finished(db_session: Session) -> WorkoutSession | None:
+        """Return the session that finished last, if any."""
+        return db_session.scalar(
+            select(WorkoutSession)
+            .where(WorkoutSession.ended_at.is_not(None))
+            .order_by(WorkoutSession.ended_at.desc(), WorkoutSession.id.desc())
+            .limit(1)
+        )
 
     @staticmethod
     def _active(db_session: Session) -> WorkoutSession | None:

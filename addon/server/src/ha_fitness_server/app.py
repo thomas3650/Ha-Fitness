@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 from fastmcp.utilities.lifespan import combine_lifespans
 import httpx
 
-from . import API_VERSION, __version__, discovery
+from . import API_VERSION, __version__, discovery, snapshot
 from .api import add_error_handlers, router as api_router
 from .api.dev import router as dev_router
 from .clock import Clock, SystemClock
@@ -60,6 +60,32 @@ async def _run_scheduler(training_days: TrainingDays, interval: float) -> None:
             _LOGGER.exception("The scheduler run failed")
 
 
+async def _run_session_loop(sessions: Sessions, tick_max: float) -> None:
+    """Tick the session in a worker thread, waking at the phase's deadline and at least every `tick_max` seconds.
+
+    A failed tick is logged and the next one still runs.
+    """
+    while True:
+        wait: float | None = None
+        try:
+            wait = await anyio.to_thread.run_sync(sessions.tick)
+        except Exception:
+            _LOGGER.exception("The session tick failed")
+        await asyncio.sleep(tick_max if wait is None else min(wait, tick_max))
+
+
+def _shut_down(sessions: Sessions, settings: Settings) -> None:
+    """Pause a running session, then write the backup snapshot (step 5 spec §3.6); a failure is logged, not raised."""
+    try:
+        sessions.pause_for_shutdown()
+    except Exception:
+        _LOGGER.exception("Pausing the session at shutdown failed")
+    try:
+        snapshot.write_snapshot(settings.data_dir)
+    except Exception:
+        _LOGGER.exception("Writing the snapshot at shutdown failed")
+
+
 class Health(TypedDict):
     """Body of `GET /api/v1/health`."""
 
@@ -75,11 +101,13 @@ def create_app(
     media_transport: httpx.AsyncBaseTransport | None = None,
     clock: Clock | None = None,
     supervisor_transport: httpx.AsyncBaseTransport | None = None,
+    skip_shutdown: bool = False,
 ) -> FastAPI:
     """Build the app for the given settings.
 
     The transports replace the network to HA, to the media source and to the Supervisor; the clock replaces the
-    system clock. Tests pass fakes.
+    system clock. Tests pass fakes. `skip_shutdown` is for tests only: the shutdown neither pauses the session nor
+    writes the snapshot, as after a crash.
     """
     holder = ServicesHolder()
     the_clock = clock or SystemClock()
@@ -89,9 +117,10 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Open the database, reconcile, then start the scheduler, the media download and the discovery; stop them at the end.
+        """Open the database, recover the session, reconcile, then start the loops, the media download and the discovery.
 
-        The discovery runs as a task, so a slow Supervisor never delays the start.
+        The discovery runs as a task, so a slow Supervisor never delays the start. At the end the tasks stop, then a
+        running session is paused and the snapshot written (spec §3.6).
         """
         engine = open_database(settings.data_dir)
         app.state.engine = engine
@@ -104,6 +133,7 @@ def create_app(
         training_days = TrainingDays(engine, the_clock, settings.timezone, publish)
         people = People(engine, ha)
         programs = Programs(engine, library, training_days)
+        sessions = Sessions(engine, the_clock, training_days, programs, people, publish)
         holder.set(
             Services(
                 engine=engine,
@@ -111,15 +141,18 @@ def create_app(
                 media=media,
                 people=people,
                 programs=programs,
-                sessions=Sessions(
-                    engine, the_clock, training_days, programs, people, publish
-                ),
+                sessions=sessions,
                 training_days=training_days,
             )
         )
+        # Before reconcile: a session ended by the pause limit leaves its day to reconcile like any other.
+        sessions.recover()
         training_days.reconcile_now()
         scheduler = asyncio.create_task(
             _run_scheduler(training_days, settings.scheduler_interval)
+        )
+        session_loop = asyncio.create_task(
+            _run_session_loop(sessions, settings.session_tick_max)
         )
         download = asyncio.create_task(media.download_missing(library.media_files()))
         announce = asyncio.create_task(
@@ -128,10 +161,12 @@ def create_app(
         try:
             yield
         finally:
-            for task in (scheduler, download, announce):
+            for task in (scheduler, session_loop, download, announce):
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
+            if not skip_shutdown:
+                await anyio.to_thread.run_sync(_shut_down, sessions, settings)
             engine.dispose()
 
     app = FastAPI(
