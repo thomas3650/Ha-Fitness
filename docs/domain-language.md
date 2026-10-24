@@ -1,8 +1,9 @@
 # Domain language
 
-The words used in specs, code and UI. Use them as defined here. The rules behind them (when a day turns late, how a
-streak is counted) are in spec §3 ([design spec](superpowers/specs/2026-10-23-ha-fitness-design.md)); feature specs
-fix the exact entity, service and tool names. Danish UI words live in the language files; the ones below are those the
+The words used in specs, code and UI. Use them as defined here. The rules behind them (when a day turns late) are in
+spec §3 ([design spec](superpowers/specs/2026-10-23-ha-fitness-design.md)), and the exact stats rules in the
+[stats spec](superpowers/specs/2026-10-24-stats-design.md) §3; feature specs fix the exact entity, service and tool
+names. Danish UI words live in the language files; the ones below are those the
 spec already names.
 
 ## Programs
@@ -51,12 +52,26 @@ spec already names.
 
 ## Stats
 
+All per person. The add-on computes them from the training days and the counted sessions (D47, D48).
+
 | Term | Meaning |
 | --- | --- |
-| **Streak** | Per person: consecutive closed training days the person did. Missed and skipped break it; open days don't count. |
-| **Done** / **missed** (counts) | Per person, per closed training day: done if they took part, otherwise missed (or skipped). |
-| **Time trained** | Per person: time from a session's start to its end, minus pauses. |
-| **Counting from** | The local date the first **counted** session ended, set once. Days closed before it are left out of all stats. |
+| **Counting from** | The local date the first **counted** session ended, set once. Before it is set, every number is 0. It limits only missed and skipped days. |
+| **Counted day** | A training day that counts in the stats: every done day, and a missed or skipped day whose date is on or after counting from. Open days count nowhere. A day belongs to its own date, not to the day it closed. |
+| **Done** (count) | One per counted day the person took part in (in any counted session for that day), plus one per extra session they took part in. |
+| **Extra** (count) | Of done, how many were extra sessions. An extra session is dated by the local date it started. |
+| **Missed** (count) | One per counted day that is missed, or done without the person. |
+| **Skipped** (count) | One per counted day that is skipped. It stays apart from missed in the data. |
+| **Added later** | A counted day dated before the local date the person was added counts only when they did it. So someone added later doesn't start with a pile of misses. People from before stats count from the start. |
+| **Time trained** | The sum of the time trained (start to end, minus pauses, in whole seconds) of the person's counted sessions: day sessions and extra sessions. A session ended before one full round adds no time. |
+| **Streak** | The number of dates in a row, newest first, on which the person did every counted day. A date with a missed or skipped day for them ends it. Dates with no counted day, open days and extra sessions neither add nor break. All time only. |
+| **All time** | Everything above, from the start. |
+| **This month** | The same, limited to the add-on's current local month. A day counts in the month of its date. An extra session's done and every session's time count in the month the session started. |
+
+Two rules surprise:
+
+- A day dated 31 October and done on 1 November counts its done in October but its time in November.
+- With two programs on one date, doing only one of them breaks the streak.
 
 ## The tablet
 

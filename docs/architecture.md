@@ -20,8 +20,9 @@ The cards are built into the integration: one bundle, released and versioned wit
   in the add-on, `HA_FITNESS_DATA_DIR` in the fast loop. The image is built from `addon/Dockerfile` on HA's Python base
   image. The design of what it holds is the
   [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md), for training days the
-  [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md), and for sessions the
-  [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md); the code is the source for the details.
+  [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md), for sessions the
+  [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md), and for stats the
+  [stats spec](superpowers/specs/2026-10-24-stats-design.md); the code is the source for the details.
   - **Database:** SQLite in `<data folder>/ha_fitness.db`, in WAL mode (D4, D5). Alembic migrations ship in the
     package and run to `head` at start. A database at a revision the code doesn't know stops the start.
   - **Exercise library:** the 721 filtered exercises are built into the package; their GIFs and thumbnails are
@@ -29,19 +30,26 @@ The cards are built into the integration: one bundle, released and versioned wit
     in their own table.
   - **People** (at most 2) linked to HA person entities, **programs** (one validated JSON document each, D4) and the
     **change log** of every write.
+    - Each person has `added_at`, the UTC time their row was created (migration 0004). A person kept by a people write
+      keeps it. It is null for people from before 0004, which means "from the start". Stats use it (D47).
+    - **People writes** (`People.set`) check the persons against HA first, outside the lock, because that call can
+      take 10 s. Only the database write and the reconcile after it take the lock, so a people change never holds up
+      a running workout's ticks. The reconcile publishes `today` and `stats`.
   - **Training days** and the **scheduler** (step 4 spec §3.3, D34). A training day is one program on one local date,
     stored as open, done, missed or skipped; only a counted session closes a day as done. Training-day ids are never reused, so a skip by id
     can't hit a later day. The scheduler reconciles at start, every minute, after every program write and before
-    every read of the days. One lock serialises the scheduler, skips, program writes, sessions and the dev routes.
+    every read of the days. One lock serialises the scheduler, skips, program writes, people writes, sessions, stats and the dev routes.
   - **Sessions** ([below](#sessions)): the workout engine, one session at a time (D40), with history and the
     "counting from" date.
+  - **Stats** ([below](#stats)): per person, computed from the training days and the sessions on each read. They are
+    never stored.
   - **REST** under `/api/v1/` (the routes are step 3 spec §7). `GET /api/v1/health` answers
     `{"status": "ok", "version": "<server version>", "api_version": 1}`. Step 4 adds `GET /api/v1/today`,
     `GET /api/v1/training-days?from=&to=` and `POST /api/v1/training-days/{id}/skip` (step 4 spec §3.4–§3.5). Step 5
-    adds the [session routes](#sessions).
+    adds the [session routes](#sessions). The stats add `GET /api/v1/stats` ([below](#stats)).
   - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5,
-    and the read-only `get_session` and `list_sessions` from step 5 spec §3.5). No MCP tool starts or steers a
-    workout.
+    the read-only `get_session` and `list_sessions` from step 5 spec §3.5, and the read-only `get_stats` from the
+    stats spec §4). No MCP tool starts or steers a workout.
   - **The push channel** `GET /api/v1/ws`, a websocket (D6, D35; [below](#the-push-channel)).
   - **Supervisor discovery:** at every start under the Supervisor the add-on posts the service `ha_fitness` with its
     hostname and port 8765 (D28, step 4 spec §3.7). Outside the Supervisor it does nothing. A failure is logged and
@@ -95,7 +103,8 @@ The cards are built into the integration: one bundle, released and versioned wit
     starts and steers it through `ha_fitness/session/command`, shows the media through the proxy (D44), and plays the
     beeps with Web Audio (step 5 spec §5).
 
-Not built yet: stats. It comes with its feature spec.
+Not built yet: the stats in the integration (the sensors and the relay) and the stats card. They come with the
+second stats PR ([stats spec](superpowers/specs/2026-10-24-stats-design.md) §5).
 
 ### Routing in the add-on server
 
@@ -131,6 +140,8 @@ Not built yet: stats. It comes with its feature spec.
 - After that it sends a new `today` whenever that data changes, and one `event` (`due`, `skipped`, `missed` or `done`)
   per state change of a training day.
 - Step 5 adds `session` ([below](#sessions)): it follows `today` on connect, and comes again after every change.
+- The stats add `stats` ([below](#stats-on-the-push-channel)): it follows `session` on connect, and comes again when
+  the numbers change. A new message type isn't a breaking change, so `api_version` stays 1.
 - Events are fire-and-forget: a client that isn't connected misses them. The `today` state is what counts.
 
 ```json
@@ -298,4 +309,35 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 - Events: `{"type": "event", "event": …, "session": {"id", "program_name", "training_day_id", …}}` for
   `session_started`, `session_completed`, `session_ended` (with `counted`) and `phase_changed` (with `phase`).
 - `{"type": "event", "event": "done", "training_day": {…}}` when a counted session closes its day, then a new
-  `today`.
+  `today`, then `stats` ([below](#stats-on-the-push-channel)).
+
+## Stats
+
+The design is the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3 and §4 (D47, D48); the code is
+`addon/server/src/ha_fitness_server/stats.py`. What the numbers mean is in
+[`domain-language.md`](domain-language.md#stats).
+
+- **Computed, not stored.** Each read computes every person's numbers from the training days, the counted sessions
+  and their participants, `counting_from` and the people. There is no cache: a household has at most a few hundred
+  days and sessions a year.
+- **Reads tick and reconcile first.** `GET /api/v1/stats`, `get_stats` and the connect snapshot tick the session,
+  then reconcile the training days, under the lock. So a read just after midnight already sees yesterday's open day as
+  missed.
+- **REST:** `GET /api/v1/stats` → `Stats` (`counting_from`, `month` as `YYYY-MM` in the add-on's local time, and
+  `people` in the people's order). Each person has `streak`, `all_time` and `this_month`; the totals are `done`,
+  `extra`, `missed`, `skipped` and `time_trained` (whole seconds). `Stats` in `schemas.py` is the shape.
+- **MCP:** `get_stats`, read-only, returns the same `Stats`.
+
+### Stats on the push channel
+
+- `{"type": "stats", "data": <Stats>}`. On connect it follows `hello`, `today` and `session`, and it is always sent.
+  Like those, a newer `stats` queued while the snapshot was read replaces it.
+- **When it is sent.** Every reconcile, and so every training-day change, ends by calling the stats hook
+  (`TrainingDays.on_change`) after `today`. So on the stream the order is the events, then `today` if it changed,
+  then `stats`. A finished session (completed or ended) also runs it, with or without a `done` event, so an extra
+  session counts at once. A people write runs it through its reconcile.
+- **Only when changed.** Outside the connect snapshot, `stats` goes out only when it differs from the last one the hub
+  published: one memory for the whole hub. The minute loop reconciles every minute, so it runs the hook too, but it
+  sends nothing while the numbers stay the same.
+- **A new month.** The first minute-loop run in a new local month changes `month` and resets `this_month`, so it
+  sends `stats`.
