@@ -136,8 +136,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload the players."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload the players, and forget them for `fake_set_available`."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        hass.data[DATA_PLAYERS].clear()
+    return unloaded
 
 
 def playlist_name(uri: str) -> str | None:

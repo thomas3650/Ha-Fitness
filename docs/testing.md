@@ -159,7 +159,7 @@ HA Fitness uses ([the facts](ha-notes.md#music-assistant)).
     http://localhost:8123/api/services/music_assistant/fake_set_available
   ```
 
-The integration's tests don't use this fake. They register their own fakes in the test HA, after the same facts.
+The integration's tests won't use this fake. They will register their own fakes in the test HA, after the same facts.
 
 ## Chrome check
 

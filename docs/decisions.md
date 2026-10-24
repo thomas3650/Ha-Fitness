@@ -445,8 +445,8 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Decision:** The fast loop and the full loop use a fake Music Assistant: a custom integration with the domain
   `music_assistant` in `scripts/dev/fake_music_assistant/`. It is never shipped, and it copies the surface of HA
   core's `music_assistant` that HA Fitness uses.
-- **Why:** The music can't be tested on the Mac against a real Music Assistant. A fake with the same services,
-  players and response shapes lets the loops and Chrome show the music without one.
+- **Why:** Fixed players and playlists make the loops and the Chrome check repeatable with no real speakers. The real
+  Home Assistant stays untouched (hard rule 4).
 - **Source:** [music spec](superpowers/specs/2026-10-24-music-design.md) §7
 
 ### D56: House details are removed from merged docs
