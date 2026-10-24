@@ -17,8 +17,9 @@ A second run changes nothing.
 Two flags then make a training day on purpose, through the add-on's dev routes (`HA_FITNESS_DEV=1`, which
 `scripts/develop` sets). "Today" is the date in Europe/Copenhagen, the dev HA's zone.
 
-- `--today` adds today's weekday to Sample and creates or reopens its day for today, so it is due at once, also after
-  a skip earlier that day.
+- Both flags first check that the server has its dev routes, before anything changes, and refuse when it hasn't.
+- `--today` adds today's weekday to Sample, switches Sample on when it is off, and creates or reopens its day for
+  today, so it is due at once, also after a skip earlier that day.
 - `--late` makes Sample late. It first refuses when another active program trains today, before it changes anything
   (also before the persons, people and Sample above). Then it switches Sample off (which removes its open days), sets
   its weekdays to every day except today, removes every training day of today (any day today, closed ones included,
@@ -249,8 +250,27 @@ async def _delete_days(session: aiohttp.ClientSession, day: dt.date) -> None:
         await _dev_json(response)
 
 
+async def _require_dev_routes(server_url: str) -> None:
+    """Raise unless the server has its dev routes: an empty POST is a 422 there, and a 404 without them."""
+    async with (
+        _server_session(server_url) as session,
+        session.post("/api/v1/dev/training-days", json={}) as response,
+    ):
+        if response.status == 422:
+            return
+        if response.status == 404:
+            raise SeedError(
+                "refusing: the server has no dev routes (POST /api/v1/dev/training-days is a 404); "
+                "start it with HA_FITNESS_DEV=1 (scripts/develop sets it), then seed again"
+            )
+        raise SeedError(
+            f"POST /api/v1/dev/training-days with an empty body: expected 422, got {response.status} "
+            f"{await response.text()}"
+        )
+
+
 async def _make_due(server_url: str, today: dt.date) -> None:
-    """Add today's weekday to Sample and create or reopen its day for today."""
+    """Add today's weekday to Sample, switch it on when it is off, and create or reopen its day for today."""
     weekday = WEEKDAYS[today.weekday()]
     async with _server_session(server_url) as session:
         sample = await _sample(session)
@@ -264,6 +284,9 @@ async def _make_due(server_url: str, today: dt.date) -> None:
                 {**document, "weekdays": [*document["weekdays"], weekday]},
             )
             print(f"seed: added {weekday} to {SAMPLE_NAME}")
+        if not document["active"]:
+            await _set_active(session, sample["id"], True)
+            print(f"seed: switched {SAMPLE_NAME} on")
         await _open_day(session, sample["id"], today)
         print(f"seed: {SAMPLE_NAME} has an open day for today ({today})")
 
@@ -295,6 +318,8 @@ async def _make_late(server_url: str, today: dt.date) -> None:
 
 async def _run(ha_url: str, server_url: str, mode: str | None) -> None:
     today = _local_today()
+    if mode is not None:
+        await _require_dev_routes(server_url)
     if mode == "late":
         await _refuse_late(server_url, today)
     people = await _ha_persons(ha_url)
