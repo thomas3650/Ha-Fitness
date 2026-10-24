@@ -230,20 +230,13 @@ export class TodayCard extends LitElement {
       gap: 8px;
       margin-top: 8px;
     }
-    /* Start, or the question and Ja, fill the space before the last place. */
+    /* Start, Ja or Fortsæt: the first place, at the left. */
     .lead {
-      flex: 1;
-      min-width: 0;
       display: flex;
       align-items: center;
-      gap: 8px;
-    }
-    .lead button {
-      flex: 1;
     }
     .question {
       color: var(--primary-text-color);
-      white-space: nowrap;
     }
     button {
       display: inline-flex;
@@ -271,7 +264,11 @@ export class TodayCard extends LitElement {
       width: 9em;
       padding: 0 12px;
     }
+    /* Start, Ja and Fortsæt share the first place and its width, so Ja lands where Start was. */
     button.yes {
+      flex: none;
+      width: 9em;
+      padding: 0 12px;
       background: var(--primary-color);
       color: var(--text-primary-color);
     }
@@ -523,7 +520,7 @@ export class TodayCard extends LitElement {
   private renderActions(day: OpenDay) {
     const confirming = this.confirming.get(day.id);
     if (!confirming) {
-      // Start comes first and fills the row; Spring over keeps the last place, where Nej comes after the first tap.
+      // Left-aligned: Start in the first place, Spring over in the second, where Nej comes after the first tap.
       return html`
         <div class="lead">
           ${iconButton({
@@ -543,10 +540,10 @@ export class TodayCard extends LitElement {
         })}
       `;
     }
-    // While it asks, Start is hidden: the row holds only the question, Ja and Nej. Nej is last and as wide as Spring over (the "slot"), so a double tap lands on Nej.
+    // While it asks, the question takes the state line's place (see renderDays) and Ja and Nej take Start's and Spring
+    // over's places, at the same widths, so a double tap on Spring over lands on Nej.
     return html`
       <div class="lead">
-        <span class="question">${this.t("today.skip_confirm")}</span>
         ${iconButton({
           label: this.t("today.yes"),
           text: this.t("today.yes"),
@@ -565,11 +562,30 @@ export class TodayCard extends LitElement {
     `;
   }
 
+  /** "I gang · runde 2 af 5", "Pauset · runde 2 af 5", or the state word alone without a phase. */
+  private sessionStateLine(session: SessionView): string {
+    const state = this.t(session.status === "paused" ? "session.state_paused" : "session.state_running");
+    if (!session.phase) return state;
+    return this.t("session.state_round", { state, round: session.phase.round, rounds: session.totals.rounds });
+  }
+
+  /** "Thomas og Elin · 29 min": the minutes rounded as get ready's summary and the add-on's `total_minutes`. */
+  private sessionPeopleLine(session: SessionView): string {
+    const [first, second] = session.participants.map((person) => person.name);
+    const people = second === undefined ? (first ?? "") : this.t("session.people_two", { first, second });
+    return this.t("session.people_minutes", {
+      people,
+      minutes: this.t("today.short_minutes", { count: Math.floor((session.totals.planned + 30) / 60) }),
+    });
+  }
+
   private renderSession(session: SessionView) {
     return html`
       <ul>
         <li>
-          <div class="name">${this.t("session.running", { program: session.program_name })}</div>
+          <div class="name">${session.program_name}</div>
+          <div class="line">${this.sessionStateLine(session)}</div>
+          <div class="line">${this.sessionPeopleLine(session)}</div>
           <div class="actions">
             <div class="lead">
               ${iconButton({
@@ -597,7 +613,9 @@ export class TodayCard extends LitElement {
           (day) => html`
             <li>
               <div class="name">${day.program_name}</div>
-              <div class="line">${this.stateLine(day)}</div>
+              ${this.confirming.has(day.id)
+                ? html`<div class="line question">${this.t("today.skip_confirm")}</div>`
+                : html`<div class="line">${this.stateLine(day)}</div>`}
               <div class="line">${this.summaryLine(day)}</div>
               <div class="actions">${this.renderActions(day)}</div>
             </li>

@@ -35,7 +35,12 @@
   },
   "session": {
     "running": "Træning i gang · {program}",
-    "resume": "Fortsæt"
+    "resume": "Fortsæt",
+    "state_running": "I gang",
+    "state_paused": "Pauset",
+    "state_round": "{state} · runde {round} af {rounds}",
+    "people_two": "{first} og {second}",
+    "people_minutes": "{people} · {minutes}"
   },
   "workout": {
     "no_programs": "Ingen aktive programmer",

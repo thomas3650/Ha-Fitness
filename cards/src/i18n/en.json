@@ -35,7 +35,12 @@
   },
   "session": {
     "running": "Workout in progress · {program}",
-    "resume": "Continue"
+    "resume": "Continue",
+    "state_running": "Running",
+    "state_paused": "Paused",
+    "state_round": "{state} · round {round} of {rounds}",
+    "people_two": "{first} and {second}",
+    "people_minutes": "{people} · {minutes}"
   },
   "workout": {
     "no_programs": "No active programs",
