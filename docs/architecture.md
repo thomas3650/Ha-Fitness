@@ -257,7 +257,7 @@ makes sensors of it.
   - State class `total`, not `total_increasing`, because the dev routes can lower a count.
   - The attribute names are keys; the UI's names for them come from the translation files. The attributes aren't
     recorded.
-  - A sensor is unavailable unless the stats are available.
+  - A sensor is unavailable unless the stats are available and hold its person.
 - **Added and removed with the people.** On each update while the stats are available, the entry's person sensors in
   the registry are compared with the people in the stats. A person added in the add-on gets four sensors. A removed
   person's sensors are removed from the registry and the state machine. The removals come before any add, so a person
