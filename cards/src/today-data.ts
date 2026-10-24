@@ -36,16 +36,16 @@ type Subscription = Promise<(() => unknown) | undefined>;
 const RETRY_MS = [5_000, 10_000, 30_000];
 
 /**
- * The card's subscription to `ha_fitness/today/subscribe` (spec §4.5). It hands each message to
- * `onData`: the today data, or `null` while the add-on can't be reached.
+ * A subscription to one of HA Fitness's websocket subscribe commands. It hands each message to
+ * `onData`, and `null` while the subscription is refused.
  *
- * - A refused subscription (the integration isn't loaded, say) counts as unreachable, and is
- *   retried after 5, 10 and 30 s, then every 30 s.
+ * - A refused subscription (the integration isn't loaded, say) is retried after 5, 10 and 30 s,
+ *   then every 30 s.
  * - After a reconnect (the connection's `ready` event) it subscribes again, so a restart of Home
- *   Assistant can't leave the card on stale data.
+ *   Assistant can't leave a card on stale data.
  * - Only the newest subscription's messages count.
  */
-export class TodaySubscription {
+export class WsSubscription<T> {
   private connection?: Connection;
   private current?: Subscription;
   private retries = 0;
@@ -55,7 +55,10 @@ export class TodaySubscription {
     this.subscribe();
   };
 
-  constructor(private readonly onData: (today: Today | null) => void) {}
+  constructor(
+    private readonly type: string,
+    private readonly onData: (message: T | null) => void,
+  ) {}
 
   /** Subscribe on this connection. Home Assistant keeps one connection, so the same one is a no-op. */
   connect(connection: Connection | undefined): void {
@@ -77,11 +80,11 @@ export class TodaySubscription {
     const connection = this.connection;
     if (!connection) return;
     const subscription: Subscription = connection
-      .subscribeMessage<Today | null>(
-        (today) => {
-          if (this.current === subscription) this.onData(today);
+      .subscribeMessage<T | null>(
+        (message) => {
+          if (this.current === subscription) this.onData(message);
         },
-        { type: "ha_fitness/today/subscribe" },
+        { type: this.type },
         // The `ready` handler subscribes again itself; the library's own resubscribe would leave an
         // extra server subscription behind after each reconnect.
         { resubscribe: false },
@@ -115,5 +118,15 @@ export class TodaySubscription {
         await stop?.();
       })
       .catch(() => undefined);
+  }
+}
+
+/**
+ * The today card's subscription to `ha_fitness/today/subscribe` (spec §4.5): the today data, or
+ * `null` while the add-on can't be reached or the subscription is refused.
+ */
+export class TodaySubscription extends WsSubscription<Today> {
+  constructor(onData: (today: Today | null) => void) {
+    super("ha_fitness/today/subscribe", onData);
   }
 }
