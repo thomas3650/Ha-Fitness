@@ -228,8 +228,8 @@ The integration relays it.
 
 ### Stats in the integration
 
-The add-on's side (what counts, the route and the `stats` message) is the
-[stats spec](superpowers/specs/2026-10-24-stats-design.md) §3–§4. The integration relays it and makes sensors of it.
+The add-on's side (what counts, the route and the `stats` message) is [below](#stats). The integration relays it and
+makes sensors of it.
 
 - **The last stats.** The coordinator keeps the last `stats` message's data, also across a disconnect. A `stats`
   message whose `data` isn't an object is ignored. The stats are available while the add-on is connected and has sent

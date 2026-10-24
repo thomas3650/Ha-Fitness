@@ -179,9 +179,8 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
 ### The stats card
 
 On the dev dashboard's Workout view, as the Danish user, with a screenshot of each step. The design is in the
-[stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.2. `dev_onboard.py` saves the dashboard only while it has
-none, so a dev HA onboarded before the stats card existed lacks it: delete the `ha-fitness-dev` dashboard (Settings →
-Dashboards) and run `dev_onboard.py` again.
+[stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.2. A dev HA onboarded before the stats card existed lacks
+it; step 9 of the workout flow check says how to get it.
 
 1. **Each line,** in the order of spec §5.2:
    - with an empty data folder (`scripts/develop stop`, move `local/addon-data/` aside, start again), before
