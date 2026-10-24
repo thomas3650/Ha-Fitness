@@ -381,12 +381,12 @@ test("Start unlocks audio before the command resolves", async () => {
 
   button(flow, "Start").click();
 
-  // The command is still pending, and the context already exists and runs.
+  // The command is still pending, and the context already exists and is resumed in the tap.
   expect(fake.commands).toHaveLength(1);
   expect(audio.contexts).toHaveLength(1);
-  expect(audio.contexts[0].state).toBe("running");
-  expect(audioLocked()).toBe(false);
+  expect(audio.contexts[0].resume).toHaveBeenCalled();
   await settle(flow);
+  expect(audioLocked()).toBe(false);
   expect(button(flow, "Start").disabled).toBe(true);
 });
 

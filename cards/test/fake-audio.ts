@@ -22,9 +22,10 @@ export function installFakeAudio(initialState: AudioContextState = "suspended") 
     currentTime = 0;
     readonly destination = {};
     readonly tones: FakeTone[] = [];
-    readonly resume = vi.fn(() => {
-      this.state = "running";
-      return Promise.resolve();
+    /** As browsers do: the state changes, and `statechange` fires, after the call returns. */
+    readonly resume = vi.fn(async () => {
+      await Promise.resolve();
+      this.setState("running");
     });
     private readonly stateListeners = new Set<() => void>();
 

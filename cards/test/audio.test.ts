@@ -16,7 +16,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("unlockAudio creates one context synchronously", () => {
+/** Let the browser's (the fake's) asynchronous `resume()` finish. */
+const resumed = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("unlockAudio creates one context synchronously", async () => {
   const fake = installFakeAudio("suspended");
   expect(audio.audioLocked()).toBe(true);
 
@@ -25,13 +28,15 @@ test("unlockAudio creates one context synchronously", () => {
   // Nothing awaited: the context exists and is resumed within the tap.
   expect(fake.contexts).toHaveLength(1);
   expect(fake.contexts[0].resume).toHaveBeenCalledTimes(1);
+  // The browser changes the state once resume() has finished.
+  await resumed();
   expect(audio.audioLocked()).toBe(false);
 
   audio.unlockAudio();
   expect(fake.contexts).toHaveLength(1);
 });
 
-test("unlockAudio resumes a context the browser suspended again", () => {
+test("unlockAudio resumes a context the browser suspended again", async () => {
   const fake = installFakeAudio("running");
   audio.unlockAudio();
   expect(fake.contexts[0].resume).not.toHaveBeenCalled();
@@ -42,10 +47,11 @@ test("unlockAudio resumes a context the browser suspended again", () => {
 
   expect(fake.contexts).toHaveLength(1);
   expect(fake.contexts[0].resume).toHaveBeenCalledTimes(1);
+  await resumed();
   expect(audio.audioLocked()).toBe(false);
 });
 
-test("unlockAudio resumes an interrupted context", () => {
+test("unlockAudio resumes an interrupted context", async () => {
   const fake = installFakeAudio("running");
   audio.unlockAudio();
 
@@ -55,6 +61,7 @@ test("unlockAudio resumes an interrupted context", () => {
   audio.unlockAudio();
 
   expect(fake.contexts[0].resume).toHaveBeenCalledTimes(1);
+  await resumed();
   expect(audio.audioLocked()).toBe(false);
 });
 
@@ -81,9 +88,16 @@ test("onAudioStateChange tells listeners when the lock changes", () => {
 test("without Web Audio nothing plays and audio stays locked", () => {
   vi.stubGlobal("AudioContext", undefined);
 
+  expect(audio.audioSupported()).toBe(false);
   expect(() => audio.unlockAudio()).not.toThrow();
   expect(audio.audioLocked()).toBe(true);
+  expect(audio.audioTime()).toBe(0);
   expect(() => audio.scheduleTone("beep", 2_000, 1_000)()).not.toThrow();
+});
+
+test("Web Audio is supported before the first unlock", () => {
+  installFakeAudio();
+  expect(audio.audioSupported()).toBe(true);
 });
 
 test("scheduleTone before the unlock makes no context", () => {
@@ -105,6 +119,9 @@ test("scheduleTone maps epoch ms to context time and cancels", () => {
   const cancelBeep = audio.scheduleTone("beep", now + 2_500, now);
   const [beep] = fake.tones();
   expect(beep.start).toBeCloseTo(12.5, 6);
+  // The cancel carries the start on the audio clock, which `audioTime` reads.
+  expect(cancelBeep.when).toBeCloseTo(12.5, 6);
+  expect(audio.audioTime()).toBe(10);
   expect(beep.cancelled).toBe(false);
 
   cancelBeep();

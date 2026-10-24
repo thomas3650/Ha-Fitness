@@ -65,16 +65,30 @@ export function audioLocked(): boolean {
   return !context || context.state !== "running";
 }
 
+/** False in a browser with no Web Audio at all, where no tap can bring sound. */
+export function audioSupported(): boolean {
+  return context !== undefined || typeof globalThis.AudioContext === "function";
+}
+
+/** The page's audio clock now, in seconds; 0 before there is a context. */
+export function audioTime(): number {
+  return context?.currentTime ?? 0;
+}
+
+/** A scheduled tone's cancel, with its start on the audio clock (`audioTime()`); never, with no context. */
+export type ToneCancel = (() => void) & { when: number };
+
 /**
  * Play `kind` at the epoch time `atEpochMs`, given that it is `nowEpochMs` now. A time already
- * passed plays at once. Returns the cancel, which silences the tone if it has not finished.
+ * passed plays at once. Returns the cancel, which silences the tone if it has not finished, and
+ * carries the tone's start on the audio clock.
  */
-export function scheduleTone(kind: ToneKind, atEpochMs: number, nowEpochMs: number): () => void {
+export function scheduleTone(kind: ToneKind, atEpochMs: number, nowEpochMs: number): ToneCancel {
   const ctx = context;
-  if (!ctx) return () => undefined;
+  if (!ctx) return Object.assign(() => undefined, { when: Number.POSITIVE_INFINITY });
   const when = Math.max(ctx.currentTime, ctx.currentTime + (atEpochMs - nowEpochMs) / 1000);
   const oscillators = TONES[kind].map((note) => play(ctx, note, when + note.offset));
-  return () => {
+  const cancel = () => {
     for (const oscillator of oscillators) {
       try {
         oscillator.stop();
@@ -84,6 +98,7 @@ export function scheduleTone(kind: ToneKind, atEpochMs: number, nowEpochMs: numb
       }
     }
   };
+  return Object.assign(cancel, { when });
 }
 
 function play(ctx: AudioContext, note: Note, start: number): OscillatorNode {

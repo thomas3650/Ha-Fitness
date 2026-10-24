@@ -1,7 +1,6 @@
 import { getAllByRole, getByRole, queryAllByRole, queryByRole } from "@testing-library/dom";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
-import { audioLocked } from "../src/audio";
 import en from "../src/i18n/en.json";
 import "../src/index";
 import * as overlay from "../src/overlay";
@@ -176,14 +175,24 @@ function flowMode(): unknown {
   return (theDialog()?.querySelector("ha-fitness-workout-flow") as FlowElement | null)?.mode;
 }
 
-/** Record whether audio was unlocked at each moment the overlay opened. */
-function audioAtOpen(): boolean[] {
-  const seen: boolean[] = [];
+/** The calls of `resume()` on the page's audio contexts so far; each unlock of a locked page makes one. */
+function resumes(): number {
+  return audio.contexts.reduce((count, context) => count + context.resume.mock.calls.length, 0);
+}
+
+/** Lock the page's audio again, as a reload or a quiet tablet can. */
+function lockAudio(): void {
+  for (const context of audio.contexts) context.setState("suspended");
+}
+
+/** Record, at each moment the overlay opened, how many unlocks the page had seen. */
+function audioAtOpen(): number[] {
+  const seen: number[] = [];
   const showModal = HTMLDialogElement.prototype.showModal;
   const spy = vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (
     this: HTMLDialogElement,
   ) {
-    seen.push(!audioLocked());
+    seen.push(resumes());
     showModal.call(this);
   });
   onTestFinished(() => spy.mockRestore());
@@ -252,12 +261,13 @@ test("workout card Start opens details without training day", async () => {
   const fake = fakeHass();
   const card = await mount(fake);
 
-  const start = getByRole(rows(card)[1], "button", { name: "Start" });
-  start.click();
+  lockAudio();
+  const before = resumes();
+  getByRole(rows(card)[1], "button", { name: "Start" }).click();
   // Synchronously, in the tap, before the refetch awaits.
-  expect(audioLocked()).toBe(false);
+  expect(resumes()).toBe(before + 1);
   await settle(card);
-  expect(opened).toEqual([true]);
+  expect(opened).toEqual([before + 1]);
   expect(theDialog()?.open).toBe(true);
   expect(flowMode()).toEqual({ kind: "details", programId: 4 });
   // Nothing starts until the flow's own Start.
@@ -276,10 +286,12 @@ test("workout card Fortsæt", async () => {
     expect(queryByRole(root(card), "button", { name: "Start" })).toBeNull();
 
     opened.length = 0;
-    audio.contexts[0]?.setState("suspended");
+    lockAudio();
+    const before = resumes();
     getByRole(root(card), "button", { name: "Fortsæt" }).click();
-    expect(audioLocked()).toBe(false);
-    expect(opened).toEqual([true]);
+    // Synchronously, in the tap: the audio unlocked before the overlay opened.
+    expect(resumes()).toBe(before + 1);
+    expect(opened).toEqual([before + 1]);
     expect(flowMode()).toEqual({ kind: "resume" });
     overlay.close();
   }

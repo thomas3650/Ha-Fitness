@@ -238,7 +238,8 @@ test("rescheduled after pause, next and newer revision", async () => {
   await settle(flow);
   expect(live()).toEqual([...beeps(45, 46, 47, 48, 49), { kind: "rest", start: 50 }]);
 
-  // Næste: the switch starts now and ends at 50 s; the old ones go, the new ones come once.
+  // Næste: the switch starts now, with its change tone, and ends at 50 s; the old ones go, the new
+  // ones come once.
   await tap(flow, "Næste");
   fake.commands[2].resolve(
     view({
@@ -249,7 +250,8 @@ test("rescheduled after pause, next and newer revision", async () => {
     }),
   );
   await settle(flow);
-  expect(live()).toEqual([...beeps(45, 46, 47, 48, 49), { kind: "work", start: 50 }]);
+  expect(live()).toEqual([{ kind: "rest", start: 35 }, ...beeps(45, 46, 47, 48, 49), { kind: "work", start: 50 }]);
+  mark = audio.tones().length;
 
   // A newer revision that moves the end to 52 s.
   await push(
@@ -373,7 +375,85 @@ test("Fortsæt unlocks the audio in the tap", async () => {
     view({ status: "paused", phase: phase({ ends_at: null, remaining: 30 }) }),
   );
 
+  context().resume.mockClear();
   (getByRole(root(flow), "button", { name: "Fortsæt" }) as HTMLButtonElement).click();
   // Synchronously, before the command's answer.
-  expect(context().state).toBe("running");
+  expect(context().resume).toHaveBeenCalledTimes(1);
+});
+
+test("tones follow the add-on's clock, not the tablet's", async () => {
+  // The add-on's clock is 3 s ahead of the tablet's: the view, stamped 3 s after 08:00:00 local,
+  // has its work phase end at 48 s. On the tablet's audio clock everything is 3 s earlier.
+  await mount(fakeHass(), view({ phase: phase({ ends_at: at(48) }), server_time: at(3) }));
+  expect(live()).toEqual([...beeps(40, 41, 42, 43, 44), { kind: "rest", start: 45 }]);
+});
+
+test("Næste and Forrige play the change tone of the phase they start", async () => {
+  const fake = fakeHass("da");
+  const flow = await mount(fake, view());
+  await wait(flow, 30_000);
+
+  // Næste in the middle of work: the switch starts now, with its low tone, and ends at 45 s.
+  await tap(flow, "Næste");
+  fake.commands[0].resolve(
+    view({
+      revision: 11,
+      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: at(45) }),
+      next_phase: { kind: "work", duration: 45 },
+      server_time: at(30),
+    }),
+  );
+  await settle(flow);
+  expect(live()).toEqual([{ kind: "rest", start: 30 }, ...beeps(40, 41, 42, 43, 44), { kind: "work", start: 45 }]);
+
+  // Forrige 2 s later: work starts again, with its high tone, and ends at 77 s.
+  await wait(flow, 2_000);
+  mark = audio.tones().length;
+  await tap(flow, "Forrige");
+  fake.commands[1].resolve(
+    view({ revision: 12, phase: phase({ index: 3, ends_at: at(77) }), server_time: at(32) }),
+  );
+  await settle(flow);
+  expect(live()).toEqual([{ kind: "work", start: 32 }, ...beeps(72, 73, 74, 75, 76), { kind: "rest", start: 77 }]);
+});
+
+test("a natural phase change gets its change tone once", async () => {
+  // The switch ends at 45 s; its work tone plays at local zero. The message that confirms work
+  // arrives just after, and adds no second tone.
+  const flow = await mount(fakeHass(), view({ phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: at(45) }), next_phase: { kind: "work", duration: 45 } }));
+  await wait(flow, 45_020);
+  mark = audio.tones().length;
+  await push(flow, view({ revision: 11, phase: phase({ index: 5, ends_at: at(90) }), server_time: at(45.02) }));
+  expect(live()).toEqual([...beeps(85, 86, 87, 88, 89), { kind: "rest", start: 90 }]);
+});
+
+test("a clock correction alone never plays a tone twice", async () => {
+  const flow = await mount(fakeHass(), view());
+  // 50 ms into the beep at 40 s (5 s left).
+  await wait(flow, 40_050);
+
+  // The same revision again, stamped 0.2 s behind: only the clock moves. The beep already playing
+  // isn't cut or played again; the ones still ahead move by the 0.2 s.
+  await push(flow, view({ server_time: at(39.85) }));
+  expect(live()).toEqual([...beeps(40, 41.2, 42.2, 43.2, 44.2), { kind: "rest", start: 45.2 }]);
+});
+
+test("Tryk for lyd goes when the audio runs, however it was unlocked", async () => {
+  context().setState("suspended");
+  const flow = await mount(fakeHass("da"), view());
+  expect(getByRole(root(flow), "button", { name: "Tryk for lyd" })).toBeTruthy();
+
+  // Another tap on the page (a card's Fortsæt, say) unlocked it; the browser says so with `statechange`.
+  context().setState("running");
+  await settle(flow);
+  expect(queryByRole(root(flow), "button", { name: "Tryk for lyd" })).toBeNull();
+  expect(live()).toEqual([...beeps(40, 41, 42, 43, 44), { kind: "rest", start: 45 }]);
+
+  // The flow's own button: resume() finishes after the tap, and the button goes then.
+  context().setState("suspended");
+  await settle(flow);
+  (getByRole(root(flow), "button", { name: "Tryk for lyd" }) as HTMLButtonElement).click();
+  expect(context().state).toBe("suspended");
+  await settle(flow);
+  expect(queryByRole(root(flow), "button", { name: "Tryk for lyd" })).toBeNull();
 });

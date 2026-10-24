@@ -1,7 +1,6 @@
 import { getAllByRole, getByRole, queryAllByRole, queryByRole } from "@testing-library/dom";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 
-import { audioLocked } from "../src/audio";
 import en from "../src/i18n/en.json";
 import "../src/index";
 import * as overlay from "../src/overlay";
@@ -748,14 +747,24 @@ function sessionCommands(fake: Fake): unknown[] {
   return fake.callWS.mock.calls.filter(([message]) => message.type === "ha_fitness/session/command");
 }
 
-/** Record whether audio was unlocked at the moment the overlay opened. */
-function audioAtOpen(): boolean[] {
-  const seen: boolean[] = [];
+/** The calls of `resume()` on the page's audio contexts so far; each unlock of a locked page makes one. */
+function resumes(): number {
+  return audio.contexts.reduce((count, context) => count + context.resume.mock.calls.length, 0);
+}
+
+/** Lock the page's audio again, as a reload or a quiet tablet can. */
+function lockAudio(): void {
+  for (const context of audio.contexts) context.setState("suspended");
+}
+
+/** Record, at each moment the overlay opened, how many unlocks the page had seen. */
+function audioAtOpen(): number[] {
+  const seen: number[] = [];
   const showModal = HTMLDialogElement.prototype.showModal;
   const spy = vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (
     this: HTMLDialogElement,
   ) {
-    seen.push(!audioLocked());
+    seen.push(resumes());
     showModal.call(this);
   });
   onTestFinished(() => spy.mockRestore());
@@ -772,10 +781,12 @@ test("Start opens overlay with the day, nothing started, audio unlocked synchron
   expect(buttonNames(rows(card)[0])).toEqual(["Start", "Spring over"]);
   expect(theDialog()).toBeNull();
 
+  lockAudio();
+  const before = resumes();
   getByRole(rows(card)[0], "button", { name: "Start" }).click();
   // Synchronously, in the tap: the audio unlocked before the overlay opened.
-  expect(audioLocked()).toBe(false);
-  expect(opened).toEqual([true]);
+  expect(resumes()).toBe(before + 1);
+  expect(opened).toEqual([before + 1]);
   const dialog = theDialog();
   expect(dialog?.open).toBe(true);
   const flow = dialog?.querySelector("ha-fitness-workout-flow") as FlowElement | null;
@@ -812,10 +823,12 @@ test("Fortsæt while session active unlocks audio and resumes; Spring over hidde
     expect(queryByRole(root(card), "button", { name: "Start" })).toBeNull();
 
     // A reload, or a tablet that went quiet, can leave the page's audio suspended.
-    audio.contexts[0]?.setState("suspended");
+    lockAudio();
+    const before = resumes();
     getByRole(root(card), "button", { name: "Fortsæt" }).click();
-    expect(audioLocked()).toBe(false);
-    expect(opened).toEqual([true]);
+    // Synchronously, in the tap: the audio unlocked before the overlay opened.
+    expect(resumes()).toBe(before + 1);
+    expect(opened).toEqual([before + 1]);
     const flow = theDialog()?.querySelector("ha-fitness-workout-flow") as FlowElement | null;
     expect(flow?.mode).toEqual({ kind: "resume" });
 

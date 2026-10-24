@@ -1,6 +1,14 @@
 import { LitElement, type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 
-import { type ToneKind, audioLocked, onAudioStateChange, scheduleTone, unlockAudio } from "./audio";
+import {
+  type ToneKind,
+  audioLocked,
+  audioSupported,
+  audioTime,
+  onAudioStateChange,
+  scheduleTone,
+  unlockAudio,
+} from "./audio";
 import { type Vars, localize } from "./i18n";
 import { type ImageHass, type ImageKind, imageUrl } from "./images";
 import { type LanguageHass, cardLanguage } from "./language";
@@ -63,6 +71,8 @@ const CONFIRM_MS = 10_000;
 const DONE_MS = 60_000;
 /** The beeps before a phase ends, in seconds left (spec §5.4). */
 const BEEP_SECONDS = 5;
+/** How long a started tone is remembered, so a new plan doesn't play it again (seconds). */
+const STARTED_S = 2;
 /** No beep falls this soon after a phase starts, where it would clash with the change tone. */
 const QUIET_MS = 300;
 /** The ring's colours: orange for work, blue for the rest (design §3.4). Never used for text. */
@@ -172,8 +182,11 @@ export class WorkoutFlow extends LitElement {
   private doneTimer?: ReturnType<typeof setTimeout>;
   /** Set once this flow has asked to close; it never asks twice. */
   private closed = false;
-  /** The tones scheduled and not yet due: when each plays (the add-on's epoch ms), and its cancel. */
-  private tones: { at: number; cancel: () => void }[] = [];
+  /**
+   * The tones scheduled, and those started a moment ago: each one's kind, when it is due (the
+   * add-on's epoch ms), when it starts on the audio clock (s), and its cancel.
+   */
+  private tones: { kind: ToneKind; at: number; when: number; cancel: () => void }[] = [];
   /** What the pending tones were planned from; a change plans them again. */
   private plannedFrom?: { view?: SessionView; offset: number; reachable: boolean; locked: boolean; counting: boolean };
   private stopAudioWatch?: () => void;
@@ -541,6 +554,7 @@ export class WorkoutFlow extends LitElement {
       const now = this.now();
       scheduleTone("chime", now, now);
     }
+    this.playSkipTone(newest, view);
     this.newest = view;
     if (isActive(view)) this.leftDetails = true;
   }
@@ -737,6 +751,20 @@ export class WorkoutFlow extends LitElement {
     void this.command("end");
   }
 
+  /**
+   * Næste and Forrige start a phase before the old one ran out: its change tone plays now. A phase
+   * that started because the old one ran out had its tone at local zero, so it gets none here.
+   */
+  private playSkipTone(previous: SessionView | undefined, view: SessionView): void {
+    const before = previous?.id === view.id ? previous.phase : null;
+    const after = view.phase;
+    if (!before?.ends_at || !after || after.index === before.index) return;
+    if (view.status !== "running" || after.kind === "countdown" || audioLocked()) return;
+    const now = this.now();
+    if (Date.parse(before.ends_at) <= now) return;
+    scheduleTone(after.kind === "work" ? "work" : "rest", now, now);
+  }
+
   /** The add-on's time now, from the local clock and the newest message's offset. */
   private now(): number {
     return Date.now() + this.offset;
@@ -801,12 +829,20 @@ export class WorkoutFlow extends LitElement {
       return;
     }
     this.plannedFrom = from;
+    // What has started is judged on the audio clock, which a clock correction doesn't move.
+    const pending = this.tones.filter((tone) => tone.when > audioTime());
     this.silence();
+    const started = this.tones;
     const view = from.view;
     if (!counting || from.locked || view?.status !== "running") return;
     const now = this.now();
     for (const [kind, at] of this.tonesOf(view)) {
-      if (at > now) this.tones.push({ at, cancel: scheduleTone(kind, at, now) });
+      const same = (tone: { kind: ToneKind; at: number }) => tone.kind === kind && tone.at === at;
+      // A tone that has started isn't played again. One that was waiting still plays, at once if
+      // the corrected clock says its time has passed.
+      if (started.some(same) || (at <= now && !pending.some(same))) continue;
+      const cancel = scheduleTone(kind, at, now);
+      this.tones.push({ kind, at, when: cancel.when, cancel });
     }
   }
 
@@ -830,11 +866,14 @@ export class WorkoutFlow extends LitElement {
     return tones;
   }
 
-  /** Cancel the tones still ahead; one already playing finishes. */
+  /**
+   * Cancel the tones still ahead on the audio clock; one already playing finishes. The ones that
+   * started in the last few seconds are kept, so a plan made right after can't play them twice.
+   */
   private silence(): void {
-    const now = this.now();
-    for (const tone of this.tones) if (tone.at > now) tone.cancel();
-    this.tones = [];
+    const now = audioTime();
+    for (const tone of this.tones) if (tone.when > now) tone.cancel();
+    this.tones = this.tones.filter((tone) => tone.when <= now && tone.when > now - STARTED_S);
   }
 
   /** "Tryk for lyd": unlock in the tap, then plan the tones with sound. */
@@ -845,7 +884,8 @@ export class WorkoutFlow extends LitElement {
 
   /** The "Tryk for lyd" button, while no sound can play. */
   private renderSound() {
-    if (!audioLocked()) return nothing;
+    // With no Web Audio at all, no tap could bring sound.
+    if (!audioSupported() || !audioLocked()) return nothing;
     return html`<button class="sound" @click=${() => this.tapForSound()}>${this.t("flow.tap_for_sound")}</button>`;
   }
 
