@@ -1,10 +1,10 @@
 """The FastAPI app."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 import logging
-from typing import Any, TypedDict
+from typing import TypedDict
 
 import anyio
 from fastapi import FastAPI, HTTPException, Request
@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 from fastmcp.utilities.lifespan import combine_lifespans
 import httpx
 
-from . import __version__
+from . import API_VERSION, __version__, discovery
 from .api import add_error_handlers, router as api_router
 from .api.dev import router as dev_router
 from .clock import Clock, SystemClock
@@ -24,18 +24,29 @@ from .library.service import Library
 from .mcp_tools import build_mcp
 from .people import People
 from .programs import Programs
+from .push import Hub, Message
 from .services import Services, ServicesHolder
 from .settings import Settings
 from .training_days import TrainingDays
 
 _LOGGER = logging.getLogger(__name__)
 
-API_VERSION: int = 1
+__all__ = ["API_VERSION", "create_app"]
+
 _ALL_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 
-def _no_publish(message: dict[str, Any]) -> None:
-    """Drop a push message; the push channel arrives with the websocket."""
+def _publisher(hub: Hub, loop: asyncio.AbstractEventLoop) -> Callable[[Message], None]:
+    """Return a `publish` for any thread: it hands each message to `hub` on `loop`.
+
+    Once the loop is closed (a worker thread still running at shutdown), the message is dropped.
+    """
+
+    def publish(message: Message) -> None:
+        with suppress(RuntimeError):
+            loop.call_soon_threadsafe(hub.broadcast, message)
+
+    return publish
 
 
 async def _run_scheduler(training_days: TrainingDays, interval: float) -> None:
@@ -73,10 +84,14 @@ def create_app(
     the_clock = clock or SystemClock()
     mcp = build_mcp(holder)
     mcp_app = mcp.http_app(path="/mcp")
+    hub = Hub()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Open the database, reconcile, then start the scheduler and the media download; stop both at the end."""
+        """Open the database, reconcile, then start the scheduler, the media download and the discovery; stop them at the end.
+
+        The discovery runs as a task, so a slow Supervisor never delays the start.
+        """
         engine = open_database(settings.data_dir)
         app.state.engine = engine
         library = Library(engine)
@@ -84,7 +99,12 @@ def create_app(
         ha = HaClient(
             settings.ha_url, settings.ha_token, settings.ha_token_file, ha_transport
         )
-        training_days = TrainingDays(engine, the_clock, settings.timezone, _no_publish)
+        training_days = TrainingDays(
+            engine,
+            the_clock,
+            settings.timezone,
+            _publisher(hub, asyncio.get_running_loop()),
+        )
         holder.set(
             Services(
                 engine=engine,
@@ -100,10 +120,13 @@ def create_app(
             _run_scheduler(training_days, settings.scheduler_interval)
         )
         download = asyncio.create_task(media.download_missing(library.media_files()))
+        announce = asyncio.create_task(
+            discovery.announce(settings, supervisor_transport)
+        )
         try:
             yield
         finally:
-            for task in (scheduler, download):
+            for task in (scheduler, download, announce):
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
@@ -121,6 +144,7 @@ def create_app(
     app.state.media_transport = media_transport
     app.state.clock = the_clock
     app.state.supervisor_transport = supervisor_transport
+    app.state.hub = hub
 
     @app.get("/api/v1/health")
     async def health() -> Health:
