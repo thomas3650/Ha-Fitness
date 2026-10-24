@@ -103,7 +103,8 @@ For every UI change, in the fast loop (and in the full loop before a release):
 ## MCP check from Claude Code
 
 From step 3 on the add-on serves MCP at `/mcp`; the tools are spec §8
-([step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md)). The dev entry is named
+([step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md)), plus `get_today` and `skip_training_day`
+([step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.5). The dev entry is named
 `ha-fitness-dev`. The real add-on's entry is another one, kept outside this repo ([`addon/DOCS.md`](../addon/DOCS.md)).
 
 1. Add the endpoint: `claude mcp add --transport http ha-fitness-dev http://localhost:8765/mcp` (local scope: it goes

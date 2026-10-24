@@ -265,7 +265,8 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   today, and today again on every run. The first run starts at today and makes up no past days. Program writes
   reconcile first, then act: switching off or deleting removes the program's open days (closed days stay), a rename
   renames its open days, and a weekday change leaves existing days alone. So a pause on a day the program doesn't
-  train removes its late day, which then never counts as missed.
+  train removes its late day, which then never counts as missed. `training_days` uses `AUTOINCREMENT`, so an id
+  removed by a switch-off, a delete or the dev DELETE is never given out again; the card and the service skip by id.
 - **Why:** A program made or switched on in the morning reminds the same day. Counting starts when the app is live.
   Reconciling first means a write right after midnight never changes a day that should already be closed.
 - **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.3; reconcile-first: the step 4
