@@ -80,6 +80,8 @@ const listeners = new Set<(state: SessionState) => void>();
 let dialog: HTMLDialogElement | undefined;
 let flow: FlowElement | undefined;
 let savedOverflow = "";
+/** When each view arrived (`Date.now()`); a flow opened later counts from that, not from the hand-over. */
+const arrivals = new WeakMap<SessionView, number>();
 
 const subscription = new WsSubscription<SessionState>("ha_fitness/session/subscribe", (message) => {
   // A refused subscription counts as unreachable; like the integration, it keeps the last view so
@@ -88,6 +90,8 @@ const subscription = new WsSubscription<SessionState>("ha_fitness/session/subscr
 });
 
 function receive(next: SessionState): void {
+  // The refused path repeats the last view object; it keeps its first arrival.
+  if (next.session && !arrivals.has(next.session)) arrivals.set(next.session, Date.now());
   current = next;
   if (flow) flow.state = next;
   for (const listener of [...listeners]) listener(next);
@@ -103,6 +107,11 @@ export function setHass(next: OverlayHass): void {
 /** The latest message of `ha_fitness/session/subscribe`; unavailable with no session before the first. */
 export function state(): SessionState {
   return current;
+}
+
+/** The local time (`Date.now()`) the controller received `view`, or undefined for a view it never had. */
+export function receivedAt(view: SessionView): number | undefined {
+  return arrivals.get(view);
 }
 
 /** Call `listener` with every new state. Returns the unsubscribe. */

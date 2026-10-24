@@ -4,7 +4,14 @@ import { unlockAudio } from "./audio";
 import { type Vars, localize } from "./i18n";
 import { type ImageHass, type ImageKind, imageUrl } from "./images";
 import { type LanguageHass, cardLanguage } from "./language";
-import type { OverlayMode, PhaseKind, SessionState, SessionStation, SessionView } from "./overlay";
+import {
+  type OverlayMode,
+  type PhaseKind,
+  type SessionState,
+  type SessionStation,
+  type SessionView,
+  receivedAt,
+} from "./overlay";
 import { ring } from "./ring";
 
 /** An active program, as `ha_fitness/programs` returns it (spec §4). */
@@ -496,16 +503,17 @@ export class WorkoutFlow extends LitElement {
   /** Keep the newer of the flow's view and `view`: a higher revision, or another session. */
   private take(view: SessionView | undefined): void {
     if (!view) return;
-    // Every message's stamp corrects the clock, applied or not. A stamp seen before (the
-    // controller repeats the last view while refused) is old, so it would set the clock back.
+    // Every message's stamp corrects the clock, applied or not, as of when the message arrived:
+    // a flow opened later gets the controller's last view. A stamp seen before (the controller
+    // repeats the last view while refused) is old, so it would set the clock back.
     if (view.server_time !== this.stamp) {
       this.stamp = view.server_time;
-      this.offset = Date.parse(view.server_time) - Date.now();
+      this.offset = Date.parse(view.server_time) - (receivedAt(view) ?? Date.now());
     }
     const newest = this.newest;
     if (newest && newest.id === view.id && newest.revision >= view.revision) return;
     // An alert belongs to the session it came from.
-    if (newest && newest.id !== view.id) this.error = undefined;
+    if (newest?.id !== view.id) this.error = undefined;
     this.newest = view;
     if (isActive(view)) this.leftDetails = true;
   }

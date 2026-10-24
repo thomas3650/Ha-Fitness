@@ -2,6 +2,7 @@ import { getAllByRole, getByRole, queryAllByRole, queryByRole, queryByText } fro
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import "../src/index";
+import * as overlay from "../src/overlay";
 import type { OverlayMode, SessionPhase, SessionState, SessionView } from "../src/overlay";
 import { installFakeAudio } from "./fake-audio";
 
@@ -33,11 +34,11 @@ interface Pending {
 }
 
 /** A fake `hass` with `callWS` for §4's commands; each session command waits for the test. */
-function fakeHass(language = "da", people = [thomas, maria]) {
+function fakeHass(language = "da", people = [thomas, maria], programs: unknown[] = []) {
   const commands: Pending[] = [];
   const callWS = vi.fn((message: Message): Promise<unknown> => {
     if (message.type === "ha_fitness/people") return Promise.resolve(people);
-    if (message.type === "ha_fitness/programs") return Promise.resolve([]);
+    if (message.type === "ha_fitness/programs") return Promise.resolve(programs);
     if (message.type === "ha_fitness/session/command") {
       return new Promise((resolve, reject) => commands.push({ message, resolve, reject }));
     }
@@ -572,4 +573,61 @@ test("the timer in English", async () => {
   await push(flow, finished(true));
   expect(text(getByRole(root(flow), "heading"))).toBe("Well done!");
   expect(hasText(flow, "5/5 rounds")).toBe(true);
+});
+
+test("a view handed over later counts from when it arrived", async () => {
+  // The page's controller subscribed long before Fortsæt; messages come only on a change.
+  let deliver: (message: SessionState) => void = () => undefined;
+  const connection = {
+    subscribeMessage: vi.fn(async (callback: (message: SessionState) => void) => {
+      deliver = callback;
+      return () => undefined;
+    }),
+  };
+  const fake = fakeHass("da");
+  overlay.setHass({ ...fake.hass, connection } as unknown as overlay.OverlayHass);
+  await vi.advanceTimersByTimeAsync(0);
+  deliver({ available: true, session: view() });
+
+  await vi.advanceTimersByTimeAsync(20_000);
+  overlay.open({ kind: "resume" });
+  const flow = getByRole(document.body, "dialog").firstElementChild as FlowElement;
+  await settle(flow);
+  try {
+    expect(ringState(flow).now).toBe("25");
+    expect(hasText(flow, "6:20 / 29:00")).toBe(true);
+  } finally {
+    overlay.close();
+  }
+});
+
+test("a session's first view clears an alert from details", async () => {
+  const program = {
+    id: 3,
+    name: "Onsdag",
+    rounds: 5,
+    work_seconds: 45,
+    switch_seconds: 15,
+    round_rest_seconds: 60,
+    countdown_seconds: 10,
+    total_minutes: 29,
+    stations: [push_up, squat, planke].map(({ exercise_id, name }) => ({ exercise_id, name })),
+  };
+  const fake = fakeHass("da", [thomas, maria], [program]);
+  const flow = document.createElement("ha-fitness-workout-flow") as FlowElement;
+  document.body.append(flow);
+  flow.hass = fake.hass;
+  flow.state = { available: true, session: null };
+  flow.mode = { kind: "details", programId: 3 };
+  flow.onClose = vi.fn();
+  await settle(flow);
+  await tap(flow, button(flow, "Start"));
+  fake.commands[0].reject({ code: "invalid", message: "Too many participants" });
+  await settle(flow);
+  expect(queryByRole(root(flow), "alert")).not.toBeNull();
+
+  // A session started elsewhere arrives: the flow moves on, and the alert doesn't come along.
+  await push(flow, view());
+  expect(queryByRole(root(flow), "progressbar")).not.toBeNull();
+  expect(queryByRole(root(flow), "alert")).toBeNull();
 });
