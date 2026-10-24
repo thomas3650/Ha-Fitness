@@ -75,17 +75,17 @@ export function renderDone(ctx: DoneContext): TemplateResult {
       ? html`<p class="line">${t("flow.done.subtitle", { program: view.program_name, date: localDate(t, when) })}</p>`
       : nothing}
     <dl class="done-tiles">
-      <div class="done-tile">
+      <div class="card done-tile">
         <dt>${t("flow.done.time")}</dt>
         <dd class="done-value">${clock(view.time_trained)}</dd>
       </div>
-      <div class="done-tile">
+      <div class="card done-tile">
         <dt>${t("flow.done.rounds")}</dt>
         <dd class="done-value">
           ${t("flow.done.rounds_value", { done: view.rounds_completed, rounds: view.totals.rounds })}
         </dd>
       </div>
-      <div class="done-tile">
+      <div class="card done-tile">
         <dt>${t("flow.done.trained")}</dt>
         <dd class="done-names">${view.participants.map((person) => person.name).join(", ")}</dd>
       </div>
@@ -101,7 +101,7 @@ export function renderDone(ctx: DoneContext): TemplateResult {
 /** The streak tile: each participant's colour dot, name and streak. */
 function renderStreaks(ctx: DoneContext) {
   return html`
-    <div class="done-tile streak">
+    <div class="card done-tile streak">
       <dt>${ctx.t("flow.done.streak")}</dt>
       <dd>
         <ul class="done-streaks">
@@ -136,6 +136,7 @@ function renderFeeling(ctx: DoneContext, chosen: Feeling | null) {
           }),
         )}
       </div>
+      <p class="done-hint">${t("flow.done.feeling_hint")}</p>
       ${renderError(ctx.feelingError)}
     </div>
   `;
@@ -167,7 +168,12 @@ export const doneStyles = css`
     gap: 6px;
     padding: 20px;
     border-radius: 20px;
-    background: var(--card-background-color, var(--secondary-background-color));
+  }
+  .done-tile.streak {
+    background: color-mix(in srgb, #ff8a3d 10%, var(--card-background-color, #fff));
+  }
+  .done-tile.streak dt {
+    color: #b54708;
   }
   .done-tile dt {
     color: var(--secondary-text-color);
@@ -177,7 +183,7 @@ export const doneStyles = css`
     margin: 0;
   }
   .done-value {
-    font-size: 2.25rem;
+    font-size: 2.5rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
@@ -232,6 +238,17 @@ export const doneStyles = css`
   button.done-option[aria-pressed="true"] {
     border: 2px solid var(--success-color, var(--primary-color));
     background: color-mix(in srgb, var(--success-color, var(--primary-color)) 15%, transparent);
+  }
+  .done-hint {
+    margin: 12px 0 0;
+    color: var(--secondary-text-color);
+    font-size: 0.875rem;
+  }
+  /* The column on an 800 px portrait tablet: two tiles a row. */
+  @container (max-width: 900px) {
+    .done-tiles {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
   .done-feeling .error {
     margin: 12px 0 0;

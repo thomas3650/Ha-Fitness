@@ -143,6 +143,7 @@
       "trained": "Trained",
       "streak": "Streak",
       "feeling": "How did it feel?",
+      "feeling_hint": "Saved with the session – Claude uses it when you ask it to adjust the program",
       "feelings": {
         "too_easy": "Too easy",
         "just_right": "Just right",

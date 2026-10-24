@@ -143,6 +143,7 @@
       "trained": "Trænede",
       "streak": "I træk",
       "feeling": "Hvordan føltes det?",
+      "feeling_hint": "Gemmes med træningen – Claude bruger det, når du beder om at justere programmet",
       "feelings": {
         "too_easy": "For let",
         "just_right": "Tilpas",

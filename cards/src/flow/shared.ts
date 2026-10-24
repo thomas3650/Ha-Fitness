@@ -131,7 +131,7 @@ export const sharedStyles = css`
   }
   /* Done: one centred column. The other steps use the wide page. */
   .page.column {
-    max-width: 720px;
+    max-width: 960px;
   }
   .page.column h2,
   .page.column > .line {
