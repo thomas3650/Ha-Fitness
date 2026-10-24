@@ -378,6 +378,40 @@ test("a failed tap shows one text per code under the buttons", async () => {
   expect(queryByRole(root(flow), "alert")).toBeNull();
 });
 
+/** How many stats subscriptions the flow has made. */
+function statsSubscriptionsOf(fake: Fake): number {
+  return fake.subscribeMessage.mock.calls.filter(([, message]) => message.type === "ha_fitness/stats/subscribe")
+    .length;
+}
+
+test("done closes by itself 60 s after the finish; a later push of the same session doesn't start that over", async () => {
+  const fake = fakeHass("da");
+  const { flow, onClose } = await mount(fake, running());
+  await push(flow, completed());
+
+  // Another tablet rates it at 30 s: a newer view of the same session.
+  await wait(flow, 30_000);
+  await push(flow, completed({ revision: 41, feeling: "too_easy" }));
+  expect(feelings(flow, "Hvordan føltes det?")?.[0]).toEqual(["For let", "true"]);
+  await wait(flow, 29_999);
+  expect(onClose).not.toHaveBeenCalled();
+  await wait(flow, 1);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test("the stats subscription ends when the flow leaves done for another step", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, completed());
+  expect(statsSubscriptionsOf(fake)).toBe(1);
+  expect(fake.unsubscribe).not.toHaveBeenCalled();
+
+  // A Start on a card while the finished view shows: the flow goes to details.
+  flow.mode = { kind: "details", programId: 3 };
+  await settle(flow);
+  expect(queryByRole(root(flow), "heading", { name: "Træning gennemført" })).toBeNull();
+  expect(fake.unsubscribe).toHaveBeenCalledTimes(1);
+});
+
 test("done closes by itself after 60 s, and a tap on a feeling starts that over", async () => {
   const fake = fakeHass("da");
   const { flow, onClose } = await mount(fake, running());
@@ -459,6 +493,8 @@ test("ended, not counted: the title, time, rounds and who trained; no check, str
   const { flow, onClose } = await mount(fake, ended(false));
   expect(heading(flow)).toBe("Træningen blev afsluttet");
   expect(queryByRole(root(flow), "img")).toBeNull();
+  // No streak to show, so no stats to ask for.
+  expect(statsSubscriptionsOf(fake)).toBe(0);
   fake.sendStats(statsMessage([[1, "Thomas", 7], [2, "Maria", 3]]));
   await settle(flow);
   expect(tiles(flow)).toEqual([

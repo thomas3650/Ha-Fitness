@@ -207,9 +207,12 @@ export class WorkoutFlow extends LitElement {
     this.watchStats(this.step());
   }
 
-  /** The stats subscription is held while done shows, for the streak tile; leaving done drops it. */
+  /**
+   * The stats subscription is held while done shows a counted session, for the streak tile; an
+   * uncounted end shows no streak. Leaving done drops it.
+   */
   private watchStats(step: Step | undefined): void {
-    if (step === "done") {
+    if (step === "done" && this.newest?.counted) {
       this.statsSubscription.connect(this.hass?.connection);
       return;
     }
