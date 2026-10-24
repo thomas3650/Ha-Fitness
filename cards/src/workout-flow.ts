@@ -10,19 +10,30 @@ import {
   unlockAudio,
 } from "./audio";
 import { type DetailsContext, type Person, type Program, detailsStyles, renderDetails } from "./flow/details";
-import { type DoneContext, doneStyles, renderDone } from "./flow/done";
+import { type DoneContext, type Streak, doneStyles, renderDone } from "./flow/done";
 import { type ReadyContext, readyStyles, renderReady } from "./flow/ready";
 import { type Countdown, type ImageOf, type ReachNote, type SoundButton, renderBack, sharedStyles } from "./flow/shared";
 import { type TimerContext, renderTimer, timerStyles } from "./flow/timer";
 import { type Vars, localize } from "./i18n";
 import { type ImageHass, type ImageKind, imageUrl } from "./images";
 import { type LanguageHass, cardLanguage } from "./language";
-import { type OverlayMode, type SessionState, type SessionView, isActive, lostAt, receivedAt } from "./overlay";
+import {
+  type Feeling,
+  type OverlayMode,
+  type SessionState,
+  type SessionView,
+  isActive,
+  lostAt,
+  receivedAt,
+} from "./overlay";
 import { personColor } from "./people";
+import type { StatsMessage } from "./stats-card";
+import { type Connection, WsSubscription } from "./today-data";
 
 /** The part of Home Assistant's `hass` object the flow uses. */
 interface Hass extends LanguageHass, ImageHass {
   callWS<T>(message: { type: string } & Record<string, unknown>): Promise<T>;
+  connection?: Connection;
 }
 
 type Command = "pause" | "resume" | "next" | "previous" | "end";
@@ -61,6 +72,8 @@ interface EndQuestion {
 }
 /** The command errors with a text of their own; any other gets the general text. */
 const KNOWN_ERRORS = new Set(["not_found", "invalid", "unavailable"]);
+/** The feeling command's errors with a text of their own; any other gets the general text. */
+const FEELING_ERRORS = new Set(["conflict", "invalid", "unavailable"]);
 
 /** The ws error code of a rejected `callWS`, which rejects with `{code, message}`. */
 function errorCode(error: unknown): string | undefined {
@@ -70,7 +83,8 @@ function errorCode(error: unknown): string | undefined {
 
 /**
  * The workout flow in the overlay (spec §5.2): details, get ready, the timer and done. The overlay
- * controller hands it `hass`, the live session state, the mode and `onClose`; it never subscribes.
+ * controller hands it `hass`, the live session state, the mode and `onClose`; it never subscribes
+ * to the session itself. While done shows, it subscribes to the stats, for the streak tile.
  */
 export class WorkoutFlow extends LitElement {
   static override properties = {
@@ -85,6 +99,8 @@ export class WorkoutFlow extends LitElement {
     busy: { state: true },
     error: { state: true },
     result: { state: true },
+    stats: { state: true },
+    feelingError: { state: true },
   };
 
   declare hass?: Hass;
@@ -102,6 +118,10 @@ export class WorkoutFlow extends LitElement {
   declare error?: string;
   /** The newest view a command returned. */
   declare result?: SessionView;
+  /** The last stats message while done shows: nothing yet, or null while the subscription is refused. */
+  declare stats?: StatsMessage | null;
+  /** The text of a failed feeling tap. */
+  declare feelingError?: string;
 
   /** The newest view the flow has seen, from a push or a command result. */
   private newest?: SessionView;
@@ -137,6 +157,9 @@ export class WorkoutFlow extends LitElement {
   private plannedFrom?: { view?: SessionView; offset: number; reachable: boolean; locked: boolean; counting: boolean };
   private stopAudioWatch?: () => void;
   private readonly onActivity = (): void => this.armIdle();
+  private readonly statsSubscription = new WsSubscription<StatsMessage>("ha_fitness/stats/subscribe", (message) => {
+    this.stats = message;
+  });
 
   constructor() {
     super();
@@ -167,6 +190,8 @@ export class WorkoutFlow extends LitElement {
     this.endAsk(false);
     clearTimeout(this.unreachableTimer);
     clearTimeout(this.doneTimer);
+    this.statsSubscription.disconnect();
+    this.stats = undefined;
   }
 
   protected override willUpdate(changed: PropertyValues<this>): void {
@@ -179,6 +204,17 @@ export class WorkoutFlow extends LitElement {
     if (changed.has("mode")) this.leftDetails = isActive(this.newest);
     // The controller hands over `hass` on every card update; only a new mode loads again.
     if (changed.has("mode") || (changed.has("hass") && this.loadedFor !== this.mode)) this.load();
+    this.watchStats(this.step());
+  }
+
+  /** The stats subscription is held while done shows, for the streak tile; leaving done drops it. */
+  private watchStats(step: Step | undefined): void {
+    if (step === "done") {
+      this.statsSubscription.connect(this.hass?.connection);
+      return;
+    }
+    this.statsSubscription.disconnect();
+    if (this.stats !== undefined) this.stats = undefined;
   }
 
   protected override updated(): void {
@@ -212,8 +248,13 @@ export class WorkoutFlow extends LitElement {
       return;
     }
     if (this.doneFor === view.id) return;
-    clearTimeout(this.doneTimer);
     this.doneFor = view.id;
+    this.restartDone();
+  }
+
+  /** Start the done step's 60 s close (again). */
+  private restartDone(): void {
+    clearTimeout(this.doneTimer);
     this.doneTimer = setTimeout(() => this.close(), DONE_MS);
   }
 
@@ -260,7 +301,10 @@ export class WorkoutFlow extends LitElement {
     if (newest && view.id < newest.id) return;
     if (newest && newest.id === view.id && newest.revision >= view.revision) return;
     // An alert belongs to the session it came from.
-    if (newest?.id !== view.id) this.error = undefined;
+    if (newest?.id !== view.id) {
+      this.error = undefined;
+      this.feelingError = undefined;
+    }
     // The chime plays when this flow sees its session complete, not for a done step shown later.
     if (view.status === "completed" && newest?.id === view.id && isActive(newest) && !audioLocked()) {
       const now = this.now();
@@ -468,6 +512,38 @@ export class WorkoutFlow extends LitElement {
       this.error = this.t(code && KNOWN_ERRORS.has(code) ? `flow.error.${code}` : "flow.error.general");
       return false;
     }
+  }
+
+  /**
+   * "How did it feel?": send the answer; the mark follows the view it returns. A tap starts the
+   * 60 s close over, whether it goes through or not; a failure shows its text under the buttons.
+   */
+  private async sendFeeling(feeling: Feeling): Promise<void> {
+    const hass = this.hass;
+    if (!hass) return;
+    if (this.doneTimer) this.restartDone();
+    this.feelingError = undefined;
+    try {
+      const result = await hass.callWS<SessionView>({ type: "ha_fitness/session/command", command: "feeling", feeling });
+      if (this.isConnected) this.result = result;
+    } catch (error) {
+      if (!this.isConnected) return;
+      const code = errorCode(error);
+      this.feelingError = this.t(`flow.done.feeling_error.${code && FEELING_ERRORS.has(code) ? code : "general"}`);
+    }
+  }
+
+  /** The participants' streaks from the stats, matched by person id, in participant order. */
+  private streaks(view: SessionView): Streak[] {
+    const stats = this.stats;
+    if (!stats?.available || !stats.stats) return [];
+    const people = stats.stats.people;
+    return view.participants.flatMap((participant, index) => {
+      const person = people.find((candidate) => candidate.id === participant.id);
+      return person
+        ? [{ name: participant.name, streak: person.streak, color: this.participantColor(participant.id, index) }]
+        : [];
+    });
   }
 
   /**
@@ -739,7 +815,14 @@ export class WorkoutFlow extends LitElement {
   }
 
   private doneContext(view: SessionView): DoneContext {
-    return { t: this.texts, view, colors: this.participantColors(view), onClose: () => this.close() };
+    return {
+      t: this.texts,
+      view,
+      streaks: this.streaks(view),
+      feelingError: this.feelingError,
+      onFeeling: (feeling) => void this.sendFeeling(feeling),
+      onClose: () => this.close(),
+    };
   }
 
   protected override render() {

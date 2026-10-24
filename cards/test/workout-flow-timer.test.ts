@@ -727,40 +727,6 @@ test("unreachable keeps counting, holds at zero, Luk after 10 s", async () => {
   expect(ringState(flow)).toMatchObject({ name: "SKIFT", now: "8" });
 });
 
-test("done counted and not counted; auto-close 60 s", async () => {
-  const fake = fakeHass("da");
-  const { flow, onClose } = await mount(fake, view());
-
-  await push(flow, finished(true));
-  expect(text(getByRole(root(flow), "heading"))).toBe("Godt gået!");
-  expect(hasText(flow, "25:30")).toBe(true);
-  expect(hasText(flow, "5/5 runder")).toBe(true);
-  expect(getAllByRole(getByRole(root(flow), "list", { name: "Hvem trænede" }), "listitem").map(text)).toEqual([
-    "Thomas",
-    "Maria",
-  ]);
-  expect(queryByRole(root(flow), "progressbar")).toBeNull();
-
-  // It closes by itself after 60 s; a later push of the same view doesn't start that over.
-  await wait(flow, 30_000);
-  await push(flow, finished(true));
-  await wait(flow, 29_999);
-  expect(onClose).not.toHaveBeenCalled();
-  await wait(flow, 1);
-  expect(onClose).toHaveBeenCalledTimes(1);
-  document.body.replaceChildren();
-
-  // Not counted: no counting shown, and Luk closes.
-  const ended = await mount(fakeHass("da"), finished(false));
-  expect(text(getByRole(root(ended.flow), "heading"))).toBe("Træningen blev afsluttet");
-  expect(queryByText(root(ended.flow), /runder/)).toBeNull();
-  expect(queryByRole(root(ended.flow), "list")).toBeNull();
-  await tap(ended.flow, button(ended.flow, "Luk"));
-  expect(ended.onClose).toHaveBeenCalledTimes(1);
-  await wait(ended.flow, 60_000);
-  expect(ended.onClose).toHaveBeenCalledTimes(1);
-});
-
 test("the timer in English", async () => {
   const fake = fakeHass("en");
   const { flow } = await mount(fake, view());
@@ -773,10 +739,6 @@ test("the timer in English", async () => {
   expect(hasText(flow, "End the workout?")).toBe(true);
   expect(button(flow, "Yes")).toBeTruthy();
   expect(button(flow, "No")).toBeTruthy();
-
-  await push(flow, finished(true));
-  expect(text(getByRole(root(flow), "heading"))).toBe("Well done!");
-  expect(hasText(flow, "5/5 rounds")).toBe(true);
 });
 
 test("a view handed over later counts from when it arrived", async () => {

@@ -66,6 +66,20 @@
     "saturday": "lørdag",
     "sunday": "søndag"
   },
+  "month": {
+    "january": "januar",
+    "february": "februar",
+    "march": "marts",
+    "april": "april",
+    "may": "maj",
+    "june": "juni",
+    "july": "juli",
+    "august": "august",
+    "september": "september",
+    "october": "oktober",
+    "november": "november",
+    "december": "december"
+  },
   "error": {
     "not_found": "Træningsdagen findes ikke længere.",
     "not_open": "Træningsdagen er allerede afsluttet.",
@@ -108,11 +122,30 @@
       "rest": "PAUSE"
     },
     "done": {
-      "counted": "Godt gået!",
+      "complete": "Træning gennemført",
+      "ended_after": "Afsluttet efter {done} af {rounds} runder",
       "ended": "Træningen blev afsluttet",
+      "check": "Gennemført",
+      "subtitle": "{program} · {date}",
+      "date": "{weekday} {day}. {month}",
       "time": "Tid",
-      "rounds": "{done}/{rounds} runder",
-      "who": "Hvem trænede"
+      "rounds": "Runder",
+      "rounds_value": "{done} / {rounds}",
+      "trained": "Trænede",
+      "streak": "I træk",
+      "feeling": "Hvordan føltes det?",
+      "feelings": {
+        "too_easy": "For let",
+        "just_right": "Tilpas",
+        "too_hard": "For hårdt"
+      },
+      "feeling_error": {
+        "conflict": "Træningen kan ikke længere vurderes.",
+        "invalid": "Det svar kendes ikke.",
+        "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
+        "general": "Noget gik galt. Prøv igen."
+      },
+      "finish": "Færdig"
     },
     "unreachable": "HA Fitness kan ikke nås",
     "round": "Runde {round}/{rounds}",

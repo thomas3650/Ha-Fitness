@@ -66,6 +66,20 @@
     "saturday": "Saturday",
     "sunday": "Sunday"
   },
+  "month": {
+    "january": "January",
+    "february": "February",
+    "march": "March",
+    "april": "April",
+    "may": "May",
+    "june": "June",
+    "july": "July",
+    "august": "August",
+    "september": "September",
+    "october": "October",
+    "november": "November",
+    "december": "December"
+  },
   "error": {
     "not_found": "This training day no longer exists.",
     "not_open": "This training day is already finished.",
@@ -108,11 +122,30 @@
       "rest": "REST"
     },
     "done": {
-      "counted": "Well done!",
+      "complete": "Workout complete",
+      "ended_after": "Ended after {done} of {rounds} rounds",
       "ended": "The workout was ended",
+      "check": "Completed",
+      "subtitle": "{program} · {date}",
+      "date": "{weekday} {day} {month}",
       "time": "Time",
-      "rounds": "{done}/{rounds} rounds",
-      "who": "Who trained"
+      "rounds": "Rounds",
+      "rounds_value": "{done} / {rounds}",
+      "trained": "Trained",
+      "streak": "Streak",
+      "feeling": "How did it feel?",
+      "feelings": {
+        "too_easy": "Too easy",
+        "just_right": "Just right",
+        "too_hard": "Too hard"
+      },
+      "feeling_error": {
+        "conflict": "This workout can no longer be rated.",
+        "invalid": "That answer isn't known.",
+        "unavailable": "HA Fitness can't be reached. Try again later.",
+        "general": "Something went wrong. Try again."
+      },
+      "finish": "Done"
     },
     "unreachable": "HA Fitness can't be reached",
     "round": "Round {round}/{rounds}",
