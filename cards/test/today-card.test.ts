@@ -353,6 +353,7 @@ test("subscribes once and unsubscribes when removed", async () => {
   card.hass = { ...fake.hass };
   await card.updateComplete;
   expect(fake.subscribeMessage).toHaveBeenCalledTimes(1);
+  expect(fake.subscribeStats).toHaveBeenCalledTimes(1);
 
   card.remove();
   await vi.advanceTimersByTimeAsync(0);
@@ -985,8 +986,9 @@ async function pushStats(card: CardElement, fake: Fake, message: unknown): Promi
   await card.updateComplete;
 }
 
+/** The streak badge: the card's one `img` (its icons are all aria-hidden), whatever the language. */
 function streakBadge(card: CardElement): HTMLElement | null {
-  return queryByRole(root(card), "img", { name: /^Streak/ });
+  return queryByRole(root(card), "img");
 }
 
 function weekRing(card: CardElement, name: string): HTMLElement | null {
@@ -1004,7 +1006,7 @@ test("streak badge shows initials, numbers and an accessible name", async () => 
   );
 
   await pushStats(card, fake, statsMessage([{ name: "Thomas", streak: 6 }, { name: "Elin", streak: 4 }]));
-  const badge = getByRole(root(card), "img", { name: "Streak: Thomas 6, Elin 4" });
+  const badge = getByRole(root(card), "img", { name: "I træk: Thomas 6, Elin 4" });
   expect(text(badge)).toBe("T 6 E 4");
   // The top line: the title on the left, the badge on the right.
   expect(text(root(card)).startsWith("TRÆNING T 6 E 4")).toBe(true);
@@ -1022,7 +1024,7 @@ test("two-letter initials on a clash", async () => {
   const card = await mount(fake);
   await push(card, fake, today([wednesday]));
   await pushStats(card, fake, statsMessage([{ name: "Thomas", streak: 6 }, { name: "Tina", streak: 2 }]));
-  const badge = getByRole(root(card), "img", { name: "Streak: Thomas 6, Tina 2" });
+  const badge = getByRole(root(card), "img", { name: "I træk: Thomas 6, Tina 2" });
   expect(text(badge)).toBe("Th 6 Ti 2");
 });
 
@@ -1049,14 +1051,14 @@ test("streak badge hidden before counting, while stats are unavailable or refuse
   await pushStats(card, fake, statsMessage([]));
   expect(streakBadge(card)).toBeNull();
 
-  // A refused subscription.
-  const refused = fakeHass();
-  refused.subscribeStats.mockRejectedValue({ code: "unknown_command" });
-  const refusedCard = await mount(refused);
-  await push(refusedCard, refused, today([wednesday]));
-  await wait(refusedCard, 0);
-  expect(streakBadge(refusedCard)).toBeNull();
-  expect(rows(refusedCard).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
+  // A refused subscription: shown with good stats, then refused after a reconnect.
+  await pushStats(card, fake, statsMessage(people));
+  expect(streakBadge(card)).not.toBeNull();
+  fake.subscribeStats.mockRejectedValue({ code: "unknown_command" });
+  fake.fire("ready");
+  await wait(card, 0);
+  expect(streakBadge(card)).toBeNull();
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
 });
 
 test("stats alone never show a hidden card", async () => {
@@ -1079,10 +1081,11 @@ test("week ring shows done of planned", async () => {
 
   const english = fakeHass("en");
   const englishCard = await mount(english);
-  await push(englishCard, english, { ...today([wednesday]), week: { done: 5, planned: 4 } });
+  await push(englishCard, english, { ...today([wednesday]), week: { done: 3, planned: 4 } });
   const englishRing = weekRing(englishCard, "This week")!;
-  expect(englishRing.getAttribute("aria-valuenow")).toBe("5");
-  expect(text(englishRing)).toBe("5/4 This week");
+  expect(englishRing.getAttribute("aria-valuenow")).toBe("3");
+  expect(englishRing.getAttribute("aria-valuemax")).toBe("4");
+  expect(text(englishRing)).toBe("3/4 This week");
 });
 
 test("no ring without week or with planned 0", async () => {
@@ -1142,7 +1145,7 @@ test("several open days share one top line and ring", async () => {
 
   expect(rows(card)).toHaveLength(2);
   expect(queryAllByRole(root(card), "progressbar")).toHaveLength(1);
-  expect(queryAllByRole(root(card), "img", { name: /^Streak/ })).toHaveLength(1);
+  expect(queryAllByRole(root(card), "img")).toHaveLength(1);
   expect(text(root(card)).match(/TRÆNING/g)).toHaveLength(1);
 });
 
@@ -1155,7 +1158,7 @@ test("session row replaces the days but keeps the top line", async () => {
   fake.pushSession({ available: true, session: sessionView("running") });
   await card.updateComplete;
   expect(rows(card).map(text)).toEqual(["Træning i gang · Onsdag Fortsæt"]);
-  expect(getByRole(root(card), "img", { name: "Streak: Thomas 6" })).toBeTruthy();
+  expect(getByRole(root(card), "img", { name: "I træk: Thomas 6" })).toBeTruthy();
   expect(weekRing(card, "Denne uge")?.getAttribute("aria-valuenow")).toBe("2");
   expect(text(root(card)).startsWith("TRÆNING T 6")).toBe(true);
 });

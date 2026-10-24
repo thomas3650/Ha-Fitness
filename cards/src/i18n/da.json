@@ -31,7 +31,7 @@
     "nothing_open": "Ingen træning i dag",
     "unreachable": "HA Fitness kan ikke nås",
     "week": "Denne uge",
-    "streak_label": "Streak: {list}"
+    "streak_label": "I træk: {list}"
   },
   "session": {
     "running": "Træning i gang · {program}",
