@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from datetime import datetime
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -36,6 +36,9 @@ from .const import (
     TRAINING_DAY_EVENTS,
 )
 
+if TYPE_CHECKING:
+    from .music import MusicController
+
 _LOGGER = logging.getLogger(__name__)
 
 # The add-on's API versions this integration speaks (docs/architecture.md).
@@ -59,8 +62,11 @@ class FitnessCoordinator:
     same way for the add-on's stats (the stats spec §5.1). `music_supported` is set from each
     probe's answer for the music route (the music spec §5.6); it is kept across a disconnect, so a
     reconnect leaves no gap. Each change is also sent on the dispatcher (`SIGNAL_UPDATE`), which
-    the cards' subscriptions follow across entry reloads.
+    the cards' subscriptions follow across entry reloads. `music` is the music controller, set at
+    the entry's setup; it follows the session through a listener.
     """
+
+    music: MusicController
 
     def __init__(
         self,

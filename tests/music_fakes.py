@@ -21,6 +21,7 @@ from homeassistant.components.media_player.const import (
 from homeassistant.config_entries import ConfigEntry, ConfigFlow
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv, entity_platform
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 import probatio
@@ -82,7 +83,8 @@ class MockPlayer(MediaPlayerEntity):
 
     `calls` holds each call as `(name, arguments)`: `play_media`, `media_play`, `media_pause`,
     `media_next_track`, `volume_set` and `shuffle_set`. As on a real Music Assistant, pause, play, next and
-    shuffle do nothing while the player has no queue; `play_media` gives it one and plays it.
+    shuffle do nothing while the player has no queue; `play_media` gives it one and plays it. A call whose name
+    is in `fail` is recorded, then raises `HomeAssistantError` and changes nothing.
     """
 
     _attr_should_poll = False
@@ -101,11 +103,18 @@ class MockPlayer(MediaPlayerEntity):
         self._attr_shuffle = False
         self.has_queue = False
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.fail: set[str] = set()
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any]:
         """Return `mass_player_type`; HA leaves it out while the player is unavailable."""
         return {"mass_player_type": "player"}
+
+    def _record(self, name: str, arguments: dict[str, Any]) -> None:
+        """Record a call; raise when the call is set to fail."""
+        self.calls.append((name, arguments))
+        if name in self.fail:
+            raise HomeAssistantError(f"{name} failed on {self.entity_id}")
 
     def set_available(self, available: bool) -> None:
         """Make the player available or unavailable."""
@@ -123,11 +132,9 @@ class MockPlayer(MediaPlayerEntity):
         username: str | None = None,
     ) -> None:
         """Play the first of `media_id` from the start (`music_assistant.play_media`)."""
-        self.calls.append(
-            (
-                "play_media",
-                {"media_id": media_id, "media_type": media_type, "enqueue": enqueue},
-            )
+        self._record(
+            "play_media",
+            {"media_id": media_id, "media_type": media_type, "enqueue": enqueue},
         )
         self.has_queue = True
         self._attr_media_title = media_id[0]
@@ -136,31 +143,31 @@ class MockPlayer(MediaPlayerEntity):
 
     async def async_media_play(self) -> None:
         """Play again; a player with no queue stays idle."""
-        self.calls.append(("media_play", {}))
+        self._record("media_play", {})
         if self.has_queue:
             self._attr_state = MediaPlayerState.PLAYING
             self.async_write_ha_state()
 
     async def async_media_pause(self) -> None:
         """Pause; a player with no queue stays idle."""
-        self.calls.append(("media_pause", {}))
+        self._record("media_pause", {})
         if self.has_queue:
             self._attr_state = MediaPlayerState.PAUSED
             self.async_write_ha_state()
 
     async def async_media_next_track(self) -> None:
         """Go on to the next track."""
-        self.calls.append(("media_next_track", {}))
+        self._record("media_next_track", {})
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set the volume (only the players with `VOLUME_SET`)."""
-        self.calls.append(("volume_set", {"volume_level": volume}))
+        self._record("volume_set", {"volume_level": volume})
         self._attr_volume_level = volume
         self.async_write_ha_state()
 
     async def async_set_shuffle(self, shuffle: bool) -> None:
         """Set shuffle; like a real Music Assistant, do nothing while there is no queue."""
-        self.calls.append(("shuffle_set", {"shuffle": shuffle}))
+        self._record("shuffle_set", {"shuffle": shuffle})
         if not self.has_queue:
             return
         self._attr_shuffle = shuffle
