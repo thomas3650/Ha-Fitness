@@ -230,14 +230,38 @@ test("details shows program, stations with thumbnails, rounds and seconds", asyn
   const stations = getAllByRole(getByRole(root(flow), "list", { name: "Øvelser" }), "listitem");
   expect(stations.map(text)).toEqual(["1 Push-up", "2 Squat", "3 Planke"]);
   // Push-up's thumbnail comes from the media proxy; the others show a neutral placeholder.
-  const pushUp = getByRole(stations[0], "img", { name: "Push-up" }) as HTMLImageElement;
-  expect(pushUp.tagName).toBe("IMG");
-  expect(pushUp.getAttribute("src")).toMatch(/^blob:image-/);
-  expect(getByRole(stations[1], "img", { name: "Squat" }).tagName).not.toBe("IMG");
+  expect(getByRole(stations[0], "img", { name: "Push-up" }).getAttribute("src")).toMatch(/^blob:image-/);
+  expect(getByRole(stations[1], "img", { name: "Squat" }).getAttribute("src")).toBeNull();
   expect(fake.hass.fetchWithAuth).toHaveBeenCalledWith("/api/ha_fitness/media/0001/thumbnail");
 
   expect(button(flow, "Start").disabled).toBe(false);
   expect(button(flow, "Tilbage")).toBeTruthy();
+});
+
+test("details fetches once per open, whatever hass hand-overs come", async () => {
+  const fake = fakeHass("da");
+  let answer: (programs: Program[]) => void = () => undefined;
+  const slow = new Promise<Program[]>((resolve) => {
+    answer = resolve;
+  });
+  const callWS = fake.callWS.getMockImplementation()!;
+  fake.callWS.mockImplementation((message: Message) =>
+    message.type === "ha_fitness/programs" ? slow : callWS(message),
+  );
+  const { flow, onClose } = await mount(fake, details);
+
+  // Home Assistant hands over a new hass object on every state change.
+  for (let i = 0; i < 3; i += 1) {
+    flow.hass = { ...fake.hass };
+    await wait(flow, 20_000);
+  }
+  answer([onsdag]);
+  await settle(flow);
+  const calls = fake.callWS.mock.calls.map(([message]) => message.type);
+  expect(calls.filter((type) => type === "ha_fitness/programs")).toHaveLength(1);
+  expect(calls.filter((type) => type === "ha_fitness/people")).toHaveLength(1);
+  // The idle guard ran from the open: 60 s after it, the flow closes.
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
 test("Tilbage closes", async () => {

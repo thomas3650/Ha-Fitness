@@ -96,6 +96,8 @@ export class WorkoutFlow extends LitElement {
   private newest?: SessionView;
   /** Set once this flow has started a session, or shown one: details never comes back. */
   private leftDetails = false;
+  /** The mode the programs and people were fetched for; one fetch per open. */
+  private loadedFor?: OverlayMode;
   /** Sessions annulled from get ready: their done step never shows. */
   private readonly annulled = new Set<number>();
   private idleTimer?: ReturnType<typeof setTimeout>;
@@ -246,7 +248,7 @@ export class WorkoutFlow extends LitElement {
     // A new details mode on the same flow (a Start while a finished view shows) starts over.
     if (changed.has("mode")) this.leftDetails = isActive(this.newest);
     // The controller hands over `hass` on every card update; only a new mode loads again.
-    if (changed.has("mode") || (changed.has("hass") && this.programs === undefined)) this.load();
+    if (changed.has("mode") || (changed.has("hass") && this.loadedFor !== this.mode)) this.load();
   }
 
   protected override updated(): void {
@@ -276,6 +278,7 @@ export class WorkoutFlow extends LitElement {
     const mode = this.mode;
     const hass = this.hass;
     if (mode?.kind !== "details" || !hass) return;
+    this.loadedFor = mode;
     this.error = undefined;
     this.selected = new Set();
     this.programs = undefined;
