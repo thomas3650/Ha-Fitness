@@ -90,20 +90,32 @@ def _start(
 
 
 def _train_before(
-    tc: TestClient, clock: FrozenClock, program_id: int, person: int, begin: datetime
+    tc: TestClient,
+    clock: FrozenClock,
+    program_id: int,
+    person: int,
+    begin: datetime,
+    *,
+    keep_view: bool = False,
 ) -> None:
-    """Without a connection: train the program's open day at `begin`, so `counting_from` is set."""
+    """Before the test's connection: train the program's open day at `begin`, so `counting_from` is set.
+
+    Only the session loop's tick pushes `session: null` when the finished view goes, at a time of its own. So unless
+    `keep_view`, a connection of its own waits for that null after the 5 minutes, and it can't reach the test's
+    connection later.
+    """
     clock.set(begin)
     day_id = _open_day(tc, program_id)
     _start(tc, program_id, person, day_id)
-    clock.set(at(begin, SMALL_END))
+    _finish(tc, clock, at(begin, SMALL_END))
     assert tc.get(SESSION).json()["status"] == "completed"
-
-
-def _move(tc: TestClient, clock: FrozenClock, moment: datetime) -> None:
-    """Without a connection: set the clock and read `/session`, so a finished view that has gone is pushed now."""
-    clock.set(moment)
-    assert tc.get(SESSION).status_code == 200
+    if keep_view:
+        return
+    with tc.websocket_connect(WS) as ws:
+        _hello(ws)
+        _window_passes(clock, at(begin, SMALL_END))
+        [_, null] = _next(ws, "stats", "session")
+    assert null["data"] is None
 
 
 def _hello(ws: Any) -> None:
@@ -148,12 +160,13 @@ def _finish(tc: TestClient, clock: FrozenClock, moment: datetime) -> None:
     assert tc.get(SESSION).status_code == 200
 
 
-def _window_passes(tc: TestClient, clock: FrozenClock, ended: datetime) -> None:
-    """Move past the finished view's 5 minutes after `ended`; the tick pushes `session: null`, without a reconcile.
+def _window_passes(clock: FrozenClock, ended: datetime) -> None:
+    """Move past the finished view's 5 minutes after `ended`; the session loop's tick pushes `session: null`.
 
-    The known next message after a finish: a session start would reconcile, which checks the stats anyway.
+    The known next message after a finish: the tick doesn't reconcile, while a session start would, which checks the
+    stats anyway.
     """
-    _finish(tc, clock, ended + KEPT + timedelta(seconds=1))
+    clock.set(ended + KEPT + timedelta(seconds=1))
 
 
 def _thomas_stats(message: dict[str, Any]) -> dict[str, Any]:
@@ -196,9 +209,9 @@ def test_newer_queued_stats_replaces_the_snapshot(make_app: MakeApp) -> None:
         thomas = _thomas(tc)
         program_id = _program(tc, "Lille", ["wed", "thu", "fri"])
         _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
-        _move(tc, clock, local(2026, 10, 29, 9))
+        clock.set(local(2026, 10, 29, 9))
         _open_day(tc, program_id)
-        _move(tc, clock, local(2026, 10, 30, 9))
+        clock.set(local(2026, 10, 30, 9))
         with tc.websocket_connect(WS) as ws:
             _hello(ws)
             _known(tc, program_id, thomas)
@@ -214,7 +227,7 @@ def test_skip_publishes_stats(make_app: MakeApp) -> None:
         thomas = _thomas(tc)
         program_id = _program(tc, "Lille", ["wed", "thu"])
         _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
-        _move(tc, clock, local(2026, 10, 29, 9))
+        clock.set(local(2026, 10, 29, 9))
         day_id = _open_day(tc, program_id)
         with tc.websocket_connect(WS) as ws:
             _hello(ws)
@@ -236,7 +249,7 @@ def test_reconcile_that_misses_a_day_publishes_stats(make_app: MakeApp) -> None:
         thomas = _thomas(tc)
         program_id = _program(tc, "Lille", ["wed", "thu", "fri"])
         _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
-        _move(tc, clock, local(2026, 10, 29, 9))
+        clock.set(local(2026, 10, 29, 9))
         _open_day(tc, program_id)
         with tc.websocket_connect(WS) as ws:
             _hello(ws)
@@ -263,7 +276,7 @@ def test_completed_day_session_publishes_stats(make_app: MakeApp) -> None:
             _hello(ws)
             _start(tc, program_id, thomas, day_id)
             _finish(tc, clock, at(WEDNESDAY_9, SMALL_END))
-            _window_passes(tc, clock, at(WEDNESDAY_9, SMALL_END))
+            _window_passes(clock, at(WEDNESDAY_9, SMALL_END))
             [before, *_, stats, _] = _next(
                 ws,
                 "stats",
@@ -291,12 +304,12 @@ def test_counted_extra_sessions_publish_stats(make_app: MakeApp) -> None:
         program_id = _program(tc, "Lille", ["wed"])
         _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
         ten = local(2026, 10, 28, 10)
-        _move(tc, clock, ten)
+        clock.set(ten)
         with tc.websocket_connect(WS) as ws:
             _hello(ws)
             _start(tc, program_id, thomas)
             _finish(tc, clock, at(ten, SMALL_END))
-            _window_passes(tc, clock, at(ten, SMALL_END))
+            _window_passes(clock, at(ten, SMALL_END))
             [*_, completed, _] = _next(
                 ws,
                 "stats",
@@ -312,7 +325,7 @@ def test_counted_extra_sessions_publish_stats(make_app: MakeApp) -> None:
             _finish(tc, clock, at(later, SMALL_STARTS[5] + 1))
             response = tc.post(f"{SESSION}/end", headers=AGENT)
             assert response.status_code == 200, response.text
-            _window_passes(tc, clock, clock.now())
+            _window_passes(clock, clock.now())
             [*_, ended, _] = _next(
                 ws,
                 *KNOWN,
@@ -341,7 +354,7 @@ def test_first_counted_session_extra_publishes_stats(make_app: MakeApp) -> None:
             _hello(ws)
             _start(tc, program_id, thomas)
             _finish(tc, clock, at(WEDNESDAY_9, SMALL_END))
-            _window_passes(tc, clock, at(WEDNESDAY_9, SMALL_END))
+            _window_passes(clock, at(WEDNESDAY_9, SMALL_END))
             [before, *_, stats, null] = _next(
                 ws,
                 "stats",
@@ -375,11 +388,11 @@ def test_people_change_publishes_stats(make_app: MakeApp) -> None:
     with _client(make_app, clock) as tc:
         thomas = _thomas(tc)
         program_id = _program(tc, "Lille", ["wed"])
-        _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
+        _train_before(tc, clock, program_id, thomas, WEDNESDAY_9, keep_view=True)
         with tc.websocket_connect(WS) as ws:
             _hello(ws)
             assert _thomas(tc, "Tom") == thomas
-            _window_passes(tc, clock, at(WEDNESDAY_9, SMALL_END))
+            _window_passes(clock, at(WEDNESDAY_9, SMALL_END))
             [before, stats, null] = _next(ws, "stats", "stats", "session")
     assert _thomas_stats(before)["name"] == "Thomas"
     assert _thomas_stats(stats)["name"] == "Tom"
@@ -393,7 +406,7 @@ def test_uncounted_end_publishes_no_stats(make_app: MakeApp) -> None:
         thomas = _thomas(tc)
         program_id = _program(tc, "Lille", ["wed"])
         _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
-        _move(tc, clock, local(2026, 10, 28, 10))
+        clock.set(local(2026, 10, 28, 10))
         with tc.websocket_connect(WS) as ws:
             _hello(ws)
             _start(tc, program_id, thomas)
@@ -422,7 +435,10 @@ def test_unchanged_stats_publish_nothing(make_app: MakeApp) -> None:
 def test_minute_loop_pushes_stats_on_a_new_month_only(make_app: MakeApp) -> None:
     """The minute loop pushes `stats` across midnight into November, and not across an ordinary midnight.
 
-    Each step reads its messages after the next clock move, so a missing `stats` shows up as the next `today`.
+    The loop reads the clock for the reconcile, for `today` and for the stats one after the other, so a clock move
+    during a run can send November's `stats` before November's `today`. Both orders are fine. When `today` comes
+    first, the clock moves on to 2 November before the `stats` is read, so a missing `stats` shows up as that date's
+    `today` and not as a wait with no end.
     """
     clock = FrozenClock(local(2026, 10, 30, 23, 59))
     app = make_app(
@@ -433,9 +449,17 @@ def test_minute_loop_pushes_stats_on_a_new_month_only(make_app: MakeApp) -> None
         clock.set(local(2026, 10, 31, 0, 1))
         [before, october] = _next(ws, "stats", "today")
         clock.set(local(2026, 11, 1, 0, 1))
-        [november] = _next(ws, "today")
-        clock.set(local(2026, 11, 2, 0, 1))
-        [stats, monday] = _next(ws, "stats", "today")
+        first = ws.receive_json()
+        if first["type"] == "stats":
+            stats = first
+            [november] = _next(ws, "today")
+            clock.set(local(2026, 11, 2, 0, 1))
+            [monday] = _next(ws, "today")
+        else:
+            assert first["type"] == "today", first
+            november = first
+            clock.set(local(2026, 11, 2, 0, 1))
+            [stats, monday] = _next(ws, "stats", "today")
     assert before["data"]["month"] == "2026-10"
     assert october["data"]["date"] == "2026-10-31"
     assert november["data"]["date"] == "2026-11-01"
