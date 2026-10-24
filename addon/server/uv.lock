@@ -584,6 +584,7 @@ name = "ha-fitness-server"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "anyio" },
     { name = "fastapi" },
     { name = "fastmcp" },
     { name = "httpx" },
@@ -604,6 +605,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.1" },
+    { name = "anyio", specifier = ">=4.15.1" },
     { name = "fastapi" },
     { name = "fastmcp", specifier = "==4.1.3" },
     { name = "httpx", specifier = ">=0.28.1" },

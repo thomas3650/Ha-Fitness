@@ -260,9 +260,8 @@ async def test_rename_updates_open_days(make_app: MakeApp) -> None:
     clock = FrozenClock(local(2026, 10, 28))
     async with started(make_app, clock) as client:
         program_id = await _create(client, "Onsdag", ["wed"])
+        # No read and no scheduler run after the jump: the write itself reconciles first.
         clock.set(local(2026, 11, 4))
-        # The minute's reconcile closes the 28th before the rename.
-        assert len((await _today(client))["open"]) == 1
         response = await client.put(
             f"{PROGRAMS}/{program_id}", json=_program("Midtuge", ["wed"])
         )
@@ -272,6 +271,35 @@ async def test_rename_updates_open_days(make_app: MakeApp) -> None:
             ("2026-10-28", "Onsdag", "missed"),
             ("2026-11-04", "Midtuge", "open"),
         ]
+
+
+async def test_delete_right_after_midnight_keeps_late_day_as_missed(
+    make_app: MakeApp,
+) -> None:
+    """A delete with no read since midnight first closes the late day as missed, so it stays, without a program id."""
+    clock = FrozenClock(local(2026, 10, 28))
+    async with started(make_app, clock) as client:
+        program_id = await _create(client, "Onsdag", ["wed"])
+        clock.set(local(2026, 11, 4, 0, 1))
+        response = await client.delete(f"{PROGRAMS}/{program_id}")
+        assert response.status_code == 204
+        days = await _days(client, "2026-10-28", "2026-11-04")
+        assert _statuses(days) == [("2026-10-28", "Onsdag", "missed")]
+        assert days[0]["program_id"] is None
+        assert (await _today(client))["open"] == []
+
+
+async def test_adding_todays_weekday_makes_todays_day(make_app: MakeApp) -> None:
+    """An update that adds today's weekday makes today's day at once."""
+    clock = FrozenClock(local(2026, 10, 28))
+    async with started(make_app, clock) as client:
+        program_id = await _create(client, "Torsdag", ["thu"])
+        assert (await _today(client))["open"] == []
+        response = await client.put(
+            f"{PROGRAMS}/{program_id}", json=_program("Torsdag", ["wed", "thu"])
+        )
+        assert response.status_code == 200
+        assert _open(await _today(client)) == [("Torsdag", "2026-10-28", "due")]
 
 
 async def test_delete_removes_open_keeps_closed(make_app: MakeApp) -> None:
@@ -392,17 +420,20 @@ async def test_dst_sundays_one_rollover_each(make_app: MakeApp) -> None:
 
 
 async def test_training_days_range_is_inclusive_by_date(make_app: MakeApp) -> None:
-    """`/training-days` returns the days from `from` to `to`, both included, by date."""
+    """`/training-days` returns the days from `from` to `to`, both included, by date, then name ignoring case."""
     clock = FrozenClock(local(2026, 10, 28))
     async with started(make_app, clock) as client:
         await _create(client, "Onsdag", ["wed"])
         await _create(client, "Torsdag", ["thu"])
+        await _create(client, "aften", ["thu"])
         clock.set(local(2026, 10, 29))
         assert _statuses(await _days(client, "2026-10-28", "2026-10-29")) == [
             ("2026-10-28", "Onsdag", "missed"),
+            ("2026-10-29", "aften", "open"),
             ("2026-10-29", "Torsdag", "open"),
         ]
         assert _statuses(await _days(client, "2026-10-29", "2026-10-29")) == [
+            ("2026-10-29", "aften", "open"),
             ("2026-10-29", "Torsdag", "open"),
         ]
         assert (await client.get(DAYS)).status_code == 422

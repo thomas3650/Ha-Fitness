@@ -17,7 +17,7 @@ from .models import (
     TrainingDay,
     TrainingDayStatus,
 )
-from .programs import total_seconds
+from .programs import total_minutes
 from .schemas import (
     WEEK_ORDER,
     NextTraining,
@@ -195,7 +195,7 @@ class TrainingDays:
             state="due" if day.date >= today else "late",
             station_count=len(document.stations),
             rounds=document.rounds,
-            total_minutes=(total_seconds(document) + 30) // 60,
+            total_minutes=total_minutes(document),
         )
 
     @staticmethod
@@ -213,22 +213,24 @@ class TrainingDays:
     def today_view(self) -> TodayView:
         """Reconcile, then return the body of `GET /today`."""
         with self.lock:
-            self.reconcile_now()
-            return self._build_view(self.local_today())
+            today = self.local_today()
+            self.reconcile(today)
+            return self._build_view(today)
 
     def in_range(self, start: date, end: date) -> list[TrainingDayOut]:
-        """Reconcile, then return the training days from `start` to `end`, both included, by date."""
+        """Reconcile, then return the training days from `start` to `end`, both included, by date, then name ignoring case."""
         with self.lock:
-            self.reconcile_now()
+            self.reconcile(self.local_today())
             with session(self._engine) as db_session:
-                days = db_session.scalars(
-                    select(TrainingDay)
-                    .where(TrainingDay.date >= start, TrainingDay.date <= end)
-                    .order_by(
-                        TrainingDay.date, TrainingDay.program_name, TrainingDay.id
+                days = list(
+                    db_session.scalars(
+                        select(TrainingDay).where(
+                            TrainingDay.date >= start, TrainingDay.date <= end
+                        )
                     )
                 )
-                return [_out(day) for day in days]
+        days.sort(key=lambda day: (day.date, day.program_name.casefold(), day.id))
+        return [_out(day) for day in days]
 
     def on_program_written(
         self, db_session: Session, before: ProgramRow | None, after: ProgramRow | None

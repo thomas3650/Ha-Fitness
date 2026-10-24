@@ -32,6 +32,11 @@ def total_seconds(document: ProgramDocument) -> int:
     return stations * rounds * per_station + (rounds - 1) * document.round_rest_seconds
 
 
+def total_minutes(document: ProgramDocument) -> int:
+    """Return the length of a program in whole minutes, a half minute rounded up."""
+    return (total_seconds(document) + 30) // 60
+
+
 def _change(field: str, old: Any, new: Any) -> str:
     """Describe one changed top-level field: `rounds 5 → 4`, or only the name for lists and music."""
     if field in _NAMED_ONLY:
@@ -60,8 +65,9 @@ def _update_summary(name: str, old: dict[str, Any], new: dict[str, Any]) -> str:
 class Programs:
     """Lists, stores and changes programs; the library resolves and names the stations.
 
-    Each write runs under the training days' lock: their hook runs in the write's session before the commit, and
-    they reconcile after it (step 4 spec §3.3).
+    Each write runs under the training days' lock. They reconcile before it, so a write just after midnight acts on
+    the new date; their hook runs in the write's session before the commit; and they reconcile after it (step 4 spec
+    §3.3).
     """
 
     def __init__(
@@ -113,7 +119,7 @@ class Programs:
                 weekdays=out.program.weekdays,
                 station_count=len(out.program.stations),
                 rounds=out.program.rounds,
-                total_minutes=(out.total_seconds + 30) // 60,
+                total_minutes=total_minutes(out.program),
             )
             for out in self.list()
         ]
@@ -154,6 +160,7 @@ class Programs:
         stored = self._resolved(document)
         now = datetime.now(UTC)
         with self._training_days.lock:
+            self._training_days.reconcile_now()
             out = self._create(document, stored, now, client)
             self._training_days.reconcile_now()
             return out
@@ -201,6 +208,7 @@ class Programs:
         """
         stored = self._resolved(document)
         with self._training_days.lock:
+            self._training_days.reconcile_now()
             out = self._replace(program_id, document, stored, client)
             self._training_days.reconcile_now()
             return out
@@ -241,6 +249,7 @@ class Programs:
     def set_active(self, program_id: int, active: bool, client: str) -> ProgramOut:
         """Switch a program on or off; raise `NotFound`, or `Invalid` when switching on one without weekdays."""
         with self._training_days.lock:
+            self._training_days.reconcile_now()
             out = self._set_active(program_id, active, client)
             self._training_days.reconcile_now()
             return out
@@ -271,6 +280,7 @@ class Programs:
     def delete(self, program_id: int, client: str) -> None:
         """Delete a program for good and log it; raise `NotFound` if there is none."""
         with self._training_days.lock:
+            self._training_days.reconcile_now()
             self._delete(program_id, client)
             self._training_days.reconcile_now()
 
