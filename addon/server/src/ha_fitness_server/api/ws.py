@@ -5,7 +5,7 @@ from contextlib import suppress
 from typing import Any
 
 import anyio
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from ha_fitness_server import API_VERSION, __version__
 from ha_fitness_server.push import Hub, Message
@@ -26,11 +26,14 @@ async def push_channel(websocket: WebSocket) -> None:
     the session publishes one, and reading the snapshot can tick. So does `stats`: every change that can move them
     checks them and publishes them if they changed, and reading the snapshot ticks and reconciles. The queued events
     follow, in queue order.
+
+    A client that falls behind is dropped by the hub; its websocket is then closed with 1013 ("try again later"),
+    and the client reconnects to a fresh snapshot.
     """
     hub: Hub = websocket.app.state.hub
     holder: ServicesHolder = websocket.app.state.services
     await websocket.accept()
-    async with hub.subscribe() as queue:
+    async with hub.subscribe() as (queue, dropped):
         services = holder.get()
         view = await anyio.to_thread.run_sync(services.training_days.today_view)
         today: Message = {"type": "today", "data": view.model_dump(mode="json")}
@@ -59,7 +62,7 @@ async def push_channel(websocket: WebSocket) -> None:
         await websocket.send_json(stats)
         for message in events:
             await websocket.send_json(message)
-        await _serve(websocket, queue)
+        await _serve(websocket, queue, dropped)
 
 
 def _drain(queue: asyncio.Queue[Message]) -> list[Message]:
@@ -70,10 +73,13 @@ def _drain(queue: asyncio.Queue[Message]) -> list[Message]:
     return messages
 
 
-async def _serve(websocket: WebSocket, queue: asyncio.Queue[Message]) -> None:
-    """Forward the queue until the client goes; whatever the client sends is ignored.
+async def _serve(
+    websocket: WebSocket, queue: asyncio.Queue[Message], dropped: asyncio.Event
+) -> None:
+    """Forward the queue until the client goes or the hub drops it; whatever the client sends is ignored.
 
-    A send to a client that has gone ends the forwarding; that error is dropped with the connection.
+    A send to a client that has gone ends the forwarding; that error is dropped with the connection. A dropped
+    subscriber's websocket is closed with 1013 once the other tasks have ended.
     """
 
     async def forward() -> None:
@@ -87,6 +93,7 @@ async def _serve(websocket: WebSocket, queue: asyncio.Queue[Message]) -> None:
     tasks: set[asyncio.Task[Any]] = {
         asyncio.create_task(forward()),
         asyncio.create_task(until_closed()),
+        asyncio.create_task(dropped.wait()),
     }
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -98,3 +105,6 @@ async def _serve(websocket: WebSocket, queue: asyncio.Queue[Message]) -> None:
                 asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError
             ):
                 await task
+    if dropped.is_set():
+        with suppress(WebSocketDisconnect, RuntimeError, OSError):
+            await websocket.close(code=status.WS_1013_TRY_AGAIN_LATER)

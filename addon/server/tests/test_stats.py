@@ -22,10 +22,12 @@ from tests.session_helpers import (
     AGENT,
     DAYS,
     PEOPLE,
+    SESSION,
     SESSIONS,
     SMALL,
     SMALL_END,
     SMALL_STARTS,
+    TODAY,
     create_small,
     current,
     make_session_app,
@@ -694,3 +696,56 @@ async def test_people_order(make_app: MakeApp) -> None:
         for person in first["people"]
     ] == [(elin, "Elin", "person.elin"), (thomas, "Thomas", "person.thomas")]
     assert [person["id"] for person in second["people"]] == [thomas, elin]
+
+
+def _break_the_stats(tmp_path: Path) -> None:
+    """Set each counted session's `started_at` to NULL, which trips the stats and nothing else (review backlog §2.1).
+
+    Setup only: no public interface stores a counted session without a start.
+    """
+    with sqlite3.connect(tmp_path / "ha_fitness.db") as connection:
+        connection.execute("UPDATE sessions SET started_at = NULL WHERE counted")
+    connection.close()
+
+
+async def test_stats_failure_never_breaks_a_write(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """With the stats broken, `/today` and a skip still answer 200 (review backlog §2.1)."""
+    clock = FrozenClock(local(2026, 10, 14, 9))
+    async with started(clock, make_app) as client:
+        [thomas] = await set_people(client, THOMAS)
+        program = await create_small(client, "Lille", weekdays=EVERY_DAY)
+        day_id = await open_day(client, program["id"])
+        await train(client, clock, program["id"], [thomas], day_id)
+        _break_the_stats(tmp_path)
+        # The setup broke the stats: reading them fails.
+        with pytest.raises(AssertionError):
+            await client.get(STATS)
+        clock.set(local(2026, 10, 15, 9))
+        today = await client.get(TODAY)
+        assert today.status_code == 200, today.text
+        [thursday] = [day["id"] for day in today.json()["open"]]
+        response = await client.post(f"{DAYS}/{thursday}/skip", headers=AGENT)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "skipped"
+
+
+async def test_stats_failure_during_session_finish(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """With the stats broken, a session still finishes and is read back completed (review backlog §2.1)."""
+    clock = FrozenClock(local(2026, 10, 14, 9))
+    async with started(clock, make_app) as client:
+        [thomas] = await set_people(client, THOMAS)
+        program = await create_small(client, "Lille", weekdays=EVERY_DAY)
+        day_id = await open_day(client, program["id"])
+        await train(client, clock, program["id"], [thomas], day_id)
+        clock.advance(timedelta(minutes=10))
+        await start(client, program["id"], [thomas])
+        # Only the first session is counted, so only it loses its start.
+        _break_the_stats(tmp_path)
+        clock.advance(timedelta(minutes=5))
+        response = await client.get(SESSION, headers=AGENT)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "completed"

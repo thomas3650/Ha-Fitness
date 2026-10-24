@@ -350,7 +350,7 @@ async def test_non_admin_can_use_commands(
     fake_addon: FakeAddon,
     config_entry: MockConfigEntry,
 ) -> None:
-    """A plain user, as the wallpanel's is, can steer the session, read the lists and subscribe."""
+    """A plain user, as the tablet's is, can steer the session, read the lists and subscribe."""
     await _connected(hass, config_entry)
     user = await hass.auth.async_create_user("Tablet", group_ids=[GROUP_ID_USER])
     assert not user.is_admin

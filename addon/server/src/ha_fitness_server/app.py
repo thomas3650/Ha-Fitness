@@ -205,7 +205,12 @@ def create_app(
         """
         raise HTTPException(status_code=404)
 
-    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    @app.api_route(
+        "/",
+        methods=["GET", "HEAD"],
+        response_class=HTMLResponse,
+        include_in_schema=False,
+    )
     def ingress_page(request: Request) -> HTMLResponse:
         """The Ingress page (spec §9); before the MCP mount, which would answer `/` otherwise."""
         page = render_ingress(holder.get(), request.headers.get("accept-language"))

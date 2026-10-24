@@ -29,6 +29,7 @@
   "weekday_fri": "Fri",
   "weekday_sat": "Sat",
   "weekday_sun": "Sun",
+  "list_separator": ", ",
   "links": "Links",
   "library_json": "Library state (JSON)",
   "health": "Health check (JSON)"

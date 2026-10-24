@@ -3,9 +3,11 @@
 from pathlib import Path
 
 from ha_fitness_server import __version__
+from ha_fitness_server.__main__ import main
 from ha_fitness_server.settings import Settings
 import httpx
 import pytest
+import uvicorn
 
 
 async def test_health_reports_version_and_api_version(
@@ -89,3 +91,15 @@ def test_settings_media_base_url(clean_env: pytest.MonkeyPatch) -> None:
     )
     clean_env.setenv("HA_FITNESS_MEDIA_BASE_URL", "http://media.test")
     assert Settings.from_env().media_base_url == "http://media.test"
+
+
+def test_main_creates_data_dir(clean_env: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Starting the server creates the data folder and runs uvicorn on the settings' port."""
+    data_dir = tmp_path / "new" / "data"
+    clean_env.setenv("HA_FITNESS_DATA_DIR", str(data_dir))
+    clean_env.setenv("HA_FITNESS_PORT", "9123")
+    runs: list[int] = []
+    clean_env.setattr(uvicorn, "run", lambda app, host, port: runs.append(port))
+    main()
+    assert data_dir.is_dir()
+    assert runs == [9123]

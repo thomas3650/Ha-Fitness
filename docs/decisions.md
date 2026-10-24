@@ -439,3 +439,12 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   card and tile. The darker shades keep 4.5:1 contrast on the light background.
 - **Source:** [UI polish spec](superpowers/specs/2026-10-24-ui-polish-design.md) §2, §3.1 and §3.2; Thomas (§2, his
   screen review); Claude (§3), for Thomas's review on the PR, 2026-10-24
+
+### D56: House details are removed from merged docs
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** Details of Thomas's Home Assistant (entity ids, HA users, dashboard ids, the host model and versions,
+  how remote access works) are removed from merged specs and docs, which are otherwise snapshots. Wording stays
+  generic. Dev fixtures (the Thomas and Elin persons) and pinned dependency versions stay. Rewriting git history is
+  Thomas's call.
+- **Why:** Hard rule 2: the repo is public. A hard rule wins over the snapshot rule.
+- **Source:** [Review backlog spec](superpowers/specs/2026-10-25-review-backlog-design.md) §2.6; Claude, 2026-10-25

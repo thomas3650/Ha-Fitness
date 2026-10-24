@@ -75,7 +75,7 @@ def render(services: Services, accept_language: str | None) -> str:
             "<tr>"
             f"<td>{escape(program.name)}</td>"
             f"<td>{t['on'] if program.active else t['off']}</td>"
-            f"<td>{', '.join(t[f'weekday_{day}'] for day in program.weekdays) or t['no_weekdays']}</td>"
+            f"<td>{t['list_separator'].join(t[f'weekday_{day}'] for day in program.weekdays) or t['no_weekdays']}</td>"
             f"<td>{t['minutes'].format(minutes=program.total_minutes)}</td>"
             "</tr>"
             for program in programs

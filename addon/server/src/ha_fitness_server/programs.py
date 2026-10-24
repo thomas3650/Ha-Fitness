@@ -79,19 +79,26 @@ class Programs:
         self._training_days = training_days
 
     def _out(self, row: ProgramRow) -> ProgramOut:
-        """Turn a row into a `ProgramOut`, with the station names looked up now."""
+        """Turn a row into a `ProgramOut`, with the station names looked up now.
+
+        A stored exercise that has left the library is named by its id and adds no equipment.
+        """
         document = ProgramDocument.model_validate(row.document)
-        exercises = [
-            self._library.get(station.exercise) for station in document.stations
-        ]
+        names: builtins.list[str] = []
         equipment: dict[str, None] = {}
-        for exercise in exercises:
+        for station in document.stations:
+            try:
+                exercise = self._library.get(station.exercise)
+            except NotFound:
+                names.append(station.exercise)
+                continue
+            names.append(exercise.name)
             if exercise.equipment and exercise.equipment.lower() != "body weight":
                 equipment.setdefault(exercise.equipment)
         return ProgramOut(
             id=row.id,
             program=document,
-            station_names=[exercise.name for exercise in exercises],
+            station_names=names,
             equipment=list(equipment),
             total_seconds=total_seconds(document),
             created_at=row.created_at,

@@ -50,6 +50,18 @@ def test_timezone_precedence(
     assert any(record.levelno == logging.WARNING for record in caplog.records)
 
 
+def test_unset_timezone_logs_info(
+    env: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """With neither `HA_FITNESS_TIMEZONE` nor `TZ` set, the zone is UTC and that is logged at INFO."""
+    with caplog.at_level(logging.INFO, logger="ha_fitness_server.settings"):
+        assert Settings.from_env().timezone == ZoneInfo("UTC")
+    assert any(
+        record.levelno == logging.INFO and record.name == "ha_fitness_server.settings"
+        for record in caplog.records
+    )
+
+
 def test_new_settings_defaults(env: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The new fields have defaults, and the environment sets the dev flag and the Supervisor token."""
     settings = Settings(port=0, data_dir=tmp_path)

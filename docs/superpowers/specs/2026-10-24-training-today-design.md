@@ -10,7 +10,7 @@
   - **Order:** install the integration's new version before accepting the "Discovered" card (§4.1). Both reach the
     house together after Thomas's local test, so the `fitness` issue says it.
   - The integration is set up from that Discovered card.
-  - Placing the card on `dashboard-kitchen` and the workout tab are house work: ha-claude-a8 specs them in the house
+  - Placing the card on the kitchen dashboard and the workout tab are house work: the house assistant specs them in the house
     repo, and Thomas says yes there (§9).
 - "Claude's call" marks choices made without Thomas; he may overrule them.
 
@@ -256,7 +256,7 @@ The cards talk only to HA (design §4).
 - **`ha_fitness/today/subscribe`** is a websocket subscription. It sends the current `today` data at once, then again
   after each change, and `null` while the add-on is unreachable or unsupported. It needs a logged-in user.
 - **Skipping** goes through the service (`hass.callService("ha_fitness", "skip", …)`). Any user may call it: the
-  wallpanel user isn't an admin.
+  tablet's user isn't an admin.
 
 ## 5. Language
 
@@ -394,7 +394,7 @@ and late days never show together (§3.5), so they are separate scenarios:
   - the card shows "HA Fitness kan ikke nås" while the add-on is stopped or updating, and during an HA restart.
 
   The house specs it, and Thomas decides.
-- The WallPanel slideshow returning to the overview matters from step 5, once a workout is running. It isn't part of
+- The screensaver slideshow returning to the overview matters from step 5, once a workout is running. It isn't part of
   this step.
 
 ## 10. Docs and decisions

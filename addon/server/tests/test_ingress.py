@@ -127,22 +127,40 @@ async def test_page_lists_programs_people_and_media_state(make_app: MakeApp) -> 
         for program in programs:
             response = await client.post("/api/v1/programs", json=program)
             assert response.status_code == 201
+        custom = {"name": "Garden squat", "steps": ["Stand up.", "Sit down."]}
+        assert (await client.post("/api/v1/exercises", json=custom)).status_code == 201
         library = (await client.get("/api/v1/library")).json()
         page = await _page(client, **{"Accept-Language": DANISH})
     media = library["media"]
     assert f"{media['present']}/{media['total']}" in page
     assert texts["media_failed"] in page
-    assert str(library["exercises"]["library"]) in page
+    exercises = library["exercises"]
+    assert exercises["custom"] == 1
+    assert (
+        texts["exercises"].format(
+            library=exercises["library"], custom=exercises["custom"]
+        )
+        in page
+    )
     assert "Thomas" in page
     assert "Elin" in page
     assert "Onsdag" in page
     assert "Weekend" in page
     assert texts["on"] in page
     assert texts["off"] in page
-    assert f"{texts['weekday_mon']}, {texts['weekday_wed']}" in page
+    weekdays = [texts["weekday_mon"], texts["weekday_wed"]]
+    assert texts["list_separator"].join(weekdays) in page
     assert texts["weekday_sat"] in page
     # One station of 5 rounds: 5 * 60 + 4 * 60 = 540 s, 9 minutes.
     assert texts["minutes"].format(minutes=9) in page
+
+
+async def test_head_answers_like_get(make_app: MakeApp) -> None:
+    """`HEAD /` answers 200 with the page's content type, like `GET /`."""
+    async with running(make_app()) as client:
+        response = await client.head("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
 
 
 async def test_page_never_asks_ha(make_app: MakeApp) -> None:

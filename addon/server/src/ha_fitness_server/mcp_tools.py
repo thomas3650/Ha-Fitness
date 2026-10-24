@@ -163,7 +163,9 @@ def build_mcp(holder: ServicesHolder) -> FastMCP:
 
         `equipment` lists each kind of equipment once, in station order; body weight is left out.
 
-        The `program` field is a valid document as it stands: change it and pass it to update_program.
+        The `program` field is a valid document as it stands: change it and pass it to update_program. The one
+        exception: a station whose exercise has left the library is named by its id, and update_program refuses the
+        document until that station gets another exercise.
         """
         with _tool_errors():
             return holder.get().programs.get(program_id)
