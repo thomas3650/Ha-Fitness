@@ -90,6 +90,8 @@ class Person(Base):
     name: Mapped[str] = mapped_column(String)
     person_entity_id: Mapped[str] = mapped_column(String, unique=True)
     position: Mapped[int]
+    # Null for the people from before migration 0004: they count from the start (stats spec §3.1).
+    added_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
 
 class CustomExercise(Base):

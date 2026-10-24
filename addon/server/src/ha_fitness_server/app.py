@@ -131,7 +131,7 @@ def create_app(
         )
         publish = _publisher(hub, asyncio.get_running_loop())
         training_days = TrainingDays(engine, the_clock, settings.timezone, publish)
-        people = People(engine, ha)
+        people = People(engine, ha, training_days, the_clock)
         programs = Programs(engine, library, training_days)
         sessions = Sessions(engine, the_clock, training_days, programs, people, publish)
         holder.set(
