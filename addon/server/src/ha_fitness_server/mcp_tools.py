@@ -248,7 +248,8 @@ old values.
         """Return today's open training days, due (today) or late (an earlier date), and the next date a program trains.
 
         Each open day has its id, program, date, state, station count, rounds and length in whole minutes. `next` is
-        null when no program is active.
+        null when no program is active. `week` counts this local week, Monday to Sunday: `planned` is its training
+        days, past, today's and still to come, and `done` is those trained.
         """
         with _tool_errors():
             return holder.get().training_days.today_view()

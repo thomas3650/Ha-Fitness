@@ -270,12 +270,20 @@ class NextTraining(BaseModel):
     programs: list[str]
 
 
+class Week(BaseModel):
+    """The local week, Monday to Sunday, in the today view (UI refresh spec §3.1)."""
+
+    done: int
+    planned: int
+
+
 class TodayView(BaseModel):
-    """Body of `GET /api/v1/today` (step 4 spec §3.5)."""
+    """Body of `GET /api/v1/today` (step 4 spec §3.5, `week` UI refresh spec §3.1)."""
 
     date: dt.date
     open: list[OpenDay]
     next: NextTraining | None
+    week: Week
 
 
 def _utc_millis(moment: datetime) -> str:
