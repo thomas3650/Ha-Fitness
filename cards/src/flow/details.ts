@@ -1,8 +1,16 @@
-import { type TemplateResult, css, html, nothing } from "lit";
+import { type TemplateResult, css, html, nothing, unsafeCSS } from "lit";
 
 import { iconButton } from "../icon-button";
 import { personColor } from "../people";
-import { type ImageOf, RING_COLORS, type Translate, clock, renderError, renderImage } from "./shared";
+import {
+  type ImageOf,
+  PHASE_TEXT_COLORS,
+  RING_COLORS,
+  type Translate,
+  clock,
+  renderError,
+  renderImage,
+} from "./shared";
 
 /** An active program, as `ha_fitness/programs` returns it (spec §4). */
 export interface Program {
@@ -19,6 +27,24 @@ export interface Program {
   /** The distinct equipment of the stations, in station order; missing from an older add-on. */
   equipment?: string[];
   stations: { exercise_id: string; name: string }[];
+  /** The program's music; null without, and missing from an add-on older than music. */
+  music?: ProgramMusic | null;
+}
+
+/** A program's music, as `ha_fitness/programs` returns it (music spec §5.4). */
+export interface ProgramMusic {
+  playlist: string;
+  playlist_name: string;
+  speaker: string;
+  volume: number;
+  shuffle: boolean;
+}
+
+/** A Music Assistant speaker, as `ha_fitness/speakers` lists it (music spec §5.4). */
+export interface Speaker {
+  entity_id: string;
+  name: string;
+  available: boolean;
 }
 
 /** A person, as `ha_fitness/people` returns it (spec §4). */
@@ -43,9 +69,30 @@ export interface DetailsContext {
   busy: boolean;
   error: string | undefined;
   imageOf: ImageOf;
+  /** The speakers to choose from; empty while loading, or when the list was refused. */
+  speakers: Speaker[];
+  /** The chosen speaker's entity id, once there is one to choose. */
+  speaker: string | undefined;
   onToggle: (person: Person) => void;
+  onSpeaker: (entityId: string) => void;
   onStart: () => void;
   onBack: () => void;
+}
+
+/**
+ * The speaker Start sends (music spec §6.1): the one chosen, else the program's when listed, else
+ * the first available, else the first listed. Undefined while the music row doesn't show.
+ */
+export function chosenSpeaker(
+  program: Program | undefined,
+  speakers: Speaker[],
+  chosen: string | undefined,
+): string | undefined {
+  if (!program?.music || speakers.length === 0) return undefined;
+  const listed = (id: string | undefined) => speakers.some((speaker) => speaker.entity_id === id);
+  if (listed(chosen)) return chosen;
+  if (listed(program.music.speaker)) return program.music.speaker;
+  return (speakers.find((speaker) => speaker.available) ?? speakers[0]).entity_id;
 }
 
 /** The equipment the language files name, by its stored value in lower case (spec §3.2). */
@@ -101,7 +148,7 @@ export function renderDetails(ctx: DetailsContext): TemplateResult {
       <section class="panel facts">
         ${renderChips(ctx)}
         <dl>
-          ${renderFacts(t, program)}
+          ${renderFacts(ctx, program)}
         </dl>
         ${renderError(ctx.error)}
         ${iconButton({
@@ -143,8 +190,46 @@ function renderChips(ctx: DetailsContext): TemplateResult {
   `;
 }
 
-/** Runder, Arbejde / skift, the round rest above 0, the equipment ("Intet udstyr" when empty), and the total. */
-function renderFacts(t: Translate, program: Program): TemplateResult {
+/**
+ * Musik with the playlist, and the speaker dropdown (music spec §6.1): only with music and at least
+ * one speaker.
+ */
+function renderMusic(ctx: DetailsContext, program: Program): TemplateResult | typeof nothing {
+  const { t } = ctx;
+  const chosen = ctx.speaker;
+  if (!program.music || chosen === undefined) return nothing;
+  return html`
+    <div class="row music">
+      <dt>${t("flow.music")}</dt>
+      <dd><ha-icon icon="mdi:music" aria-hidden="true"></ha-icon>${program.music.playlist_name}</dd>
+    </div>
+    <div class="row speaker">
+      <dt><label for="speaker">${t("flow.speaker")}</label></dt>
+      <dd>
+        <select
+          id="speaker"
+          ?disabled=${ctx.busy}
+          @change=${(event: Event) => ctx.onSpeaker((event.target as HTMLSelectElement).value)}
+        >
+          ${ctx.speakers.map(
+            (speaker) => html`
+              <option value=${speaker.entity_id} .selected=${speaker.entity_id === chosen}>
+                ${speaker.available ? speaker.name : t("flow.speaker_unavailable", { name: speaker.name })}
+              </option>
+            `,
+          )}
+        </select>
+      </dd>
+    </div>
+  `;
+}
+
+/**
+ * Runder, Arbejde / skift, the round rest above 0, the music, the equipment ("Intet udstyr" when
+ * empty), and the total.
+ */
+function renderFacts(ctx: DetailsContext, program: Program): TemplateResult {
+  const { t } = ctx;
   const seconds = (value: number) => t("flow.seconds", { seconds: value });
   const equipment = program.equipment;
   const total = program.total_seconds ?? program.total_minutes * 60;
@@ -169,6 +254,7 @@ function renderFacts(t: Translate, program: Program): TemplateResult {
           </div>
         `
       : nothing}
+    ${renderMusic(ctx, program)}
     ${equipment
       ? html`
           <div class="row stacked">
@@ -325,6 +411,35 @@ export const detailsStyles = css`
     font-size: 1rem;
     font-weight: 400;
     background: var(--secondary-background-color, var(--divider-color));
+  }
+  .row.music dd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .row.music ha-icon {
+    flex: none;
+    --mdc-icon-size: 20px;
+    color: ${unsafeCSS(PHASE_TEXT_COLORS.work)};
+  }
+  .row.speaker {
+    align-items: center;
+  }
+  .row.speaker dd {
+    min-width: 0;
+  }
+  .row.speaker select {
+    box-sizing: border-box;
+    max-width: 100%;
+    min-height: 48px;
+    padding: 0 12px;
+    border: 1px solid var(--divider-color);
+    border-radius: 12px;
+    background: var(--card-background-color, #fff);
+    color: var(--primary-text-color);
+    font: inherit;
   }
   .row.total {
     margin-top: auto;

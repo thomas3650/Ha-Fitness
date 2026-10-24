@@ -184,7 +184,14 @@
       "invalid": "Choose 1–2 people, at most one per exercise.",
       "unavailable": "HA Fitness can't be reached. Try again later.",
       "general": "Something went wrong. Try again."
-    }
+    },
+    "music": "Music",
+    "speaker": "Speaker",
+    "speaker_unavailable": "{name} (unavailable)",
+    "music_unavailable": "Music unavailable",
+    "music_pause": "Pause music",
+    "music_play": "Play music",
+    "music_next": "Next track"
   },
   "equipment": {
     "dumbbell": "dumbbell",

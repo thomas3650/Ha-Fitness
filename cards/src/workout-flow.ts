@@ -9,7 +9,15 @@ import {
   scheduleTone,
   unlockAudio,
 } from "./audio";
-import { type DetailsContext, type Person, type Program, detailsStyles, renderDetails } from "./flow/details";
+import {
+  type DetailsContext,
+  type Person,
+  type Program,
+  type Speaker,
+  chosenSpeaker,
+  detailsStyles,
+  renderDetails,
+} from "./flow/details";
 import { type DoneContext, type Streak, doneStyles, renderDone } from "./flow/done";
 import { type ReadyContext, readyStyles, renderReady } from "./flow/ready";
 import { type Countdown, type ImageOf, type ReachNote, type SoundButton, renderBack, sharedStyles } from "./flow/shared";
@@ -37,6 +45,7 @@ interface Hass extends LanguageHass, ImageHass {
 }
 
 type Command = "pause" | "resume" | "next" | "previous" | "end";
+type MusicAction = "pause" | "play" | "next";
 type Step = "details" | "ready" | "timer" | "done";
 
 declare global {
@@ -94,6 +103,8 @@ export class WorkoutFlow extends LitElement {
     onClose: { attribute: false },
     programs: { state: true },
     people: { state: true },
+    speakers: { state: true },
+    speaker: { state: true },
     selected: { state: true },
     images: { state: true },
     busy: { state: true },
@@ -110,6 +121,10 @@ export class WorkoutFlow extends LitElement {
   /** The active programs and the people: undefined while loading, null if the fetch failed. */
   declare programs?: Program[] | null;
   declare people?: Person[] | null;
+  /** The speakers for the music row: undefined while loading, null if the list was refused. */
+  declare speakers?: Speaker[] | null;
+  /** The speaker picked in the dropdown, if one was. */
+  declare speaker?: string;
   /** The chosen people's ids. */
   declare selected: Set<number>;
   /** The object URL of each exercise's image by `kind/id`, or null when it has none. */
@@ -340,7 +355,18 @@ export class WorkoutFlow extends LitElement {
     this.selected = new Set();
     this.programs = undefined;
     this.people = undefined;
+    this.speakers = undefined;
+    this.speaker = undefined;
     this.armIdle();
+    // Apart from the programs and the people: a refused list (no Music Assistant) hides the row only.
+    void hass.callWS<{ speakers: Speaker[] }>({ type: "ha_fitness/speakers" }).then(
+      (answer) => {
+        if (this.mode === mode) this.speakers = answer.speakers;
+      },
+      () => {
+        if (this.mode === mode) this.speakers = null;
+      },
+    );
     void Promise.all([
       hass.callWS<Program[]>({ type: "ha_fitness/programs" }),
       hass.callWS<Person[]>({ type: "ha_fitness/people" }),
@@ -455,6 +481,11 @@ export class WorkoutFlow extends LitElement {
     this.selected = selected;
   }
 
+  /** The speaker Start sends; undefined while the music row doesn't show. */
+  private chosenSpeaker(): string | undefined {
+    return chosenSpeaker(this.program(), this.speakers ?? [], this.speaker);
+  }
+
   private maxSelected(): number {
     return Math.min(2, this.program()?.stations.length ?? 0);
   }
@@ -471,6 +502,7 @@ export class WorkoutFlow extends LitElement {
     this.stopIdle();
     // Participants go in people order, whatever order they were tapped in.
     const participants = (this.people ?? []).filter((person) => this.selected.has(person.id)).map((p) => p.id);
+    const speaker = this.chosenSpeaker();
     try {
       const result = await hass.callWS<SessionView>({
         type: "ha_fitness/session/command",
@@ -478,6 +510,7 @@ export class WorkoutFlow extends LitElement {
         program_id: program.id,
         participants,
         ...(mode.trainingDayId === undefined ? {} : { training_day_id: mode.trainingDayId }),
+        ...(speaker === undefined ? {} : { speaker }),
       });
       if (this.isConnected) this.result = result;
     } catch (error) {
@@ -514,6 +547,18 @@ export class WorkoutFlow extends LitElement {
       const code = errorCode(error);
       this.error = this.t(code && KNOWN_ERRORS.has(code) ? `flow.error.${code}` : "flow.error.general");
       return false;
+    }
+  }
+
+  /**
+   * Pause, play or skip the music. A refused command shows nothing: the subscription shows the
+   * music's real state.
+   */
+  private async music(action: MusicAction): Promise<void> {
+    try {
+      await this.hass?.callWS({ type: "ha_fitness/music", action });
+    } catch {
+      // Nothing to show; the player follows the subscription.
     }
   }
 
@@ -767,7 +812,12 @@ export class WorkoutFlow extends LitElement {
       busy: this.busy,
       error: this.error,
       imageOf: this.imageOf,
+      speakers: this.speakers ?? [],
+      speaker: this.chosenSpeaker(),
       onToggle: (person) => this.toggle(person),
+      onSpeaker: (entityId) => {
+        this.speaker = entityId;
+      },
       onStart: () => void this.start(),
       onBack: () => this.close(),
     };
@@ -800,6 +850,7 @@ export class WorkoutFlow extends LitElement {
       reach: this.reach(),
       sound: this.sound(),
       error: this.error,
+      music: this.state?.music ?? null,
       asking: this.endQuestion !== undefined,
       // The ring is a pointer shortcut: a tap pauses while running and resumes while paused.
       onRingTap: () => {
@@ -814,6 +865,8 @@ export class WorkoutFlow extends LitElement {
       onAskEnd: () => this.askEnd(),
       onConfirmEnd: () => this.confirmEnd(),
       onKeepGoing: () => this.endAsk(),
+      onMusicToggle: () => void this.music(this.state?.music?.state === "playing" ? "pause" : "play"),
+      onMusicNext: () => void this.music("next"),
     };
   }
 

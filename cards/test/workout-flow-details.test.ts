@@ -34,6 +34,13 @@ interface Program {
   total_seconds?: number;
   equipment?: string[];
   stations: { exercise_id: string; name: string }[];
+  music?: { playlist: string; playlist_name: string; speaker: string; volume: number; shuffle: boolean } | null;
+}
+
+interface Speaker {
+  entity_id: string;
+  name: string;
+  available: boolean;
 }
 
 const onsdag: Program = {
@@ -80,14 +87,21 @@ interface Pending {
 }
 
 /**
- * A fake `hass` with `callWS` for §4's commands: `ha_fitness/programs`, `ha_fitness/people` and
- * `ha_fitness/session/command`. Each session command waits until the test answers it.
+ * A fake `hass` with `callWS` for §4's commands: `ha_fitness/programs`, `ha_fitness/people`,
+ * `ha_fitness/speakers` and `ha_fitness/session/command`. Each session command waits until the
+ * test answers it. Without `speakers`, the speaker list is refused, as without Music Assistant.
  */
-function fakeHass(language = "da", people = [thomas, maria], programs: Program[] = [onsdag, solo]) {
+function fakeHass(
+  language = "da",
+  people = [thomas, maria],
+  programs: Program[] = [onsdag, solo],
+  speakers?: Speaker[],
+) {
   const commands: Pending[] = [];
   const callWS = vi.fn((message: Message): Promise<unknown> => {
     if (message.type === "ha_fitness/programs") return Promise.resolve(programs);
     if (message.type === "ha_fitness/people") return Promise.resolve(people);
+    if (message.type === "ha_fitness/speakers" && speakers) return Promise.resolve({ speakers });
     if (message.type === "ha_fitness/session/command") {
       return new Promise((resolve, reject) => commands.push({ message, resolve, reject }));
     }
@@ -686,4 +700,138 @@ test("a program no longer in the active list shows the not-found text with Tilba
   expect(queryByRole(root(flow), "button", { name: "Start" })).toBeNull();
   await tap(flow, button(flow, "Tilbage"));
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+// The music row (music spec §6.1).
+
+const mix = {
+  playlist: "library://playlist/1",
+  playlist_name: "Workout Mix",
+  speaker: "media_player.stue",
+  volume: 40,
+  shuffle: true,
+};
+const withMusic: Program = { ...onsdag, music: mix };
+const kitchen: Speaker = { entity_id: "media_player.kitchen", name: "Køkken", available: true };
+const stue: Speaker = { entity_id: "media_player.stue", name: "Stue", available: true };
+
+function speakerSelect(flow: FlowElement, name = "Højttaler"): HTMLSelectElement {
+  return getByRole(root(flow), "combobox", { name }) as HTMLSelectElement;
+}
+
+async function choose(flow: FlowElement, select: HTMLSelectElement, value: string): Promise<void> {
+  select.value = value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(flow);
+}
+
+test("music row shows playlist and speaker select", async () => {
+  const fake = fakeHass("da", [thomas, maria], [withMusic], [kitchen, stue]);
+  const { flow } = await mount(fake, details);
+
+  expect(fake.callWS).toHaveBeenCalledWith({ type: "ha_fitness/speakers" });
+  // The row sits above Du skal bruge.
+  expect(facts(flow).map(([term]) => term)).toEqual([
+    "Runder",
+    "Arbejde / skift",
+    "Pause mellem runder",
+    "Musik",
+    "Højttaler",
+    "Du skal bruge",
+    "Samlet tid",
+  ]);
+  expect(facts(flow)).toContainEqual(["Musik", "Workout Mix"]);
+  const select = speakerSelect(flow);
+  expect(getAllByRole(select, "option").map(text)).toEqual(["Køkken", "Stue"]);
+});
+
+test("music row in English", async () => {
+  const fake = fakeHass("en", [thomas, maria], [withMusic], [kitchen, { ...stue, available: false }]);
+  const { flow } = await mount(fake, details);
+
+  expect(facts(flow)).toContainEqual(["Music", "Workout Mix"]);
+  expect(getAllByRole(speakerSelect(flow, "Speaker"), "option").map(text)).toEqual(["Køkken", "Stue (unavailable)"]);
+});
+
+test("no music row without music or without speakers", async () => {
+  // No music on the program.
+  const plain = await mount(fakeHass("da", [thomas, maria], [onsdag], [kitchen]), details);
+  expect(facts(plain.flow).map(([term]) => term)).not.toContain("Musik");
+  expect(queryByRole(root(plain.flow), "combobox")).toBeNull();
+  document.body.replaceChildren();
+
+  // The speaker list refused (no Music Assistant): the programs still show.
+  const refused = await mount(fakeHass("da", [thomas, maria], [withMusic]), details);
+  expect(getByRole(root(refused.flow), "heading", { name: "Onsdag" })).toBeTruthy();
+  expect(facts(refused.flow).map(([term]) => term)).not.toContain("Musik");
+  expect(queryByRole(root(refused.flow), "combobox")).toBeNull();
+  document.body.replaceChildren();
+
+  // No speakers listed.
+  const empty = await mount(fakeHass("da", [thomas, maria], [withMusic], []), details);
+  expect(facts(empty.flow).map(([term]) => term)).not.toContain("Musik");
+  expect(queryByRole(root(empty.flow), "combobox")).toBeNull();
+});
+
+test("select defaults to program speaker, falls back to first available", async () => {
+  // The program's speaker when listed, even if it is unavailable.
+  const own = await mount(
+    fakeHass("da", [thomas, maria], [withMusic], [kitchen, { ...stue, available: false }]),
+    details,
+  );
+  expect(speakerSelect(own.flow).value).toBe("media_player.stue");
+  document.body.replaceChildren();
+
+  // Not listed: the first available one.
+  const away = { ...kitchen, entity_id: "media_player.away", name: "Væk", available: false };
+  const fallback = await mount(fakeHass("da", [thomas, maria], [withMusic], [away, kitchen]), details);
+  expect(speakerSelect(fallback.flow).value).toBe("media_player.kitchen");
+  document.body.replaceChildren();
+
+  // None available: the first listed.
+  const office = { ...away, entity_id: "media_player.office", name: "Kontor" };
+  const none = await mount(fakeHass("da", [thomas, maria], [withMusic], [away, office]), details);
+  expect(speakerSelect(none.flow).value).toBe("media_player.away");
+});
+
+test("unavailable speaker is marked", async () => {
+  const fake = fakeHass("da", [thomas, maria], [withMusic], [kitchen, { ...stue, available: false }]);
+  const { flow } = await mount(fake, details);
+  expect(getAllByRole(speakerSelect(flow), "option").map(text)).toEqual(["Køkken", "Stue (utilgængelig)"]);
+});
+
+test("start sends the chosen speaker", async () => {
+  const fake = fakeHass("da", [thomas, maria], [withMusic], [kitchen, stue]);
+  const { flow } = await mount(fake, fromToday);
+
+  await choose(flow, speakerSelect(flow), "media_player.kitchen");
+  expect(speakerSelect(flow).value).toBe("media_player.kitchen");
+  await tap(flow, button(flow, "Start"));
+  expect(sessionCommands(fake)).toEqual([
+    {
+      type: "ha_fitness/session/command",
+      command: "start",
+      program_id: 3,
+      participants: [1, 2],
+      training_day_id: 12,
+      speaker: "media_player.kitchen",
+    },
+  ]);
+  document.body.replaceChildren();
+
+  // Untouched, the default goes.
+  const plain = fakeHass("da", [thomas, maria], [withMusic], [kitchen, stue]);
+  const second = await mount(plain, details);
+  await tap(second.flow, button(second.flow, "Start"));
+  expect(sessionCommands(plain)[0]).toMatchObject({ speaker: "media_player.stue" });
+});
+
+test("no speaker sent without the row", async () => {
+  const cases = [fakeHass("da", [thomas, maria], [withMusic]), fakeHass("da", [thomas, maria], [onsdag], [kitchen])];
+  for (const fake of cases) {
+    const { flow } = await mount(fake, details);
+    await tap(flow, button(flow, "Start"));
+    expect(sessionCommands(fake)[0]).not.toHaveProperty("speaker");
+    document.body.replaceChildren();
+  }
 });

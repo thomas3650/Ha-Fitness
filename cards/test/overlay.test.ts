@@ -111,6 +111,14 @@ function view(revision = 1, status: "running" | "paused" | "completed" | "ended"
   };
 }
 
+/** The music of a session, as the subscription sends it (music spec §5.4). */
+const playing = {
+  playlist_name: "Workout Mix",
+  speaker: "media_player.stue",
+  speaker_name: "Stue",
+  state: "playing",
+};
+
 let overlay: Overlay;
 
 beforeEach(async () => {
@@ -156,7 +164,7 @@ test("opens one dialog in body that survives the opening card's removal", () => 
   expect(dialog.contains(flow)).toBe(true);
   expect(flow.hass).toBe(fake.hass);
   expect(flow.mode).toEqual({ kind: "details", programId: 3, trainingDayId: 12 });
-  expect(flow.state).toEqual({ available: false, session: null });
+  expect(flow.state).toEqual({ available: false, session: null, music: null });
 
   // Opening again (Fortsæt) reuses the one dialog and flow.
   overlay.open({ kind: "resume" });
@@ -288,12 +296,13 @@ test("a refused subscription keeps the last view, unavailable, and retries after
     const fake = fakeHass();
     overlay.setHass(fake.hass);
     await vi.advanceTimersByTimeAsync(0);
-    fake.push({ available: true, session: view(3) });
+    fake.push({ available: true, session: view(3), music: playing });
 
     fake.refuseNext();
     fake.fire("ready");
     await vi.advanceTimersByTimeAsync(0);
-    expect(overlay.state()).toEqual({ available: false, session: view(3) });
+    // The music's state is unknown while refused, so it shows no player.
+    expect(overlay.state()).toEqual({ available: false, session: view(3), music: null });
     expect(fake.subscribeMessage).toHaveBeenCalledTimes(2);
 
     await vi.advanceTimersByTimeAsync(4_999);
@@ -329,7 +338,7 @@ test("a dropped HA connection counts as unreachable until it is ready again", as
   const fake = fakeHass();
   overlay.setHass(fake.hass);
   await settle();
-  fake.push({ available: true, session: view(1) });
+  fake.push({ available: true, session: view(1), music: playing });
   const states: SessionState[] = [];
   overlay.subscribe((state) => states.push(state));
   overlay.open({ kind: "resume" });
@@ -338,9 +347,9 @@ test("a dropped HA connection counts as unreachable until it is ready again", as
   // view so the flow can count down (its note shows, and Luk after 10 s).
   const before = Date.now();
   fake.fire("disconnected");
-  expect(overlay.state()).toEqual({ available: false, session: view(1) });
+  expect(overlay.state()).toEqual({ available: false, session: view(1), music: null });
   expect(states).toHaveLength(1);
-  expect(theFlow().state).toEqual({ available: false, session: view(1) });
+  expect(theFlow().state).toEqual({ available: false, session: view(1), music: null });
   expect(overlay.lostAt(overlay.state())).toBeGreaterThanOrEqual(before);
 
   // Ready again: the controller subscribes again, and the integration's first message says how it is.

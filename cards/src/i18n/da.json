@@ -184,7 +184,14 @@
       "invalid": "Vælg 1–2 personer, højst én per øvelse.",
       "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
       "general": "Noget gik galt. Prøv igen."
-    }
+    },
+    "music": "Musik",
+    "speaker": "Højttaler",
+    "speaker_unavailable": "{name} (utilgængelig)",
+    "music_unavailable": "Musik utilgængelig",
+    "music_pause": "Pause musik",
+    "music_play": "Afspil musik",
+    "music_next": "Næste nummer"
   },
   "equipment": {
     "dumbbell": "håndvægt",

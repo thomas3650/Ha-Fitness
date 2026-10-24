@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import "../src/index";
 import * as overlay from "../src/overlay";
-import type { OverlayMode, SessionPhase, SessionState, SessionView } from "../src/overlay";
+import type { MusicState, OverlayMode, SessionPhase, SessionState, SessionView } from "../src/overlay";
 import { installFakeAudio } from "./fake-audio";
 
 // The flow element is defined once for the file, so its modules are imported statically; the
@@ -40,20 +40,27 @@ interface Pending {
   reject(error: unknown): void;
 }
 
-/** A fake `hass` with `callWS` for §4's commands; each session command waits for the test. */
+/**
+ * A fake `hass` with `callWS` for §4's commands; each session command and each music command
+ * waits for the test.
+ */
 function fakeHass(language = "da", people = [thomas, maria], programs: unknown[] = []) {
   const commands: Pending[] = [];
+  const music: Pending[] = [];
   const callWS = vi.fn((message: Message): Promise<unknown> => {
     if (message.type === "ha_fitness/people") return Promise.resolve(people);
     if (message.type === "ha_fitness/programs") return Promise.resolve(programs);
     if (message.type === "ha_fitness/session/command") {
       return new Promise((resolve, reject) => commands.push({ message, resolve, reject }));
     }
+    if (message.type === "ha_fitness/music") {
+      return new Promise((resolve, reject) => music.push({ message, resolve, reject }));
+    }
     return Promise.reject({ code: "unknown_command", message: "Unknown command." });
   });
   // Every exercise has a GIF and a thumbnail.
   const fetchWithAuth = vi.fn(async () => new Response(new Blob(["GIF89a"]), { status: 200 }));
-  return { hass: { locale: { language }, callWS, fetchWithAuth }, callWS, commands };
+  return { hass: { locale: { language }, callWS, fetchWithAuth }, callWS, commands, music };
 }
 
 type Fake = ReturnType<typeof fakeHass>;
@@ -129,12 +136,12 @@ function finished(counted: boolean, overrides: Partial<SessionView> = {}): Sessi
 }
 
 /** Put the flow on the page the way the overlay controller does, resuming the session `session`. */
-async function mount(fake: Fake, session: SessionView | null, available = true) {
+async function mount(fake: Fake, session: SessionView | null, available = true, music?: MusicState | null) {
   const flow = document.createElement("ha-fitness-workout-flow") as FlowElement;
   document.body.append(flow);
   const onClose = vi.fn();
   flow.hass = fake.hass;
-  flow.state = { available, session };
+  flow.state = music === undefined ? { available, session } : { available, session, music };
   flow.mode = { kind: "resume" };
   flow.onClose = onClose;
   await settle(flow);
@@ -156,8 +163,13 @@ async function tap(flow: FlowElement, element: HTMLElement): Promise<void> {
   await settle(flow);
 }
 
-async function push(flow: FlowElement, session: SessionView | null, available = true): Promise<void> {
-  flow.state = { available, session };
+async function push(
+  flow: FlowElement,
+  session: SessionView | null,
+  available = true,
+  music?: MusicState | null,
+): Promise<void> {
+  flow.state = music === undefined ? { available, session } : { available, session, music };
   await settle(flow);
 }
 
@@ -971,4 +983,111 @@ test("the GIFs coming up are fetched ahead", async () => {
   };
   await settle(flow);
   expect(fetched()).toContain(gif("0903"));
+});
+
+// The music player (music spec §6.2).
+
+function music(state: MusicState["state"] = "playing"): MusicState {
+  return { playlist_name: "Workout Mix", speaker: "media_player.stue", speaker_name: "Stue", state };
+}
+
+function player(flow: FlowElement, name = "Musik"): HTMLElement {
+  return getByRole(root(flow), "group", { name });
+}
+
+function playerButton(flow: FlowElement, name: string, group = "Musik"): HTMLButtonElement {
+  return getByRole(player(flow, group), "button", { name }) as HTMLButtonElement;
+}
+
+function musicSent(fake: Fake): Message[] {
+  return fake.music.map((command) => command.message);
+}
+
+test("player shows playlist and speaker name", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, music());
+  expect(text(player(flow))).toBe("Workout Mix Stue");
+  document.body.replaceChildren();
+
+  const english = await mount(fakeHass("en"), solo(), true, music());
+  expect(text(player(english.flow, "Music"))).toBe("Workout Mix Stue");
+  expect(playerButton(english.flow, "Pause music", "Music")).toBeTruthy();
+  expect(playerButton(english.flow, "Next track", "Music")).toBeTruthy();
+});
+
+test("player shows Musik utilgængelig when unavailable", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, music("unavailable"));
+  expect(text(player(flow))).toBe("Workout Mix Musik utilgængelig");
+  document.body.replaceChildren();
+
+  const english = await mount(fakeHass("en"), solo(), true, music("unavailable"));
+  expect(text(player(english.flow, "Music"))).toBe("Workout Mix Music unavailable");
+});
+
+test("pause and next send ha_fitness/music", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing"));
+
+  await tap(flow, playerButton(flow, "Pause musik"));
+  await tap(flow, playerButton(flow, "Næste nummer"));
+  expect(musicSent(fake)).toEqual([
+    { type: "ha_fitness/music", action: "pause" },
+    { type: "ha_fitness/music", action: "next" },
+  ]);
+
+  // A refused music command shows nothing; the subscription shows the real state.
+  fake.music[0].reject({ code: "unavailable", message: "Speaker gone" });
+  fake.music[1].resolve(view());
+  await settle(flow);
+  expect(queryByRole(root(flow), "alert")).toBeNull();
+
+  await push(flow, solo(), true, music("paused"));
+  await tap(flow, playerButton(flow, "Afspil musik"));
+  expect(musicSent(fake).at(-1)).toEqual({ type: "ha_fitness/music", action: "play" });
+  // The music commands are no session commands.
+  expect(sent(fake)).toEqual([]);
+});
+
+test("buttons per state", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("waiting"));
+  const names = () => getAllByRole(player(flow), "button").map((element) => element.getAttribute("aria-label"));
+  const disabled = () => getAllByRole(player(flow), "button").map((element) => (element as HTMLButtonElement).disabled);
+
+  // Waiting for the first work phase: both disabled.
+  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
+  expect(disabled()).toEqual([true, true]);
+
+  // Unavailable: Play can retry a failed start; Next can't.
+  await push(flow, solo(), true, music("unavailable"));
+  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
+  expect(disabled()).toEqual([false, true]);
+
+  await push(flow, solo(), true, music("playing"));
+  expect(names()).toEqual(["Pause musik", "Næste nummer"]);
+  expect(disabled()).toEqual([false, false]);
+
+  await push(flow, solo(), true, music("paused"));
+  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
+  expect(disabled()).toEqual([false, false]);
+});
+
+test("no player when music is null", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, null);
+  expect(queryByRole(root(flow), "group", { name: "Musik" })).toBeNull();
+  expect(queryByRole(root(flow), "button", { name: "Næste nummer" })).toBeNull();
+  document.body.replaceChildren();
+
+  // An older integration sends no music at all.
+  const older = await mount(fakeHass("da"), solo());
+  expect(queryByRole(root(older.flow), "group", { name: "Musik" })).toBeNull();
+});
+
+test("player in the two-person timer", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view(), true, music("playing"));
+  expect(text(player(flow))).toBe("Workout Mix Stue");
+  await tap(flow, playerButton(flow, "Næste nummer"));
+  expect(musicSent(fake)).toEqual([{ type: "ha_fitness/music", action: "next" }]);
+  // The timer's own controls are still there.
+  expect(button(flow, "Næste")).toBeTruthy();
 });

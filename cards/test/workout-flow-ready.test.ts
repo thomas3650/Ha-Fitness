@@ -312,3 +312,13 @@ test("get ready shows start stations; Start nu sends next; Annullér sends end a
   await push(flow, ended);
   expect(queryByText(root(flow), "Træningen blev afsluttet")).toBeNull();
 });
+
+test("get ready shows no player", async () => {
+  const music = { playlist_name: "Workout Mix", speaker: "media_player.stue", speaker_name: "Stue", state: "waiting" as const };
+  const { flow } = await mount(fakeHass("da"), { kind: "resume" }, { available: true, session: view(), music });
+  // Get ready shows, and the music waits for the first work phase without a player.
+  expect(button(flow, "Start nu")).toBeTruthy();
+  expect(queryByRole(root(flow), "group", { name: "Musik" })).toBeNull();
+  expect(queryByRole(root(flow), "button", { name: "Næste nummer" })).toBeNull();
+  expect(queryByText(root(flow), "Workout Mix")).toBeNull();
+});
