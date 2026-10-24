@@ -108,7 +108,9 @@ def _fresh(view: dict[str, Any] | None) -> dict[str, Any] | None:
     if view is None:
         return None
     now = dt_util.utcnow()
-    fresh = {**view, "server_time": now.isoformat(timespec="milliseconds")}
+    # The add-on's format: UTC with milliseconds and Z.
+    server_time = now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    fresh = {**view, "server_time": server_time}
     phase = view.get("phase")
     trained = view.get("time_trained")
     if (

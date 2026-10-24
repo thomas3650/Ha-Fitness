@@ -44,7 +44,8 @@ def _freeze_on_whole_second(freezer: FrozenDateTimeFactory) -> datetime:
 
 
 def _iso(moment: datetime) -> str:
-    return moment.isoformat(timespec="milliseconds")
+    """Write a UTC time as the add-on does: milliseconds and Z."""
+    return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _view(**changes: Any) -> dict[str, Any]:
@@ -152,20 +153,24 @@ async def test_events_fired_with_data(
         name: {"id": 7, "program_name": name, "training_day_id": 12} for name in names
     }
     sessions["session_ended"]["counted"] = True
-    sessions["phase_changed"]["phase"] = {"index": 4, "kind": "switch"}
+    sessions["phase_changed"]["phase"] = {
+        **SESSION_RUNNING["phase"],
+        "index": 4,
+        "kind": "switch",
+        "duration": 15,
+        "ends_at": "2026-10-28T17:00:55.000Z",
+    }
     for name in names:
         await fake_addon.push(
             {"type": "event", "event": name, "session": sessions[name]}
         )
     day = {"id": 12, "program_id": 3, "program_name": "Onsdag", "date": "2026-10-28"}
-    await fake_addon.push(
-        {"type": "event", "event": "done", "training_day": {**day, "status": "done"}}
-    )
+    await fake_addon.push({"type": "event", "event": "done", "training_day": day})
     await wait_for(hass, lambda: len(captured["training_day_done"]) == 1)
 
     for name in names:
         assert [event.data for event in captured[name]] == [sessions[name]]
-    assert captured["training_day_done"][0].data == {**day, "status": "done"}
+    assert captured["training_day_done"][0].data == day
     await unload(hass, config_entry)
 
 
@@ -188,15 +193,14 @@ async def test_subscription_fresh_server_time_and_time_trained(
     first = await _subscribe(client)
     assert first["available"] is True
     assert _without_server_time(first["session"]) == _without_server_time(view)
-    assert dt_util.parse_datetime(first["session"]["server_time"]) == start
+    # The view keeps the add-on's time format: UTC with milliseconds and Z.
+    assert first["session"]["server_time"] == _iso(start)
 
     freezer.tick(timedelta(seconds=30))
     second = await _subscribe(client)
     assert second["available"] is True
     session = second["session"]
-    assert dt_util.parse_datetime(session["server_time"]) == start + timedelta(
-        seconds=30
-    )
+    assert session["server_time"] == _iso(start + timedelta(seconds=30))
     assert session["time_trained"] == 130
     assert _without_server_time({**session, "time_trained": 100}) == (
         _without_server_time(view)

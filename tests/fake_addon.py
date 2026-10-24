@@ -29,7 +29,8 @@ TODAY_DUE: dict[str, Any] = {
 }
 
 
-# A running session in a work phase (spec §3.5's view); tests set server_time and copy it.
+# A running session in a work phase, as the add-on's SessionView gives it (the workout spec §3.5):
+# times in UTC with milliseconds and Z. Tests set server_time and copy it.
 SESSION_RUNNING: dict[str, Any] = {
     "id": 7,
     "revision": 4,
@@ -44,7 +45,7 @@ SESSION_RUNNING: dict[str, Any] = {
         "round": 1,
         "interval": 2,
         "duration": 40,
-        "ends_at": "2026-10-28T17:00:40.000+00:00",
+        "ends_at": "2026-10-28T17:00:40.000Z",
         "remaining": None,
     },
     "next_phase": {"kind": "switch", "duration": 15},
@@ -58,12 +59,12 @@ SESSION_RUNNING: dict[str, Any] = {
             "next": {"number": 1, "exercise_id": "0003", "name": "Plank"},
         },
     ],
-    "totals": {"planned": 1500, "rounds": 5},
-    "started_at": "2026-10-28T16:58:00.000+00:00",
+    "totals": {"planned": 1500, "rounds": 5, "stations": 5},
+    "started_at": "2026-10-28T16:58:00.000Z",
     "ended_at": None,
     "rounds_completed": 0,
     "time_trained": 100,
-    "server_time": "2026-10-28T17:00:00.000+00:00",
+    "server_time": "2026-10-28T17:00:00.000Z",
 }
 
 
