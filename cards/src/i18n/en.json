@@ -1,7 +1,11 @@
 {
   "picker": {
     "name": "HA Fitness – today",
-    "description": "Today's training, with a button to skip it. Hidden when there's no training."
+    "description": "Today's training, with Start and a button to skip it. Hidden when there's no training."
+  },
+  "picker_workout": {
+    "name": "HA Fitness – workout",
+    "description": "The active programs, each with Start. Shows Continue while a workout runs."
   },
   "today": {
     "stations_one": "{count} exercise",
@@ -11,11 +15,20 @@
     "minutes": "about {count} min",
     "summary": "{stations} · {rounds} · {minutes}",
     "late": "Late · {weekday} · {summary}",
+    "start": "Start",
     "skip": "Skip",
     "skip_confirm": "Skip?",
     "yes": "Yes",
     "no": "No",
     "nothing_open": "No training today",
+    "unreachable": "HA Fitness can't be reached"
+  },
+  "session": {
+    "running": "Workout in progress · {program}",
+    "resume": "Continue"
+  },
+  "workout": {
+    "no_programs": "No active programs",
     "unreachable": "HA Fitness can't be reached"
   },
   "weekday": {
@@ -32,5 +45,63 @@
     "not_open": "This training day is already finished.",
     "unavailable": "HA Fitness can't be reached. Try again later.",
     "general": "Something went wrong. Try again."
+  },
+  "flow": {
+    "summary": "{minutes} · {rounds}",
+    "seconds": "Work {work} s · Switch {switch} s · Rest {rest} s",
+    "stations": "Exercises",
+    "who": "Who's training?",
+    "no_people": "No people – ask Claude to add them",
+    "start": "Start",
+    "back": "Back",
+    "get_ready": "Get ready",
+    "starts_at": "{name} · station {number} · {exercise}",
+    "start_now": "Start now",
+    "cancel": "Cancel",
+    "pause": "Pause",
+    "resume": "Resume",
+    "tap_for_sound": "Tap for sound",
+    "close": "Close",
+    "phase": {
+      "countdown": "GET READY",
+      "work": "WORK",
+      "switch": "SWITCH",
+      "rest": "REST",
+      "paused": "PAUSED"
+    },
+    "done": {
+      "counted": "Well done!",
+      "ended": "The workout was ended",
+      "time": "Time",
+      "rounds": "{done}/{rounds} rounds",
+      "who": "Who trained"
+    },
+    "unreachable": "HA Fitness can't be reached",
+    "round": "Round {round}/{rounds}",
+    "interval": "Interval {interval}",
+    "interval_of": "Interval {interval}/{intervals}",
+    "elapsed": "{elapsed} / {planned}",
+    "end": "End",
+    "end_confirm": "End the workout?",
+    "yes": "Yes",
+    "no": "No",
+    "previous": "Previous",
+    "next": "Next",
+    "next_label": "Next",
+    "station": "Station {number}",
+    "next_station": "Next: station {number} · {exercise}",
+    "then": {
+      "work": "then {seconds} s work",
+      "switch": "then {seconds} s switch",
+      "rest": "then {seconds} s rest"
+    },
+    "error": {
+      "already_running": "A workout is already running.",
+      "cant_start": "The workout can't start now.",
+      "not_found": "The program or a person no longer exists.",
+      "invalid": "Choose 1–2 people, at most one per exercise.",
+      "unavailable": "HA Fitness can't be reached. Try again later.",
+      "general": "Something went wrong. Try again."
+    }
   }
 }

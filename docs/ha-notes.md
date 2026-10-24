@@ -80,6 +80,18 @@ fit no doc stay in [`notes.md`](notes.md).
   default after a reconnect. A card that also subscribes again on the connection's `ready` event then has one extra
   server subscription after each reconnect. The today card passes `{resubscribe: false}`, as HA's own frontend does,
   and subscribes again on `ready` itself.
+- **A modal `<dialog>` sits above HA's header.** `showModal()` puts the dialog in the browser's top layer. That layer
+  is above every stacking context and transform on the page, so a dialog appended to `document.body` covers HA's
+  header and every card. That is why the workout flow is one such dialog (D45).
+- **Audio needs a gesture.** Browsers let an `AudioContext` start only in, or after, a user gesture such as a tap. Code
+  after an `await` may no longer count as the gesture. So the cards call `unlockAudio()` synchronously in the Start and
+  Fortsæt tap handlers, before anything awaits. After a reload without a tap the context stays suspended, and the timer
+  shows "Tryk for lyd".
+- **Register a card after HA's frontend boots.** HA's `index.html` loads extra modules, such as the cards bundle, in
+  parallel with its own frontend. Once the frontend boots, it replaces `window.customElements` with a scoped registry
+  polyfill. A card defined at import can land in the native registry before that happens; the polyfill's registry then
+  doesn't know it, and Lovelace shows a configuration error until a normal reload. So the bundle registers its
+  elements only once `home-assistant` is defined in the then-current `customElements` (`cards/src/register.ts`).
 
 ## Testing
 
@@ -100,6 +112,9 @@ fit no doc stay in [`notes.md`](notes.md).
   `async_fire_time_changed` runs aiohttp's own timers too (connect and pong timeouts). Firing 15 s or more ahead while
   a socket is connecting or waiting for a pong times it out, so `wait_for` in `tests/common.py` is used with short
   spans only.
+- **happy-dom doesn't dispatch `cancel` on Escape.** A browser fires `cancel` on a modal dialog when Escape is
+  pressed; happy-dom, the cards' test DOM, doesn't. So the overlay test dispatches a `cancel` event itself and checks
+  that it is prevented and the dialog stays open.
 
 ## Bumping Home Assistant
 

@@ -1,7 +1,11 @@
 {
   "picker": {
     "name": "HA Fitness – i dag",
-    "description": "Dagens træning, med en knap til at springe den over. Skjult, når der ikke er nogen træning."
+    "description": "Dagens træning, med Start og en knap til at springe den over. Skjult, når der ikke er nogen træning."
+  },
+  "picker_workout": {
+    "name": "HA Fitness – træning",
+    "description": "De aktive programmer, hver med Start. Viser Fortsæt, mens en træning er i gang."
   },
   "today": {
     "stations_one": "{count} øvelse",
@@ -11,11 +15,20 @@
     "minutes": "ca. {count} min",
     "summary": "{stations} · {rounds} · {minutes}",
     "late": "Forfalden · {weekday} · {summary}",
+    "start": "Start",
     "skip": "Spring over",
     "skip_confirm": "Spring over?",
     "yes": "Ja",
     "no": "Nej",
     "nothing_open": "Ingen træning i dag",
+    "unreachable": "HA Fitness kan ikke nås"
+  },
+  "session": {
+    "running": "Træning i gang · {program}",
+    "resume": "Fortsæt"
+  },
+  "workout": {
+    "no_programs": "Ingen aktive programmer",
     "unreachable": "HA Fitness kan ikke nås"
   },
   "weekday": {
@@ -32,5 +45,63 @@
     "not_open": "Træningsdagen er allerede afsluttet.",
     "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
     "general": "Noget gik galt. Prøv igen."
+  },
+  "flow": {
+    "summary": "{minutes} · {rounds}",
+    "seconds": "Arbejde {work} s · Skift {switch} s · Pause {rest} s",
+    "stations": "Øvelser",
+    "who": "Hvem træner?",
+    "no_people": "Ingen personer – bed Claude oprette dem",
+    "start": "Start",
+    "back": "Tilbage",
+    "get_ready": "Gør klar",
+    "starts_at": "{name} · station {number} · {exercise}",
+    "start_now": "Start nu",
+    "cancel": "Annullér",
+    "pause": "Pause",
+    "resume": "Fortsæt",
+    "tap_for_sound": "Tryk for lyd",
+    "close": "Luk",
+    "phase": {
+      "countdown": "GØR KLAR",
+      "work": "ARBEJD",
+      "switch": "SKIFT",
+      "rest": "PAUSE",
+      "paused": "PAUSE"
+    },
+    "done": {
+      "counted": "Godt gået!",
+      "ended": "Træningen blev afsluttet",
+      "time": "Tid",
+      "rounds": "{done}/{rounds} runder",
+      "who": "Hvem trænede"
+    },
+    "unreachable": "HA Fitness kan ikke nås",
+    "round": "Runde {round}/{rounds}",
+    "interval": "Interval {interval}",
+    "interval_of": "Interval {interval}/{intervals}",
+    "elapsed": "{elapsed} / {planned}",
+    "end": "Slut",
+    "end_confirm": "Afslut træningen?",
+    "yes": "Ja",
+    "no": "Nej",
+    "previous": "Forrige",
+    "next": "Næste",
+    "next_label": "Næste",
+    "station": "Station {number}",
+    "next_station": "Næste: station {number} · {exercise}",
+    "then": {
+      "work": "så {seconds} s arbejde",
+      "switch": "så {seconds} s skift",
+      "rest": "så {seconds} s pause"
+    },
+    "error": {
+      "already_running": "En træning er allerede i gang.",
+      "cant_start": "Træningen kan ikke startes nu.",
+      "not_found": "Programmet eller en person findes ikke længere.",
+      "invalid": "Vælg 1–2 personer, højst én per øvelse.",
+      "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
+      "general": "Noget gik galt. Prøv igen."
+    }
   }
 }

@@ -3,6 +3,11 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest"
 
 import en from "../src/i18n/en.json";
 import "../src/index";
+import * as overlay from "../src/overlay";
+import { installFakeAudio } from "./fake-audio";
+
+// One audio context for the page (audio.ts keeps it at module level), so one fake for the file.
+const audio = installFakeAudio("suspended");
 
 interface Day {
   id: number;
@@ -49,19 +54,42 @@ const strength: Day = {
   total_minutes: 12,
 };
 
+/** Onsdag as `ha_fitness/programs` returns it (spec §4). */
+const onsdag = {
+  id: 3,
+  name: "Onsdag",
+  rounds: 5,
+  work_seconds: 45,
+  switch_seconds: 15,
+  round_rest_seconds: 60,
+  countdown_seconds: 10,
+  total_minutes: 29,
+  stations: [
+    { exercise_id: "0001", name: "Push-up" },
+    { exercise_id: "0002", name: "Squat" },
+  ],
+};
+
 function today(open: Day[], date = "2026-10-28") {
   return { date, open, next: { date: "2026-10-31", programs: ["Lørdag"] } };
 }
 
 type Listener = (message: unknown) => void;
 
+const NO_SESSION = { available: true, session: null };
+
 /**
- * A fake of home-assistant-js-websocket's connection: each subscription keeps its own listener and
- * unsubscribe spy, and `fire` sends a connection event such as `ready` (sent after a reconnect).
+ * A fake of home-assistant-js-websocket's connection. The today card's `ha_fitness/today/subscribe`
+ * and the page's `ha_fitness/session/subscribe` (the overlay controller's) are kept apart:
+ * `subscribeMessage`, `listeners` and `unsubscribes` are the today subscription's, and
+ * `subscribeSession` and `pushSession` the session's. Like the integration, the session
+ * subscription sends at once: `{available: true, session: null}` unless the test says otherwise.
+ * `fire` sends a connection event such as `ready` (sent after a reconnect).
  */
-function fakeConnection() {
+function fakeConnection(initialSession: unknown = NO_SESSION) {
   const listeners: Listener[] = [];
   const unsubscribes: ReturnType<typeof vi.fn>[] = [];
+  const sessionListeners: Listener[] = [];
   const events = new Map<string, Set<(...args: unknown[]) => void>>();
   const subscribeMessage = vi.fn<
     (callback: Listener, message: unknown, options?: unknown) => Promise<() => void>
@@ -73,8 +101,19 @@ function fakeConnection() {
       return Promise.resolve(unsubscribe);
     },
   );
+  const subscribeSession = vi.fn<
+    (callback: Listener, message: unknown, options?: unknown) => Promise<() => void>
+  >((callback) => {
+    sessionListeners.push(callback);
+    void Promise.resolve().then(() => callback(initialSession));
+    return Promise.resolve(vi.fn());
+  });
   const connection = {
-    subscribeMessage,
+    subscribeMessage(callback: Listener, message: { type: string }, options?: unknown) {
+      return message.type === "ha_fitness/session/subscribe"
+        ? subscribeSession(callback, message, options)
+        : subscribeMessage(callback, message, options);
+    },
     addEventListener(type: string, callback: (...args: unknown[]) => void) {
       if (!events.has(type)) events.set(type, new Set());
       events.get(type)!.add(callback);
@@ -86,31 +125,52 @@ function fakeConnection() {
   return {
     connection,
     subscribeMessage,
+    subscribeSession,
     listeners,
     unsubscribes,
     listenerCount: (type: string) => events.get(type)?.size ?? 0,
     fire(type: string) {
       for (const callback of events.get(type) ?? []) callback(connection);
     },
-    /** Send a message on the newest subscription. */
+    /** Send a message on the newest today subscription. */
     push(message: unknown) {
       const listener = listeners.at(-1);
       if (!listener) throw new Error("the card has not subscribed");
       listener(message);
     },
+    /** Send a message on the newest session subscription. */
+    pushSession(message: unknown) {
+      const listener = sessionListeners.at(-1);
+      if (!listener) throw new Error("nothing has subscribed to the session");
+      listener(message);
+    },
   };
 }
 
-/** A fake `hass`: a spy for `callService` and a fake connection the test pushes messages into. */
-function fakeHass(language = "da") {
-  const socket = fakeConnection();
+type Message = { type: string } & Record<string, unknown>;
+
+/**
+ * A fake `hass`: a spy for `callService`, a `callWS` for §4's commands (the workout flow fetches the
+ * programs and the people when it opens), `fetchWithAuth` for its images, and a fake connection the
+ * test pushes messages into.
+ */
+function fakeHass(language = "da", initialSession: unknown = NO_SESSION) {
+  const socket = fakeConnection(initialSession);
   const callService = vi.fn<(...args: unknown[]) => Promise<unknown>>(() => Promise.resolve({}));
+  const callWS = vi.fn((message: Message): Promise<unknown> => {
+    if (message.type === "ha_fitness/programs") return Promise.resolve([onsdag]);
+    if (message.type === "ha_fitness/people") return Promise.resolve([{ id: 1, name: "Thomas" }]);
+    return Promise.reject({ code: "unknown_command", message: "Unknown command." });
+  });
+  const fetchWithAuth = vi.fn(async () => new Response(null, { status: 404 }));
   const hass = {
     locale: { language },
     callService,
+    callWS,
+    fetchWithAuth,
     connection: socket.connection,
   };
-  return { ...socket, hass, callService };
+  return { ...socket, hass, callService, callWS };
 }
 
 type Fake = ReturnType<typeof fakeHass>;
@@ -128,6 +188,8 @@ async function mount(
   if (options.editMode) card.editMode = true;
   card.hass = fake.hass;
   document.body.append(card);
+  // The session subscription's first message.
+  await vi.advanceTimersByTimeAsync(0);
   await card.updateComplete;
   return card;
 }
@@ -171,6 +233,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // The overlay controller is page-wide and has no reset; each test closes what it opened.
+  overlay.close();
   document.body.replaceChildren();
   vi.useRealTimers();
   vi.unstubAllEnvs();
@@ -191,22 +255,22 @@ test("due and late rows in da and en", async () => {
 
   await push(card, fake, today([wednesday, strength]));
   expect(rows(card).map(text)).toEqual([
-    "Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over",
-    "Styrke 1 øvelse · 3 runder · ca. 12 min Spring over",
+    "Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over",
+    "Styrke 1 øvelse · 3 runder · ca. 12 min Start Spring over",
   ]);
 
   await push(card, fake, today([{ ...wednesday, state: "late" }], "2026-10-29"));
   expect(rows(card).map(text)).toEqual([
-    "Onsdag Forfalden · onsdag · 5 øvelser · 5 runder · ca. 29 min Spring over",
+    "Onsdag Forfalden · onsdag · 5 øvelser · 5 runder · ca. 29 min Start Spring over",
   ]);
 
   const english = fakeHass("en");
   const englishCard = await mount(english);
   await push(englishCard, english, today([wednesday]));
-  expect(rows(englishCard).map(text)).toEqual(["Onsdag 5 exercises · 5 rounds · about 29 min Skip"]);
+  expect(rows(englishCard).map(text)).toEqual(["Onsdag 5 exercises · 5 rounds · about 29 min Start Skip"]);
   await push(englishCard, english, today([{ ...wednesday, state: "late" }], "2026-10-29"));
   expect(rows(englishCard).map(text)).toEqual([
-    "Onsdag Late · Wednesday · 5 exercises · 5 rounds · about 29 min Skip",
+    "Onsdag Late · Wednesday · 5 exercises · 5 rounds · about 29 min Start Skip",
   ]);
 });
 
@@ -264,7 +328,7 @@ test("hides when nothing open and returns when a day opens", async () => {
   expect(card.hidden).toBe(false);
   expect(card.style.display).toBe("");
   expect(events).toEqual([HIDE, SHOW]);
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
 });
 
 test("subscribes once and unsubscribes when removed", async () => {
@@ -293,7 +357,7 @@ test("in preview never hides and shows the note", async () => {
     expect(text(root(card))).toBe("Ingen træning i dag");
 
     await push(card, fake, today([wednesday]));
-    expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+    expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
   }
 
   // A card already hidden comes back when it is shown in the editor.
@@ -325,15 +389,15 @@ test("Nej in place of Spring over", async () => {
   await push(card, fake, today([wednesday, strength]));
 
   // Spring over is the row's last button; after the first tap, Nej is.
-  expect(buttonNames(rows(card)[0])).toEqual(["Spring over"]);
+  expect(buttonNames(rows(card)[0])).toEqual(["Start", "Spring over"]);
   await tap(card, getAllByRole(rows(card)[0], "button").at(-1)!);
   expect(buttonNames(rows(card)[0])).toEqual(["Ja", "Nej"]);
   // The other row is untouched.
-  expect(buttonNames(rows(card)[1])).toEqual(["Spring over"]);
+  expect(buttonNames(rows(card)[1])).toEqual(["Start", "Spring over"]);
 
   // A double tap lands on Nej and cancels.
   await tap(card, getAllByRole(rows(card)[0], "button").at(-1)!);
-  expect(buttonNames(rows(card)[0])).toEqual(["Spring over"]);
+  expect(buttonNames(rows(card)[0])).toEqual(["Start", "Spring over"]);
   await wait(card, 1000);
   expect(fake.callService).not.toHaveBeenCalled();
 });
@@ -379,7 +443,7 @@ test("Ja calls skip with notifyOnError false", async () => {
 
   finish({});
   await push(card, fake, today([wednesday]));
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
 });
 
 test("10 s timeout cancels", async () => {
@@ -391,7 +455,7 @@ test("10 s timeout cancels", async () => {
   await wait(card, 9999);
   expect(buttonNames(rows(card)[0])).toEqual(["Ja", "Nej"]);
   await wait(card, 1);
-  expect(buttonNames(rows(card)[0])).toEqual(["Spring over"]);
+  expect(buttonNames(rows(card)[0])).toEqual(["Start", "Spring over"]);
   expect(fake.callService).not.toHaveBeenCalled();
 });
 
@@ -414,7 +478,7 @@ test("error text from translation_key for 5 s", async () => {
     await tap(card, getByRole(rows(card)[0], "button", { name: "Ja" }));
     await wait(card, 0);
     expect(text(getByRole(root(card), "alert"))).toBe(message);
-    expect(buttonNames(rows(card)[0])).toEqual(["Spring over"]);
+    expect(buttonNames(rows(card)[0])).toEqual(["Start", "Spring over"]);
 
     await wait(card, 4999);
     expect(queryByRole(root(card), "alert")).not.toBeNull();
@@ -471,7 +535,7 @@ test("retries a refused subscription after 5, 10 and 30 s, then every 30 s", asy
   }
 
   await push(card, fake, today([wednesday]));
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
   await wait(card, 120_000);
   expect(fake.subscribeMessage).toHaveBeenCalledTimes(5);
 });
@@ -493,7 +557,7 @@ test("a reconnect subscribes at once and starts the waits over", async () => {
   expect(fake.subscribeMessage).toHaveBeenCalledTimes(5);
 
   await push(card, fake, today([wednesday]));
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
 });
 
 test("stops retrying and listening when removed", async () => {
@@ -501,10 +565,12 @@ test("stops retrying and listening when removed", async () => {
   fake.subscribeMessage.mockRejectedValue({ code: "unknown_command" });
   const card = await mount(fake);
   await wait(card, 0);
-  expect(fake.listenerCount("ready")).toBe(1);
+  // The card's listener and the page-wide overlay controller's.
+  expect(fake.listenerCount("ready")).toBe(2);
 
   card.remove();
-  expect(fake.listenerCount("ready")).toBe(0);
+  // The overlay controller keeps its own subscription; the card's listener is gone.
+  expect(fake.listenerCount("ready")).toBe(1);
   await vi.advanceTimersByTimeAsync(120_000);
   expect(fake.subscribeMessage).toHaveBeenCalledTimes(1);
 });
@@ -527,10 +593,10 @@ test("subscribes again when the connection is ready after a reconnect", async ()
   // A late message on the old subscription is ignored.
   fake.listeners[0](today([]));
   await card.updateComplete;
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
 
   await push(card, fake, today([strength]));
-  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Start Spring over"]);
 });
 
 test("a new connection replaces the old subscription", async () => {
@@ -548,11 +614,11 @@ test("a new connection replaces the old subscription", async () => {
   // A late message on the old connection is ignored.
   fake.push(today([]));
   await card.updateComplete;
-  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
 
   other.push(today([strength]));
   await card.updateComplete;
-  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Start Spring over"]);
 });
 
 test("subscribes again when put back on the page", async () => {
@@ -572,7 +638,7 @@ test("subscribes again when put back on the page", async () => {
 
   await push(card, fake, today([strength]));
   expect(card.hidden).toBe(false);
-  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Spring over"]);
+  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 3 runder · ca. 12 min Start Spring over"]);
 });
 
 test("a day that closes while asking drops its question", async () => {
@@ -584,7 +650,7 @@ test("a day that closes while asking drops its question", async () => {
   // Skipped from elsewhere, then open again: the row starts over at Spring over.
   await push(card, fake, today([wednesday]));
   await push(card, fake, today([wednesday, strength]));
-  expect(buttonNames(rows(card)[1])).toEqual(["Spring over"]);
+  expect(buttonNames(rows(card)[1])).toEqual(["Start", "Spring over"]);
 });
 
 test("language option wins", async () => {
@@ -592,7 +658,7 @@ test("language option wins", async () => {
   const card = await mount(fake, { language: "da" });
   await push(card, fake, today([{ ...wednesday, state: "late" }], "2026-10-29"));
   expect(rows(card).map(text)).toEqual([
-    "Onsdag Forfalden · onsdag · 5 øvelser · 5 runder · ca. 29 min Spring over",
+    "Onsdag Forfalden · onsdag · 5 øvelser · 5 runder · ca. 29 min Start Spring over",
   ]);
 
   // HA translates service errors in the system language; the card uses its own texts.
@@ -623,4 +689,249 @@ test("is offered in the card picker, in English", () => {
   const entry = window.customCards?.find((card) => card.type === "ha-fitness-today-card");
   expect(entry?.name).toBe(en.picker.name);
   expect(entry?.description).toBe(en.picker.description);
+});
+
+/** A session view in the shape of spec §3.5. */
+function sessionView(status: "running" | "paused" | "completed" | "ended", trainingDayId: number | null = 12) {
+  const finished = status === "completed" || status === "ended";
+  return {
+    id: 7,
+    revision: 1,
+    status,
+    counted: status === "completed",
+    program_name: "Onsdag",
+    training_day_id: trainingDayId,
+    participants: [{ id: 1, name: "Thomas" }],
+    phase: finished
+      ? null
+      : {
+          index: 1,
+          kind: "work",
+          round: 1,
+          interval: 1,
+          duration: 45,
+          ends_at: status === "running" ? "2026-10-24T08:00:45.000Z" : null,
+          remaining: status === "paused" ? 30 : null,
+        },
+    next_phase: finished ? null : { kind: "switch", duration: 15 },
+    stations: finished
+      ? null
+      : [
+          {
+            current: { number: 1, exercise_id: "0001", name: "Push-up" },
+            next: { number: 2, exercise_id: "0002", name: "Squat" },
+          },
+        ],
+    totals: { planned: 1740, rounds: 5, stations: 2 },
+    started_at: "2026-10-24T08:00:10.000Z",
+    ended_at: finished ? "2026-10-24T08:29:10.000Z" : null,
+    rounds_completed: finished ? 5 : 0,
+    time_trained: finished ? 1740 : 0,
+    server_time: "2026-10-24T08:00:00.000Z",
+  };
+}
+
+/** The one open overlay dialog, or null. */
+function theDialog(): HTMLDialogElement | null {
+  const dialogs = queryAllByRole(document.body, "dialog") as HTMLDialogElement[];
+  expect(dialogs.length).toBeLessThanOrEqual(1);
+  return dialogs[0] ?? null;
+}
+
+
+/** The shadow root of the flow in the open overlay, for queries. */
+function flowRoot(): HTMLElement {
+  const flow = theDialog()?.firstElementChild;
+  expect(flow?.shadowRoot).toBeTruthy();
+  return flow!.shadowRoot as unknown as HTMLElement;
+}
+
+/** The `ha_fitness/session/command` messages sent so far. */
+function sessionCommands(fake: { callWS: { mock: { calls: [Message][] } } }): Message[] {
+  return fake.callWS.mock.calls.map(([message]) => message).filter((message) => message.type === "ha_fitness/session/command");
+}
+
+/** The overlay shows the running or paused session: the timer with Slut, not the details' Start. */
+function showsTimer(): boolean {
+  return queryByRole(flowRoot(), "button", { name: "Slut" }) !== null && queryByRole(flowRoot(), "button", { name: "Start" }) === null;
+}
+
+/** The calls of `resume()` on the page's audio contexts so far; each unlock of a locked page makes one. */
+function resumes(): number {
+  return audio.contexts.reduce((count, context) => count + context.resume.mock.calls.length, 0);
+}
+
+/** Lock the page's audio again, as a reload or a quiet tablet can. */
+function lockAudio(): void {
+  for (const context of audio.contexts) context.setState("suspended");
+}
+
+/** Record, at each moment the overlay opened, how many unlocks the page had seen. */
+function audioAtOpen(): number[] {
+  const seen: number[] = [];
+  const showModal = HTMLDialogElement.prototype.showModal;
+  const spy = vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (
+    this: HTMLDialogElement,
+  ) {
+    seen.push(resumes());
+    showModal.call(this);
+  });
+  onTestFinished(() => spy.mockRestore());
+  return seen;
+}
+
+test("Start opens overlay with the day, nothing started, audio unlocked synchronously", async () => {
+  const opened = audioAtOpen();
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday, strength]));
+
+  // Start sits next to Spring over, before it, so Spring over and Nej keep the last place.
+  expect(buttonNames(rows(card)[0])).toEqual(["Start", "Spring over"]);
+  expect(theDialog()).toBeNull();
+
+  lockAudio();
+  const before = resumes();
+  getByRole(rows(card)[0], "button", { name: "Start" }).click();
+  // Synchronously, in the tap: the audio unlocked before the overlay opened.
+  expect(resumes()).toBe(before + 1);
+  expect(opened).toEqual([before + 1]);
+  expect(theDialog()?.open).toBe(true);
+
+  // The details of the day's program show; nothing is started until the flow's own Start, which
+  // starts the day's training.
+  await wait(card, 0);
+  expect(text(flowRoot())).toContain("Onsdag");
+  expect(sessionCommands(fake)).toEqual([]);
+  getByRole(flowRoot(), "button", { name: "Start" }).click();
+  await wait(card, 0);
+  expect(sessionCommands(fake)).toEqual([
+    { type: "ha_fitness/session/command", command: "start", program_id: 3, participants: [1], training_day_id: 12 },
+  ]);
+});
+
+test("Start is hidden while Spring over asks", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([wednesday]));
+
+  await tap(card, getByRole(rows(card)[0], "button", { name: "Spring over" }));
+  expect(buttonNames(rows(card)[0])).toEqual(["Ja", "Nej"]);
+  await tap(card, getByRole(rows(card)[0], "button", { name: "Nej" }));
+  expect(buttonNames(rows(card)[0])).toEqual(["Start", "Spring over"]);
+});
+
+test("Fortsæt while session active unlocks audio and resumes; Spring over hidden", async () => {
+  const opened = audioAtOpen();
+  for (const status of ["running", "paused"] as const) {
+    opened.length = 0;
+    const fake = fakeHass();
+    const card = await mount(fake);
+    await push(card, fake, today([wednesday, strength]));
+
+    fake.pushSession({ available: true, session: sessionView(status) });
+    await card.updateComplete;
+    expect(rows(card).map(text)).toEqual(["Træning i gang · Onsdag Fortsæt"]);
+    expect(queryByRole(root(card), "button", { name: "Spring over" })).toBeNull();
+    expect(queryByRole(root(card), "button", { name: "Start" })).toBeNull();
+
+    // A reload, or a tablet that went quiet, can leave the page's audio suspended.
+    lockAudio();
+    const before = resumes();
+    getByRole(root(card), "button", { name: "Fortsæt" }).click();
+    // Synchronously, in the tap: the audio unlocked before the overlay opened.
+    expect(resumes()).toBe(before + 1);
+    expect(opened).toEqual([before + 1]);
+    await wait(card, 0);
+    expect(showsTimer()).toBe(true);
+
+    overlay.close();
+    card.remove();
+  }
+
+  // In English too.
+  const english = fakeHass("en");
+  const card = await mount(english);
+  english.pushSession({ available: true, session: sessionView("running") });
+  await card.updateComplete;
+  expect(rows(card).map(text)).toEqual(["Workout in progress · Onsdag Continue"]);
+});
+
+test("after a completed view the today card shows no Fortsæt and hides when nothing is open", async () => {
+  for (const status of ["completed", "ended"] as const) {
+    const fake = fakeHass();
+    const card = await mount(fake);
+    await push(card, fake, today([wednesday]));
+    fake.pushSession({ available: true, session: sessionView("running") });
+    await card.updateComplete;
+    expect(rows(card).map(text)).toEqual(["Træning i gang · Onsdag Fortsæt"]);
+
+    // The finished view is kept for 5 minutes, but it is not an active session.
+    fake.pushSession({ available: true, session: sessionView(status) });
+    await card.updateComplete;
+    expect(queryByRole(root(card), "button", { name: "Fortsæt" })).toBeNull();
+    expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start Spring over"]);
+
+    await push(card, fake, today([]));
+    expect(card.hidden).toBe(true);
+    card.remove();
+  }
+});
+
+test("today card visible during extra session with nothing open", async () => {
+  const events = visibilityEvents();
+  const fake = fakeHass();
+  const card = await mount(fake);
+  await push(card, fake, today([]));
+  expect(card.hidden).toBe(true);
+
+  // An extra session, from the workout card: no training day, nothing open.
+  fake.pushSession({ available: true, session: sessionView("running", null) });
+  await card.updateComplete;
+  expect(card.hidden).toBe(false);
+  expect(card.style.display).toBe("");
+  expect(text(root(card))).toBe("Træning i gang · Onsdag Fortsæt");
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 2 });
+
+  // The add-on unreachable: the last view still counts as active, so the card stays.
+  fake.pushSession({ available: false, session: sessionView("paused", null) });
+  await card.updateComplete;
+  expect(card.hidden).toBe(false);
+
+  fake.pushSession({ available: true, session: sessionView("completed", null) });
+  await card.updateComplete;
+  expect(card.hidden).toBe(true);
+  expect(events).toEqual([HIDE, SHOW, HIDE]);
+});
+
+test("a card that connects during a session shows Fortsæt at once", async () => {
+  const fake = fakeHass("da", { available: true, session: sessionView("running") });
+  const first = await mount(fake);
+  expect(text(root(first))).toBe("Træning i gang · Onsdag Fortsæt");
+
+  // A second card on the page: the controller already holds the session.
+  const second = document.createElement("ha-fitness-today-card") as unknown as CardElement;
+  second.setConfig({ type: "custom:ha-fitness-today-card" });
+  second.hass = fake.hass;
+  document.body.append(second);
+  await second.updateComplete;
+  expect(second.hidden).toBe(false);
+  expect(text(root(second))).toBe("Træning i gang · Onsdag Fortsæt");
+});
+
+test("the card's language option carries into the flow, from Start and from Fortsæt", async () => {
+  const fake = fakeHass("en");
+  const card = await mount(fake, { language: "da" });
+  await push(card, fake, today([wednesday]));
+
+  getByRole(rows(card)[0], "button", { name: "Start" }).click();
+  await wait(card, 0);
+  expect(getByRole(flowRoot(), "button", { name: "Tilbage" })).toBeTruthy();
+  overlay.close();
+
+  fake.pushSession({ available: true, session: sessionView("running") });
+  await card.updateComplete;
+  getByRole(root(card), "button", { name: "Fortsæt" }).click();
+  await wait(card, 0);
+  expect(getByRole(flowRoot(), "button", { name: "Slut" })).toBeTruthy();
 });

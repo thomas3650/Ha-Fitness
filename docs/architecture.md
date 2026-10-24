@@ -80,14 +80,22 @@ The cards are built into the integration: one bundle, released and versioned wit
     `/ha_fitness_frontend/` and loads `/ha_fitness_frontend/ha-fitness-cards.js?v=<integration version>` in the
     frontend. The version in the URL busts browser caches after an update.
 - **Cards:** Vite builds `cards/src/index.ts` into `custom_components/ha_fitness/frontend/ha-fitness-cards.js`.
-  Importing a card registers its custom element (`ha-fitness-<name>-card`). The texts come from `cards/src/i18n/`
+  The bundle registers its elements, the two cards and `ha-fitness-workout-flow`, once HA's frontend has booted
+  ([`ha-notes.md`](ha-notes.md#the-frontend)). The texts come from `cards/src/i18n/`
   (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the HA user's language
   (D11, D38).
   - **"Træning i dag"** (`custom:ha-fitness-today-card`) shows one row per open training day, with a two-tap Spring
     over. It hides itself when nothing is open, except in edit mode, and shows one line while the add-on can't be
-    reached (step 4 spec §6).
+    reached (step 4 spec §6). From step 5 it also shows Start on each row, and "Træning i gang" with Fortsæt while a
+    session is running or paused.
+  - **The workout card** (`custom:ha-fitness-workout-card`) lists the active programs with Start, for a workout on
+    any day (an extra session).
+  - **The workout flow** is one page-level overlay (D45), a `<dialog>` opened with `showModal()`: details and the
+    people, get ready, the timer, paused and done. It follows the session through `ha_fitness/session/subscribe`,
+    starts and steers it through `ha_fitness/session/command`, shows the media through the proxy (D44), and plays the
+    beeps with Web Audio (step 5 spec §5).
 
-Not built yet: the workout flow in the cards (step 5, part F) and stats. Each comes with its feature spec.
+Not built yet: stats. It comes with its feature spec.
 
 ### Routing in the add-on server
 

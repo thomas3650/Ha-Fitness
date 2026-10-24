@@ -1,7 +1,10 @@
 import { LitElement, type PropertyValues, css, html, nothing } from "lit";
 
+import { unlockAudio } from "./audio";
 import { type Vars, localize } from "./i18n";
 import { type LanguageConfig, type LanguageHass, cardLanguage } from "./language";
+import * as overlay from "./overlay";
+import { type SessionView, isActive } from "./overlay";
 import { type Connection, type OpenDay, type Today, TodaySubscription } from "./today-data";
 
 /** The part of Home Assistant's `hass` object this card uses. */
@@ -66,7 +69,10 @@ function errorKey(error: unknown): string {
   return typeof key === "string" && KNOWN_ERRORS.has(key) ? `error.${key}` : "error.general";
 }
 
-/** "Træning i dag": the open training days, each with a two-step Spring over (spec §6). */
+/**
+ * "Træning i dag": the open training days, each with Start and a two-step Spring over (step 4
+ * spec §6). While a session is active it shows "Træning i gang" and Fortsæt instead (spec §5.1).
+ */
 export class TodayCard extends LitElement {
   static override properties = {
     hass: { attribute: false },
@@ -74,6 +80,7 @@ export class TodayCard extends LitElement {
     editMode: { attribute: false },
     config: { state: true },
     today: { state: true },
+    session: { state: true },
     error: { state: true },
   };
 
@@ -85,6 +92,8 @@ export class TodayCard extends LitElement {
   declare config?: TodayCardConfig;
   /** Nothing yet (undefined), the add-on unreachable (null), or the today data. */
   declare today?: Today | null;
+  /** The page's active session (running or paused), from the overlay controller. */
+  declare session?: SessionView;
   declare error?: string;
 
   /** HA's `hui-card` keeps a hidden card in the DOM only if it asks, and the card must stay subscribed. */
@@ -93,6 +102,7 @@ export class TodayCard extends LitElement {
   private readonly subscription = new TodaySubscription((today) => this.receive(today));
   private readonly confirming = new Map<number, Confirming>();
   private errorTimer?: ReturnType<typeof setTimeout>;
+  private stopListening?: () => void;
 
   static override styles = css`
     :host {
@@ -173,15 +183,19 @@ export class TodayCard extends LitElement {
 
   /** Two rows of HA's grid per open day, so a name, a line and a 48 px button fit. */
   getGridOptions(): { columns: "full"; rows: number } {
-    return { columns: "full", rows: 2 * this.dayCount };
+    return { columns: "full", rows: 2 * this.rowCount };
   }
 
   getCardSize(): number {
-    return 2 * this.dayCount;
+    return 2 * this.rowCount;
   }
 
   override connectedCallback(): void {
     super.connectedCallback();
+    if (this.hass) overlay.setHass(this.hass);
+    // Another card may already hold a session; the controller hands this one its state at once.
+    this.receiveSession(overlay.state().session);
+    this.stopListening = overlay.subscribe((state) => this.receiveSession(state.session));
     // Hidden before the first render, so a day with no training never shows an empty cell.
     this.syncHidden();
     this.subscription.connect(this.hass?.connection);
@@ -189,6 +203,8 @@ export class TodayCard extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.stopListening?.();
+    this.stopListening = undefined;
     this.subscription.disconnect();
     for (const id of [...this.confirming.keys()]) this.endConfirm(id);
     clearTimeout(this.errorTimer);
@@ -198,16 +214,23 @@ export class TodayCard extends LitElement {
   }
 
   protected override willUpdate(changed: PropertyValues<this>): void {
-    if (changed.has("hass") && this.isConnected) this.subscription.connect(this.hass?.connection);
+    if (changed.has("hass") && this.isConnected && this.hass) {
+      overlay.setHass(this.hass);
+      this.subscription.connect(this.hass.connection);
+    }
   }
 
   protected override updated(): void {
     this.syncHidden();
   }
 
-  /** Hidden, outside preview, until the first message and whenever nothing is open. */
+  /**
+   * Hidden, outside preview, until the first message and whenever nothing is open, unless a session
+   * is active: then it shows, an extra session too.
+   */
   private syncHidden(): void {
-    const hide = !this.inPreview && (this.today === undefined || this.today?.open.length === 0);
+    const hide =
+      !this.inPreview && !this.session && (this.today === undefined || this.today?.open.length === 0);
     if (hide === this.hidden) return;
     // As HA's own cards do: hui-card hides a card that sets `hidden` and says so.
     this.toggleAttribute("hidden", hide);
@@ -221,7 +244,9 @@ export class TodayCard extends LitElement {
     return Boolean(this.preview || this.editMode);
   }
 
-  private get dayCount(): number {
+  /** One row for the session, else one per open day. */
+  private get rowCount(): number {
+    if (this.session) return 1;
     return Math.max(1, this.today?.open.length ?? 0);
   }
 
@@ -233,6 +258,27 @@ export class TodayCard extends LitElement {
     this.today = today;
     const open = new Set(today?.open.map((day) => day.id));
     for (const id of [...this.confirming.keys()]) if (!open.has(id)) this.endConfirm(id);
+  }
+
+  /** The card's language option, for the flow it opens. */
+  private get flowLanguage(): { language?: string } {
+    return this.config?.language ? { language: this.config.language } : {};
+  }
+
+  private receiveSession(session: SessionView | null): void {
+    this.session = isActive(session) ? session : undefined;
+  }
+
+  /** Start: unlock audio in the tap itself, before anything awaits, then show the program's details. */
+  private start(day: OpenDay): void {
+    unlockAudio();
+    overlay.open({ kind: "details", programId: day.program_id, trainingDayId: day.id, ...this.flowLanguage });
+  }
+
+  /** Fortsæt: unlock audio in the tap itself, then reopen the overlay at the session. */
+  private resume(): void {
+    unlockAudio();
+    overlay.open({ kind: "resume", ...this.flowLanguage });
   }
 
   /** The first tap: ask, and put the row back after 10 s with no answer. */
@@ -293,9 +339,13 @@ export class TodayCard extends LitElement {
   private renderActions(day: OpenDay) {
     const confirming = this.confirming.get(day.id);
     if (!confirming) {
-      return html`<button class="slot" @click=${() => this.ask(day.id)}>${this.t("today.skip")}</button>`;
+      // Start sits before Spring over, at the same size, so Spring over (and Nej after it) keeps the last place.
+      return html`
+        <button class="slot yes" @click=${() => this.start(day)}>${this.t("today.start")}</button>
+        <button class="slot" @click=${() => this.ask(day.id)}>${this.t("today.skip")}</button>
+      `;
     }
-    // Nej is last and as wide as Spring over (the "slot"), so a double tap lands on Nej.
+    // While it asks, Start is hidden: the row holds only the question, Ja and Nej. Nej is last and as wide as Spring over (the "slot"), so a double tap lands on Nej.
     return html`
       <span class="question">${this.t("today.skip_confirm")}</span>
       <button class="yes" ?disabled=${confirming.busy} @click=${() => this.skip(day.id)}>
@@ -307,7 +357,23 @@ export class TodayCard extends LitElement {
     `;
   }
 
+  private renderSession(session: SessionView) {
+    return html`
+      <ul>
+        <li>
+          <div class="text">
+            <div class="name">${this.t("session.running", { program: session.program_name })}</div>
+          </div>
+          <div class="actions">
+            <button class="slot yes" @click=${() => this.resume()}>${this.t("session.resume")}</button>
+          </div>
+        </li>
+      </ul>
+    `;
+  }
+
   private renderBody() {
+    if (this.session) return this.renderSession(this.session);
     const today = this.today;
     if (today === null) return html`<div class="muted">${this.t("today.unreachable")}</div>`;
     if (!today?.open.length) return html`<div class="muted">${this.t("today.nothing_open")}</div>`;
@@ -329,9 +395,11 @@ export class TodayCard extends LitElement {
   }
 
   protected override render() {
-    // No data yet, or hidden with nothing open.
-    if (this.today === undefined) return nothing;
-    if (this.today !== null && this.today.open.length === 0 && !this.inPreview) return nothing;
+    // No data yet, or hidden with nothing open; an active session always shows.
+    if (!this.session) {
+      if (this.today === undefined) return nothing;
+      if (this.today !== null && this.today.open.length === 0 && !this.inPreview) return nothing;
+    }
     return html`
       <ha-card>
         ${this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing}
@@ -341,7 +409,9 @@ export class TodayCard extends LitElement {
   }
 }
 
-if (!customElements.get(TAG)) {
+/** Define the card and offer it in the card picker; `index.ts` calls this once HA has booted. */
+export function registerTodayCard(): void {
+  if (customElements.get(TAG)) return;
   customElements.define(TAG, TodayCard);
   window.customCards = window.customCards ?? [];
   window.customCards.push({
