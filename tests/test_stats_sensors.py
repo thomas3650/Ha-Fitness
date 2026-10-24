@@ -377,6 +377,8 @@ async def test_person_added_and_removed(
     await fake_addon.push({"type": "stats", "data": _stats(PERSON_STATS, BO_STATS)})
     await fake_addon.push({"type": "stats", "data": _stats(PERSON_STATS, BO_STATS)})
     await wait_for(hass, lambda: _all_available(hass, "bo"))
+    for _ in range(SETTLE_ROUNDS):
+        await asyncio.sleep(0)
     assert _person_entries(entity_registry, config_entry) == both
 
     # A removed person's four leave the registry and the state machine.
@@ -438,5 +440,46 @@ async def test_people_changed_across_a_reload(
         config_entry, (3, "anna")
     )
     assert _states(hass, "anna") == ["3", "12", "2", "360"]
+    assert _no_errors(caplog)
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_disabled_sensor_of_a_removed_person(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A person with a sensor the user disabled can still be removed, with the rest of the diff."""
+    fake_addon.stats = _stats(PERSON_STATS, BO_STATS)
+    await set_up(hass, config_entry)
+    await wait_for(
+        hass, lambda: _all_available(hass, "anna") and _all_available(hass, "bo")
+    )
+    entity_registry.async_update_entity(
+        "sensor.ha_fitness_bo_streak", disabled_by=er.RegistryEntryDisabler.USER
+    )
+    await unload(hass, config_entry)
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: _all_available(hass, "anna"))
+    for _ in range(SETTLE_ROUNDS):
+        await asyncio.sleep(0)
+    assert hass.states.get("sensor.ha_fitness_bo_streak") is None
+    assert _all_available(hass, "bo") is False
+
+    # Bo is removed, and Anna re-added with a new id, in one push.
+    anna_again = _person(PERSON_STATS, id=3)
+    await fake_addon.push({"type": "stats", "data": _stats(anna_again)})
+    await wait_for(
+        hass,
+        lambda: (
+            _person_entries(entity_registry, config_entry)
+            == _expected_entries(config_entry, (3, "anna"))
+        ),
+    )
+    await wait_for(hass, lambda: _all_available(hass, "anna"))
+    assert _all_gone(hass, "bo")
     assert _no_errors(caplog)
     await unload(hass, config_entry)

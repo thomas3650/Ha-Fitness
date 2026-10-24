@@ -15,7 +15,11 @@ from homeassistant.components.sensor import (
 from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant, callback, split_entity_id, valid_entity_id
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.entity_platform import (
+    AddConfigEntryEntitiesCallback,
+    EntityPlatform,
+    async_get_current_platform,
+)
 
 from . import HaFitnessConfigEntry
 from .const import DOMAIN
@@ -33,7 +37,7 @@ async def async_setup_entry(
     """Add the two sensors, and follow the people for the stats sensors."""
     coordinator = entry.runtime_data
     async_add_entities([TodaySensor(coordinator), NextTrainingDaySensor(coordinator)])
-    people = PeopleSensors(hass, entry, async_add_entities)
+    people = PeopleSensors(hass, entry, async_get_current_platform())
     entry.async_on_unload(coordinator.async_add_listener(people.async_schedule_sync))
     people.async_schedule_sync()
 
@@ -103,24 +107,26 @@ class PeopleSensors:
     stats), the registry's person sensors are diffed against the people. The sensors of people who
     are gone are removed, and only once they are gone from the state machine are new people's
     sensors added, so a person re-added with a new add-on id keeps the entity ids (no `_2`). The
-    diff runs one at a time and changes nothing when run twice.
+    diff runs one at a time, and only when the people (their ids and person entities) changed.
     """
 
     def __init__(
         self,
         hass: HomeAssistant,
         entry: HaFitnessConfigEntry,
-        async_add_entities: AddConfigEntryEntitiesCallback,
+        platform: EntityPlatform,
     ) -> None:
         """Set up the diff; no sensors exist before the first stats."""
         self.hass = hass
         self.entry = entry
         self.coordinator = entry.runtime_data
-        self.async_add_entities = async_add_entities
+        self.platform = platform
         self.prefix = f"{entry.entry_id}_person_"
         # The sensors added in this run, by unique id (added or about to be).
         self.entities: dict[str, PersonStatsSensor] = {}
         self.lock = asyncio.Lock()
+        # The people the last diff ran for, by id and person entity; None before the first.
+        self.synced: list[tuple[Any, Any]] | None = None
 
     @callback
     def async_schedule_sync(self) -> None:
@@ -155,6 +161,12 @@ class PeopleSensors:
         async with self.lock:
             if not self.coordinator.stats_available:
                 return
+            people = [
+                (person.get("id"), person.get("person_entity_id"))
+                for person in (self.coordinator.stats or {}).get("people", [])
+            ]
+            if people == self.synced:
+                return
             wanted = self._wanted()
             registry = er.async_get(self.hass)
             stale = {
@@ -166,11 +178,13 @@ class PeopleSensors:
                 and registry_entry.unique_id not in wanted
             }
             for unique_id, entity_id in stale.items():
-                if (entity := self.entities.pop(unique_id, None)) is not None:
+                entity = self.entities.pop(unique_id, None)
+                if entity is not None and entity.hass is not None:
                     # Removes the state too, so the entity id is free before anything is added.
                     await entity.async_remove(force_remove=True)
                 elif self.hass.states.get(entity_id) is not None:
-                    # The unavailable state a previous run left behind.
+                    # The unavailable state a previous run left behind. A sensor the user
+                    # disabled was never added, and has no state.
                     self.hass.states.async_remove(entity_id)
                 registry.async_remove(entity_id)
             new = {
@@ -180,7 +194,8 @@ class PeopleSensors:
             }
             if new:
                 self.entities.update(new)
-                self.async_add_entities(list(new.values()))
+                await self.platform.async_add_entities(list(new.values()))
+            self.synced = people
 
 
 class PersonStatsSensor(FitnessEntity, SensorEntity):
