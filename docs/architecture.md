@@ -355,8 +355,7 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
   (`planned`, `rounds`, `stations`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
   `server_time`. A finished view has no phase, next phase or stations.
 - **The feeling** is stored on the session (a nullable column) and shown in the view, in `GET /api/v1/sessions` and in
-  the MCP `list_sessions`. A write raises `revision`, publishes `session` and adds a change-log row. The integration
-  passes it through `ha_fitness/session/command` as `command: "feeling"` with a `feeling` field.
+  the MCP `list_sessions`. A write raises `revision`, publishes `session` and adds a change-log row.
 - **The change log** records `session.started`, `session.completed` and `session.ended`. Pause, resume, next and
   previous aren't logged.
 
