@@ -23,8 +23,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop `sessions.feeling`; the rebuilt table keeps AUTOINCREMENT, so ids are still never reused."""
-    with op.batch_alter_table(
-        "sessions", table_kwargs={"sqlite_autoincrement": True}
-    ) as batch_op:
-        batch_op.drop_column("feeling")
+    """Drop `sessions.feeling` with a native `ALTER TABLE … DROP COLUMN` (SQLite 3.35 or later).
+
+    No batch rebuild: with `foreign_keys=ON` its `DROP TABLE sessions` would delete every participant on cascade.
+    """
+    op.execute("ALTER TABLE sessions DROP COLUMN feeling")

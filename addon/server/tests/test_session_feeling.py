@@ -204,6 +204,21 @@ async def test_feeling_unknown_value_is_invalid(make_app: MakeApp) -> None:
     assert view["revision"] == finished["revision"]
 
 
+async def test_feeling_body_with_an_extra_key_is_refused(make_app: MakeApp) -> None:
+    """A body with a key besides `feeling` gets FastAPI's own 422 list, and nothing is stored."""
+    clock = FrozenClock(WEDNESDAY_9)
+    async with started(clock, make_app) as client:
+        finished = await _completed(client, clock)
+        response = await client.post(
+            FEELING, json={"feeling": "too_easy", "note": "hard"}, headers=AGENT
+        )
+        view = await current(client)
+    assert response.status_code == 422, response.text
+    assert isinstance(response.json()["detail"], list)
+    assert view["feeling"] is None
+    assert view["revision"] == finished["revision"]
+
+
 async def test_feeling_in_history_and_mcp_list_sessions(make_app: MakeApp) -> None:
     """`GET /sessions` and MCP `list_sessions` show the feeling: set on one session, null on another."""
     clock = FrozenClock(WEDNESDAY_9)

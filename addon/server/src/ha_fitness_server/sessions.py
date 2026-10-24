@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import math
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 from pydantic import BaseModel
 from sqlalchemy import Engine, select
@@ -47,8 +47,8 @@ from .training_days import TrainingDays
 type Publish = Callable[[dict[str, Any]], None]
 
 COMMANDS = ("pause", "resume", "next", "previous", "end")
-# How a completed session can feel (UI refresh spec §3.3).
-FEELINGS = ("too_easy", "just_right", "too_hard")
+# How a completed session can feel (UI refresh spec §3.3), from the `Feeling` type so the two match.
+FEELINGS: tuple[str, ...] = get_args(Feeling.__value__)
 # `GET /session` keeps a finished view this long (spec §3.5).
 FINISHED_VIEW_KEPT = timedelta(minutes=5)
 # The tick writes `last_tick_at` at least this often (spec §3.2).

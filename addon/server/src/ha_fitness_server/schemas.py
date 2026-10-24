@@ -394,6 +394,8 @@ class SessionView(BaseModel):
 class FeelingIn(BaseModel):
     """Body of `POST /api/v1/session/feeling`; any text, so the service answers an unknown value with `{code, message}`."""
 
+    model_config = ConfigDict(extra="forbid")
+
     feeling: str
 
 

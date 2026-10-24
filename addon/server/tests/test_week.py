@@ -118,6 +118,26 @@ async def test_week_fresh_install_counts_from_today(make_app: MakeApp) -> None:
         assert await _week(client) == {"done": 0, "planned": 2}
 
 
+async def test_week_program_switched_on_mid_week_counts_from_today(
+    make_app: MakeApp,
+) -> None:
+    """A program switched on, or created, on Wednesday counts Wednesday and Friday, not the Monday before it."""
+    clock = FrozenClock(MONDAY_9)
+    async with started(clock, make_app) as client:
+        program = await create_small(
+            client, "Lille", weekdays=MON_WED_FRI, active=False
+        )
+        assert await _week(client) == {"done": 0, "planned": 0}
+        clock.set(local(2026, 10, 28, 9))
+        response = await client.put(
+            f"{PROGRAMS}/{program['id']}", json={**program["program"], "active": True}
+        )
+        assert response.status_code == 200, response.text
+        assert await _week(client) == {"done": 0, "planned": 2}
+        await create_small(client, "Anden", weekdays=MON_WED_FRI)
+        assert await _week(client) == {"done": 0, "planned": 4}
+
+
 async def test_week_late_day_from_last_week_stays_in_last_week(
     make_app: MakeApp,
 ) -> None:
