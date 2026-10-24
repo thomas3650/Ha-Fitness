@@ -61,8 +61,11 @@ the spec gives the rules where they differ. Issue #42.
 
 **Files:**
 - Modify: `addon/server/src/ha_fitness_server/schemas.py` (`Week`, `TodayView`),
-  `addon/server/src/ha_fitness_server/training_days.py` (`_build_view`)
-- Test: `addon/server/tests/test_week.py` (new; reuse the clock and client fixtures of `test_scheduler.py`)
+  `addon/server/src/ha_fitness_server/training_days.py` (`_build_view`), `mcp_tools.py` (the `get_today` description
+  names `week`)
+- Test: `addon/server/tests/test_week.py` (new). The clock and app fixtures are those of `test_scheduler.py`; a fast
+  scheduler interval comes from `_client(make_app, clock, interval=…)` in `test_ws.py`; a `done` day needs a finished
+  session (`session_helpers.py`).
 
 **Interfaces:**
 - Produces: `class Week(BaseModel): done: int; planned: int`, and `TodayView.week: Week`. It reaches `GET /today`, the
@@ -78,8 +81,9 @@ the spec gives the rules where they differ. Issue #42.
     `{done: 1, planned: 3}`.
   - `test_week_skipped_and_missed_count_as_planned_only`: Monday missed, Wednesday skipped, today Thursday →
     `done 0, planned 3`.
-  - `test_week_program_switched_off_drops_future_days`: switch the program off on Wednesday after Monday was done →
-    `planned` keeps Monday and Wednesday's existing days, loses Friday.
+  - `test_week_program_switched_off_drops_future_days`: Monday done, Wednesday skipped, then the program switched off
+    on Wednesday → `planned 2` (Monday and Wednesday stay; Friday goes). Switching off deletes a program's *open* days
+    (`on_program_written`), which is why Wednesday is closed first.
   - `test_week_fresh_install_counts_from_today`: first run on Wednesday → Monday isn't counted (`planned 2`).
   - `test_week_late_day_from_last_week_stays_in_last_week`: Sunday's day trained on Monday → this week `done 0`.
   - `test_week_extra_session_does_not_count`.
@@ -121,7 +125,8 @@ the spec gives the rules where they differ. Issue #42.
 - Create: `addon/server/src/ha_fitness_server/migrations/versions/0005_session_feeling.py`
 - Modify: `models.py` (`WorkoutSession`), `schemas.py` (`SessionView`, a `FeelingIn` body), `sessions.py`,
   `api/session.py`, `mcp_tools.py` (the `list_sessions` description)
-- Test: `addon/server/tests/test_session_feeling.py` (new; reuse `session_helpers.py`), `test_storage.py` (migration)
+- Test: `addon/server/tests/test_session_feeling.py` (new; reuse `session_helpers.py`), and the migration test next to
+  `test_migration_0004_keeps_the_numbers` in `test_stats.py`
 
 **Interfaces:**
 - Produces:
@@ -147,7 +152,7 @@ the spec gives the rules where they differ. Issue #42.
   - `test_feeling_refused_after_five_minutes` (frozen clock moved past `FINISHED_VIEW_KEPT`) → 409, nothing stored;
   - `test_feeling_unknown_value_is_invalid` → 422 with `detail.code == "invalid"`;
   - `test_feeling_in_history_and_mcp_list_sessions`;
-  - `test_migration_0005_keeps_step_6_data` in `test_storage.py`, the way the 0004 test does.
+  - `test_migration_0005_keeps_step_6_data`, the way the 0004 test does.
 - [ ] **Step 2: Run them; they fail.**
 - [ ] **Step 3: Implement** the Interfaces block. Existing tests that compare a whole session view get `feeling: null`.
 - [ ] **Step 4: Run all the add-on gates;** they pass.
@@ -192,7 +197,8 @@ task waits for Part A's merge; only the controller's fast-loop check does.
   - `ha_fitness/programs` items add `total_seconds` (as stored) and `equipment` (`stored.get("equipment", [])`).
 - [ ] **Step 1: Failing tests:** the feeling command relays and returns the view; a refusal keeps the add-on's code
   (`conflict`, `invalid`); a missing `feeling` gives `invalid` with no add-on call; the add-on down gives `unavailable`;
-  `ha_fitness/programs` has `total_seconds` and `equipment`, and `equipment: []` from a fake add-on that leaves it out.
+  `ha_fitness/programs` has `total_seconds` and `equipment`, and `equipment: []` from a fake add-on that leaves it out;
+  `week` passes through `ha_fitness/today/subscribe`.
 - [ ] **Step 2: Run them; they fail.**
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run the integration gates;** they pass.
@@ -212,18 +218,20 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 - Produces:
   - `cards/src/people.ts`: `PERSON_COLORS`, `personColor(index: number): string` (the primary colour from the third),
     and `initials(names: string[]): string[]` (first letter, upper-cased; two letters for every name whose first letter
-    another name shares). The flow and the stats card import the colours from here.
-  - `cards/src/icon-button.ts`: `iconButton(options: { icon: string; label: string; onClick: () => void; className?:
+    another name shares; if those still clash, the shortest prefix that is unique, up to the whole name: "Thomas",
+    "Thea" → "Tho", "The"). The flow and the stats card import the colours from here.
+  - `cards/src/icon-button.ts`: `iconButton(options: { icon?: string; label: string; onClick: () => void; className?:
     string; disabled?: boolean; pressed?: boolean; text?: string })`: a `<button>` with `aria-label=label` when there is
-    no `text`, an `<ha-icon>` (aria-hidden), the `text` after the icon when given, and `aria-pressed` only when
-    `pressed` is given.
+    no `text`, an `<ha-icon>` (aria-hidden) when `icon` is given, the `text` after it when given, and `aria-pressed`
+    only when `pressed` is given.
+  - The `Program` and `Person` types move to `cards/src/flow/details.ts` (exported); later tasks edit them there.
   - `cards/src/flow/<step>.ts`: each exports `render<Step>(ctx: <Step>Context): TemplateResult` and `<step>Styles`
     (a `css` block). Each context interface, in its module, holds only the data and callbacks that step renders, and
     `t`. `shared.ts` holds `clock()`, the image rendering and the shared styles (buttons, chips, page layout).
   - `WorkoutFlow` keeps every property, timer, command and the audio. It builds each context and composes the styles.
 - No visible change: same texts, roles, layout and behaviour. Moving code is the change.
 - [ ] **Step 1: Failing tests** for `initials` (`["Thomas", "Elin"]` → `["T", "E"]`; `["Thomas", "Tina"]` →
-  `["Th", "Ti"]`; one name) and `iconButton` (named by label; text instead of label when given; `aria-pressed` only
+  `["Th", "Ti"]`; `["Thomas", "Thea"]` → `["Tho", "The"]`; one name) and `iconButton` (named by label; text instead of label when given; `aria-pressed` only
   when given), rendered with Lit's `render` into a container.
 - [ ] **Step 2: Run them; they fail.**
 - [ ] **Step 3: Implement** the helpers, then move each step's render and styles out of `workout-flow.ts`.
@@ -238,29 +246,43 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 
 **Files:**
 - Modify: `cards/src/today-card.ts`, `cards/src/today-data.ts` (`Today.week?`), `cards/src/i18n/en.json`, `da.json`
-- Test: `cards/test/today-card.test.ts`
+- Test: `cards/test/today-card.test.ts`, `cards/test/i18n.test.ts` ("the day's line, due and late" changes with the
+  keys below)
 
 **Interfaces:**
 - Consumes: `WsSubscription<StatsMessage>` on `ha_fitness/stats/subscribe` (types from `stats-card.ts`);
   `initials`, `personColor`, `iconButton` (B2).
 - Produces: `Today.week?: { done: number; planned: number }`.
-- The streak badge: a `role="img"` group named "Streak: Thomas 6, Elin 4" (`today.streak_label`), showing
-  `mdi:lightning-bolt` and, per person in people order, a colour dot, the initial and the streak. Hidden while there are
-  no stats, `counting_from` is null, or the subscription is refused.
+- The top line: `today.title` ("TRÆNING" / "TRAINING") on the left, the streak badge on the right.
+- The streak badge: a `role="img"` group named "Streak: Thomas 6, Elin 4" (`today.streak_label`, "Streak: {list}";
+  the list joined with ", "), showing `mdi:lightning-bolt` and, per person in people order, a colour dot, the initial
+  and the streak. Hidden while there are no stats, the last message has `available: false`, `counting_from` is null,
+  there are no people, or the subscription is refused.
 - The week ring: a small SVG ring, a `progressbar` named "This week" / "Denne uge" with `aria-valuenow=done`,
   `aria-valuemax=planned`, showing "2/4" and the name under it. Hidden when `week` is missing or `planned` is 0. It may
   generalise `ring.ts` with a size option, or be its own; the timer ring's behaviour doesn't change.
-- Day rows: program name; state line "Today" / "I dag" for due, the existing late line for late; the summary line;
-  then the buttons under the text: Start (`mdi:play` with the text) and Spring over (`mdi:debug-step-over` with the
-  text). The confirm keeps step 4's rule, with Nej in Spring over's place.
+- Day rows: the program name; a state line; a summary line; then the buttons under the text: Start (`mdi:play` with
+  the text) and Spring over (`mdi:debug-step-over` with the text). The confirm keeps step 4's rule, with Nej in Spring
+  over's place.
+- The keys (spec §2.1's "5 øvelser · 29 min": no rounds, no "ca."):
+  - `today.due`: "I dag" / "Today"; `today.late`: "Forfalden · {weekday}" / "Late · {weekday}" (no summary now);
+  - `today.summary`: "{stations} · {minutes}"; `today.minutes`: "{count} min" in both languages;
+  - `today.rounds_*` go if nothing else uses them after B4 (details uses its own keys from B4).
+- The card's size: `getGridOptions` gives `rows: 1 + 2 × rowCount` (the top line and ring take one row), and
+  `getCardSize` the same; the numbers are checked in the Chrome check and may change there.
+- The test fake: `fakeConnection` in `today-card.test.ts` sends every subscription but the session one to the today
+  listeners. Extend it so `ha_fitness/stats/subscribe` has its own listeners, and keep the existing subscription,
+  retry and reconnect tests passing for the today subscription.
 - During a session the top line and the ring stay, and the rows are replaced by the session row with Fortsæt
   (`mdi:play` with the text).
 - [ ] **Step 1: Failing tests,** in Danish and English where text matters:
   - `streak badge shows initials, numbers and an accessible name`; `two-letter initials on a clash`;
-    `streak badge hidden before counting and while stats are refused`;
+    `streak badge hidden before counting, while stats are unavailable or refused, and with no people`;
   - `week ring shows done of planned`; `no ring without week or with planned 0` (the §4 compatibility case);
   - `due day says I dag, late day keeps Forfalden`;
-  - `buttons sit under the text and Spring over keeps its two taps`;
+  - `Start comes before Spring over, and Spring over keeps its two taps` (order in the DOM; the layout itself is the
+    Chrome check's, since happy-dom has no layout);
+  - `the grid rows follow the days` (replaces "grid options 2 rows per day");
   - `several open days share one top line and ring`;
   - `session row replaces the days but keeps the top line`.
 - [ ] **Step 2: Run them; they fail.**
@@ -275,9 +297,11 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 **Mockup:** `WorkoutDetails` (spec §2.2).
 
 **Files:**
-- Modify: `cards/src/flow/details.ts`, `cards/src/workout-flow.ts` (the `Program` type: `total_seconds?`,
-  `equipment?`), the language files
-- Test: `cards/test/workout-flow-details.test.ts`
+- Modify: `cards/src/flow/details.ts` (with the `Program` type: `total_seconds?`, `equipment?`),
+  `cards/src/workout-flow.ts` (its context), the language files
+- Test: `cards/test/workout-flow-details.test.ts`. It rewrites "details shows program, stations with thumbnails, rounds
+  and seconds" (the old `flow.seconds` line and the stations list) for the new layout; the chip, start and error tests
+  keep what they check.
 
 **Interfaces:**
 - Consumes: B1's `total_seconds` and `equipment` on each program; `iconButton`.
@@ -286,8 +310,9 @@ task waits for Part A's merge; only the controller's fast-loop check does.
   people chips, Rounds, Work / switch in the phase colours, "Rest between rounds" when above 0, "You'll need" with the
   equipment chips (hidden when empty or missing), the total as `m:ss` from `total_seconds` (from `total_minutes × 60`
   when missing), a big Start (`mdi:play` with the text), and the small "Change the program by asking Claude".
-- Equipment translation keys `equipment.dumbbell`, `equipment.band`, `equipment.kettlebell`,
-  `equipment.resistance_band` (spaces become `_`); any other value shows as stored.
+- Equipment: a fixed map of the four known values, matched ignoring case, to the keys `equipment.dumbbell`,
+  `equipment.band`, `equipment.kettlebell` and `equipment.resistance_band`; any other value shows as stored (a key
+  lookup alone won't do: `localize` returns the key for a missing one).
 - [ ] **Step 1: Failing tests:** the grid's items in order with numbers and names; chips and Start as today; rounds,
   work/switch and the round rest row shown only above 0; the equipment chips translated in Danish, an unknown value as
   stored, none without `equipment` (the §4 case); the total "44:00"; the back button by its label closes.
@@ -304,7 +329,9 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 
 **Files:**
 - Modify: `cards/src/flow/ready.ts`, `cards/src/workout-flow.ts` (its context), the language files
-- Test: `cards/test/workout-flow-timer.test.ts` (or a new `workout-flow-ready.test.ts`)
+- Test: a new `cards/test/workout-flow-ready.test.ts`, and `cards/test/workout-flow-details.test.ts`: "get ready shows
+  start stations; Start nu sends next; Annullér…" (about line 462) taps Pause and Fortsæt in get ready; it moves to the
+  new file without the Pause part, keeping its Start nu and Annullér checks.
 
 **Interfaces:**
 - The summary pill "Sample · 2 people · 5 rounds · 29 min" (minutes from `totals.planned`, rounded as `total_minutes`
@@ -312,6 +339,8 @@ task waits for Part A's merge; only the controller's fast-loop check does.
   STATION" and one card per participant: a numbered badge (participant order, 1-based) in the person's colour, the
   thumbnail, "name · station n", the exercise name large; Start nu at the bottom.
 - No Pause button. A paused countdown shows a "PAUSED" pill, and Fortsæt (sends `resume`) instead of Start nu.
+- The pill's key is the new `flow.paused`: "PAUSET" / "PAUSED" (Danish `flow.phase.paused` is "PAUSE", the rest
+  phase's word, which spec §2.5 rules out). B6 uses the same key and removes `flow.phase.paused`.
 - The countdown ring has no tap handler.
 - [ ] **Step 1: Failing tests:** the pill text in both languages; one card per person with badge numbers 1 and 2; no
   button named Pause; Start nu sends `next`; Annullér sends `end` and closes; paused: the PAUSED pill and Fortsæt
@@ -330,7 +359,14 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 **Files:**
 - Modify: `cards/src/flow/timer.ts`, `cards/src/ring.ts`, `cards/src/workout-flow.ts` (its context, the ring tap), the
   language files
-- Test: `cards/test/workout-flow-timer.test.ts`
+- Test: `cards/test/workout-flow-timer.test.ts`. Tests it rewrites, keeping the behaviour they check:
+  - the file's `ring()` helper is an unnamed `getByRole(root, "progressbar")`, which throws once the whole-workout bar
+    exists: name it (the phase word);
+  - "pause, resume and ring tap": the paused name stays the phase word, the text is the new subtitle, and a tap on the
+    paused ring now sends `resume`;
+  - "one-person and two-person layouts": two progressbars, the new region texts;
+  - "the header shows the intervals out of the stations": one person now reads "Station 1/3" (two people keep
+    "Interval 1/3", B7).
 
 **Interfaces:**
 - The top row: pills "Round 3/5" and "Station 4/8" (`phase.interval` / `totals.stations`; "Station 4" without
@@ -340,16 +376,22 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 - Middle: the ring keeps the phase word while paused (not "PAUSED"), with "seconds left" under the number while
   running and "tap the ring to resume" while paused. Its `progressbar` role and name stay; it has no button role and
   no tab stop.
-- Right: the "NEXT" card (during a switch or rest: "THEN") with the thumbnail, the name and the subtitle from
-  `next_phase`: "after 15 s switch", "after 60 s rest", or "next up" when the next phase is work. No card when
-  `stations[0].next` is null, and the ring stays centred (#36: the three columns keep their widths).
+- Right: the "NEXT" card (during a switch or rest: "THEN") with the thumbnail of `stations[0].next`, its name and a
+  subtitle from `next_phase`, new keys `flow.after.<kind>`:
+  - during work: "after 15 s switch" / "efter 15 s skift", "after 60 s rest" / "efter 60 s pause", and when the next
+    phase is work (a 0 s switch) `flow.after.none`, "next up" / "derefter";
+  - during a switch or rest the next phase is always the coming work, so it reads "after 45 s work" / "efter 45 s
+    arbejde" (the `TimerRest` mockup shows the work length there).
+  - No card when `stations[0].next` is null, and the ring stays centred (#36: the three columns keep their widths).
+  - The old `flow.then.*` keys go, since the ring's "then" line becomes "seconds left" / "tap the ring to resume".
 - Bottom: `iconButton`s Previous (`mdi:skip-previous`), Pause/Resume (`mdi:pause` / `mdi:play`, the big round one),
   Next (`mdi:skip-next`); then a `progressbar` named "Whole workout" / "Hele træningen" with `aria-valuemax` =
-  `totals.planned` and `aria-valuenow` = the elapsed seconds.
+  `totals.planned` and `aria-valuenow` = the elapsed whole seconds (`Math.floor`).
 - The ring tap: running → `pause`, paused → `resume`.
 - [ ] **Step 1: Failing tests,** with the frozen clock the file already uses:
   - the pills, including "Station" during a switch;
-  - the NEXT card's subtitle for a switch, a rest and a 0 s switch; THEN during a switch; no card on the last interval;
+  - the NEXT card's subtitle before a switch, a rest and a 0 s switch; THEN with "after 45 s work" during a switch and a
+    rest; no card on the last interval;
   - the three icon buttons found by their labels send `previous`, `pause`/`resume` and `next`;
   - the whole-workout progressbar's value moves with the clock;
   - paused: the PAUSED pill, the ring keeps the phase word and says to tap, the round button is named Resume;
@@ -367,7 +409,8 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 
 **Files:**
 - Modify: `cards/src/flow/timer.ts`, the language files
-- Test: `cards/test/workout-flow-timer.test.ts`
+- Test: `cards/test/workout-flow-timer.test.ts` (the two-person half of "one-person and two-person layouts" and of
+  "the header shows the intervals out of the stations" follow the new cards)
 
 **Interfaces:**
 - Consumes: B6's top row, ring, buttons and progress bar.
@@ -388,9 +431,13 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 **Mockup:** `Complete` (spec §2.7).
 
 **Files:**
-- Modify: `cards/src/flow/done.ts`, `cards/src/workout-flow.ts` (a stats subscription while the done step shows, the
-  feeling command, the auto-close restart), `cards/src/overlay.ts` (`SessionView.feeling?`), the language files
-- Test: `cards/test/workout-flow-done.test.ts` (new)
+- Modify: `cards/src/flow/done.ts`, `cards/src/workout-flow.ts` (a stats subscription while the done step shows, with its "never subscribes" comment updated; the
+  feeling command, the auto-close restart), `cards/src/overlay.ts` (`SessionView.feeling?`, and its comment that the
+  flow never subscribes), `cards/vite.config.ts` (`test.env.TZ = "Europe/Copenhagen"`, so the date test means the same
+  on a Mac and in CI), the language files
+- Test: `cards/test/workout-flow-done.test.ts` (new). "done counted and not counted; auto-close 60 s" in
+  `workout-flow-timer.test.ts` expects `Godt gået!`, `5/5 runder`, `Hvem trænede` and `Luk`; it moves to the new file
+  with the new texts, and keeps its rule that a later push of the same view doesn't restart the 60 s.
 
 **Interfaces:**
 - Consumes: B1's `feeling` command; `WsSubscription<StatsMessage>` on `hass.connection` (add `connection` to the flow's `Hass` type; the tests' fake gets a `subscribeMessage`); `iconButton`, `personColor`.
@@ -403,11 +450,13 @@ task waits for Part A's merge; only the controller's fast-loop check does.
   `feeling`, the chosen one with `mdi:check` too. A tap sends `{type: "ha_fitness/session/command", command:
   "feeling", feeling}`, restarts the 60 s auto-close, and on failure shows one text per code (`conflict`, `invalid`,
   `unavailable`, else general) under the buttons. The group is absent when the view has no `feeling` key.
-- Færdig closes.
+- Færdig closes; its key is the new `flow.done.finish` ("Færdig" / "Done"), since `flow.close` ("Luk") stays for the
+  unreachable note.
 - Ended and counted: the check, "Ended after 2 of 5 rounds" (`rounds_completed`, `totals.rounds`), the four tiles; no
   feeling group. Ended, not counted: "The workout was ended", Time, Rounds, Trained, Færdig; no check, no streak, no
   feeling group.
-- [ ] **Step 1: Failing tests:** the date in both languages under a frozen clock and a fixed timezone; the four tiles;
+- [ ] **Step 1: Failing tests:** the date in both languages under a frozen clock, with a `started_at` of 23:30 UTC so
+  a UTC date would be the day before; the four tiles;
   the streak tile after a stats message; the feeling command sent, `aria-pressed` following the next view, a second tap
   changing it; an error text per code; a tap at 50 s keeps the overlay open past 60 s from the finish; no feeling group
   without the key (the §4 case); ended counted and not counted layouts; Færdig closes.
@@ -420,7 +469,8 @@ task waits for Part A's merge; only the controller's fast-loop check does.
 
 **Model:** sonnet · **Review:** no
 
-- [ ] **Docs** per spec §6, PR 2: `architecture.md` (the relay additions, the flow split by step);
+- [ ] **Docs** per spec §6, PR 2: `architecture.md` (the relay additions, the flow split by step, the done step's
+  stats subscription);
   `docs/mockups/README.md` (the built screens follow the mockups' layout in light colours); `testing.md` (the Chrome
   check per screen); **D51** in `decisions.md` (Thomas, 2026-10-24). Then `uv run python scripts/check_links.py`.
 - [ ] **Commit** `docs: the refreshed screens`.
