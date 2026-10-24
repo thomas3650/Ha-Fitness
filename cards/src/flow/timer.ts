@@ -25,7 +25,7 @@ export const RING_COLORS: Record<PhaseKind, string> = {
 };
 
 /**
- * What the timer shows (the `Timer` and `TimerRest` mockups): the top row with Slut, the stations,
+ * What the timer shows (the `Timer`, `TimerRest` and `TimerDuo` mockups): the top row with Slut, the stations,
  * the ring, the controls and the whole workout's progress.
  */
 export interface TimerContext {
@@ -78,7 +78,7 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
     ${renderError(ctx.error)}
     ${one
       ? renderSolo(ctx, theRing)
-      : html`<div class="duo">${renderPanel(ctx, 0)} ${theRing} ${renderPanel(ctx, 1)}</div>`}
+      : html`<div class="timer-duo">${renderCard(ctx, 0)} ${theRing} ${renderCard(ctx, 1)}</div>`}
     <div class="timer-controls">
       ${iconButton({
         icon: "mdi:skip-previous",
@@ -198,23 +198,27 @@ function renderNext(ctx: TimerContext, next: SessionStation, moving: boolean) {
   `;
 }
 
-/** A person's panel in the two-person layout, in the person's colour. */
-function renderPanel(ctx: TimerContext, index: number) {
+/**
+ * A person's card in the two-person layout (the `TimerDuo` mockup): a bar in the person's colour
+ * along the top, the badge with the person's number and name, the station on the right, the GIF,
+ * the exercise big, and the next station small.
+ */
+function renderCard(ctx: TimerContext, index: number) {
   const { t, view } = ctx;
   const person = view.participants[index];
   const station = view.stations?.[index];
   if (!person || !station) return nothing;
   return html`
-    <section class="panel" aria-label=${person.name} style="--person-color: ${ctx.colors[index]}">
-      <div class="who">
-        <span class="badge"></span>
-        <span class="name">${person.name}</span>
-        <span class="station">${t("flow.station", { number: station.current.number })}</span>
+    <section class="duo-card" aria-label=${person.name} style="--person-color: ${ctx.colors[index]}">
+      <div class="duo-who">
+        <span class="duo-number">${index + 1}</span>
+        <span class="duo-name">${person.name}</span>
+        <span class="duo-station">${t("flow.station", { number: station.current.number })}</span>
       </div>
       ${renderImage(ctx.imageOf, station.current, "gif", "gif")}
-      <span class="exercise">${station.current.name}</span>
+      <span class="duo-exercise">${station.current.name}</span>
       ${station.next
-        ? html`<span class="line">
+        ? html`<span class="duo-next">
             ${t("flow.next_station", { number: station.next.number, exercise: station.next.name })}
           </span>`
         : nothing}
@@ -331,34 +335,69 @@ export const timerStyles = css`
     font-size: 1.5rem;
     font-weight: 700;
   }
-  .duo {
-    display: flex;
+  /* Two people: a card each side of the ring. The sides keep equal widths, so the ring stays
+     centred. */
+  .timer-duo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     gap: 32px;
     align-items: center;
-    justify-content: center;
     margin: 24px 0;
   }
-  .panel {
+  .timer-duo > .duo-card:first-child {
+    justify-self: start;
+  }
+  .timer-duo > .duo-card:last-child {
+    justify-self: end;
+  }
+  .duo-card {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    text-align: center;
-    flex: 1;
+    gap: 12px;
+    box-sizing: border-box;
+    width: min(380px, 100%);
     min-width: 0;
+    padding: 18px;
+    border-radius: 24px;
+    border-top: 6px solid var(--person-color);
+    background: var(--card-background-color, var(--secondary-background-color));
     overflow-wrap: anywhere;
-    padding: 16px;
-    border: 4px solid var(--person-color);
-    border-radius: 16px;
   }
-  .panel .who {
+  .duo-who {
     display: flex;
     align-items: center;
     gap: 12px;
   }
-  .panel .name,
-  .panel .exercise {
-    font-weight: 500;
+  .duo-number {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--person-color);
+    color: var(--primary-text-color);
+    font-size: 1.375rem;
+    font-weight: 700;
+  }
+  .duo-name {
+    min-width: 0;
+    font-size: 1.375rem;
+    font-weight: 700;
+  }
+  .duo-station {
+    margin-left: auto;
+    font-size: 1.125rem;
+    color: var(--secondary-text-color);
+    white-space: nowrap;
+  }
+  .duo-exercise {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+  .duo-next {
+    color: var(--secondary-text-color);
   }
   .gif {
     width: 280px;
@@ -367,9 +406,10 @@ export const timerStyles = css`
     object-fit: cover;
     background: var(--secondary-background-color, var(--divider-color));
   }
-  .duo .gif {
-    width: min(200px, 30cqi);
-    height: min(200px, 30cqi);
+  .duo-card .gif {
+    width: 100%;
+    height: 280px;
+    object-fit: contain;
   }
   .ring {
     position: relative;
@@ -462,9 +502,8 @@ export const timerStyles = css`
       flex-basis: 100%;
       justify-content: flex-end;
     }
-    /* Two people: both panels side by side, the ring below them. */
-    .duo {
-      display: grid;
+    /* Two people: both cards side by side, the ring below them. */
+    .timer-duo {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       grid-template-areas:
         "first second"
@@ -472,13 +511,15 @@ export const timerStyles = css`
       gap: 24px;
       align-items: stretch;
     }
-    .duo > .panel:first-child {
+    .timer-duo > .duo-card:first-child {
       grid-area: first;
+      width: 100%;
     }
-    .duo > .panel:last-child {
+    .timer-duo > .duo-card:last-child {
       grid-area: second;
+      width: 100%;
     }
-    .duo > .ring {
+    .timer-duo > .ring {
       grid-area: ring;
       justify-self: center;
     }

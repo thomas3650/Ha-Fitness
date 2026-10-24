@@ -587,14 +587,16 @@ test("one-person and two-person layouts in work and switch", async () => {
   expect(queryByRole(root(flow), "region", { name: "DEREFTER" })).toBeNull();
   document.body.replaceChildren();
 
-  // Two people: a panel each, in the person's colour, with the next station.
+  // Two people: a card each, in the person's colour: the badge with the person's number, the name,
+  // the station, the exercise and the next line.
   const two = await mount(fakeHass("da"), view());
   const panels = getAllByRole(root(two.flow), "region");
   expect(panels.map((panel) => panel.getAttribute("aria-label"))).toEqual(["Thomas", "Maria"]);
   expect(panels.map(text)).toEqual([
-    "Thomas Station 1 Push-up Næste: station 2 · Squat",
-    "Maria Station 2 Squat Næste: station 3 · Planke",
+    "1 Thomas Station 1 Push-up Næste: station 2 · Squat",
+    "2 Maria Station 2 Squat Næste: station 3 · Planke",
   ]);
+  expect(getByRole(panels[0], "img", { name: "Push-up" })).toBeTruthy();
   expect(panels.map((panel) => panel.style.getPropertyValue("--person-color").trim().toUpperCase())).toEqual([
     "#B18CFF",
     "#3DD6C6",
@@ -617,9 +619,43 @@ test("one-person and two-person layouts in work and switch", async () => {
     }),
   );
   expect(getAllByRole(root(two.flow), "region").map(text)).toEqual([
-    "Thomas Station 2 Squat Næste: station 2 · Squat",
-    "Maria Station 3 Planke Næste: station 3 · Planke",
+    "1 Thomas Station 2 Squat Næste: station 2 · Squat",
+    "2 Maria Station 3 Planke Næste: station 3 · Planke",
   ]);
+
+  // On the last work phase the next line goes.
+  await push(
+    two.flow,
+    view({
+      revision: 12,
+      next_phase: null,
+      stations: [
+        { current: planke, next: null },
+        { current: push_up, next: null },
+      ],
+    }),
+  );
+  expect(getAllByRole(root(two.flow), "region").map(text)).toEqual([
+    "1 Thomas Station 3 Planke",
+    "2 Maria Station 1 Push-up",
+  ]);
+});
+
+test("the two-person timer has the same buttons and progress bar as one person's", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
+  // The top row: the round and the interval, no Station pill; no NÆSTE card.
+  expect(hasText(flow, "Runde 2/5")).toBe(true);
+  expect(hasText(flow, "Interval 1/3")).toBe(true);
+  expect(hasText(flow, "Station 1/3")).toBe(false);
+  expect(queryByRole(root(flow), "region", { name: "NÆSTE" })).toBeNull();
+  expect(whole(flow).getAttribute("aria-valuenow")).toBe("360");
+
+  await tap(flow, button(flow, "Forrige"));
+  await tap(flow, button(flow, "Pause"));
+  await tap(flow, button(flow, "Næste"));
+  await tap(flow, ring(flow));
+  expect(sent(fake)).toEqual(["previous", "pause", "next", "pause"]);
 });
 
 test("elapsed from time_trained and server_time", async () => {
@@ -723,7 +759,7 @@ test("the timer in English", async () => {
   expect(hasText(flow, "Round 2/5")).toBe(true);
   expect(button(flow, "Previous")).toBeTruthy();
   expect(button(flow, "Next")).toBeTruthy();
-  expect(getAllByRole(root(flow), "region").map(text)[0]).toBe("Thomas Station 1 Push-up Next: station 2 · Squat");
+  expect(getAllByRole(root(flow), "region").map(text)[0]).toBe("1 Thomas Station 1 Push-up Next: station 2 · Squat");
   await tap(flow, button(flow, "End"));
   expect(hasText(flow, "End the workout?")).toBe(true);
   expect(button(flow, "Yes")).toBeTruthy();
@@ -795,6 +831,7 @@ test("the header shows the intervals out of the stations when the view has them"
   const fake = fakeHass("da");
   const { flow } = await mount(fake, view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
   expect(hasText(flow, "Interval 1/3")).toBe(true);
+  expect(hasText(flow, "Station 1/3")).toBe(false);
   document.body.replaceChildren();
 
   const en = await mount(fakeHass("en"), view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
