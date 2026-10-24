@@ -194,6 +194,10 @@ export class WorkoutFlow extends LitElement {
     this.plan(counting);
     if (step !== "timer") this.endAsk(false);
     if (this.hass && (step === "ready" || step === "timer")) this.loadStationImages(this.hass, this.newest!);
+    // Get ready's cards show the start stations' thumbnails.
+    if (this.hass && step === "ready") {
+      for (const station of this.newest!.stations ?? []) this.loadThumbnail(this.hass, station.current.exercise_id);
+    }
     this.armDone(step);
     if (step === "done" && this.newest && this.annulled.has(this.newest.id)) this.close();
   }
@@ -696,11 +700,11 @@ export class WorkoutFlow extends LitElement {
       view,
       countdown: this.countdown(view),
       colors: this.participantColors(view),
+      imageOf: this.imageOf,
       reach: this.reach(),
       sound: this.sound(),
       error: this.error,
       onStartNow: () => void this.command("next"),
-      onPause: () => void this.command("pause"),
       onResume: () => void this.command("resume"),
       onCancel: () => void this.annul(),
     };
@@ -736,10 +740,9 @@ export class WorkoutFlow extends LitElement {
   }
 
   protected override render() {
-    // The timer and details use the wide page; get ready and done one centred column with centred
-    // text.
+    // The timer, details and get ready use the wide page; done one centred column with centred text.
     const step = this.step();
-    const layout = step === "timer" || step === "details" ? "" : "column centred";
+    const layout = step === "done" || step === undefined ? "column centred" : "";
     return html`<div class="page ${layout}">${this.renderStep()}</div>`;
   }
 

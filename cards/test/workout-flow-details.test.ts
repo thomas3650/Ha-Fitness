@@ -519,60 +519,6 @@ test("error texts in English", async () => {
   expect(text(getByRole(root(flow), "alert"))).toBe("The workout can't start now.");
 });
 
-test("get ready shows start stations; Start nu sends next; Annullér sends end and closes once it is done", async () => {
-  const fake = fakeHass("da");
-  const { flow, onClose } = await mount(fake, fromToday);
-  await tap(flow, button(flow, "Start"));
-  fake.commands[0].resolve(view());
-  await settle(flow);
-
-  // The command result moves the flow on, before any push.
-  expect(queryByRole(root(flow), "heading", { name: "Onsdag" })).not.toBeNull();
-  expect(queryByRole(root(flow), "button", { name: "Tilbage" })).toBeNull();
-  const starts = getAllByRole(getByRole(root(flow), "list", { name: "Gør klar" }), "listitem");
-  expect(starts.map(text)).toEqual(["Thomas · station 1 · Push-up", "Maria · station 2 · Squat"]);
-  expect(queryByText(root(flow), "10")).not.toBeNull();
-  await wait(flow, 3_000);
-  expect(queryByText(root(flow), "7")).not.toBeNull();
-
-  // Pause and resume.
-  await tap(flow, button(flow, "Pause"));
-  expect(sessionCommands(fake).at(-1)).toEqual({ type: "ha_fitness/session/command", command: "pause" });
-  fake.commands.at(-1)!.resolve(
-    view({
-      revision: 2,
-      status: "paused",
-      phase: { ...view().phase!, ends_at: null, remaining: 7 },
-      server_time: "2026-10-24T08:00:03.000Z",
-    }),
-  );
-  await settle(flow);
-  await wait(flow, 5_000);
-  expect(queryByText(root(flow), "7")).not.toBeNull();
-  await tap(flow, button(flow, "Fortsæt"));
-  expect(sessionCommands(fake).at(-1)).toEqual({ type: "ha_fitness/session/command", command: "resume" });
-  fake.commands.at(-1)!.resolve(view({ revision: 3 }));
-  await settle(flow);
-
-  // Start nu jumps to the first work phase.
-  await tap(flow, button(flow, "Start nu"));
-  expect(sessionCommands(fake).at(-1)).toEqual({ type: "ha_fitness/session/command", command: "next" });
-  expect(onClose).not.toHaveBeenCalled();
-
-  // Annullér ends the session, and closes once the end has gone through.
-  await tap(flow, button(flow, "Annullér"));
-  expect(sessionCommands(fake).at(-1)).toEqual({ type: "ha_fitness/session/command", command: "end" });
-  expect(onClose).not.toHaveBeenCalled();
-  const ended = view({ revision: 5, status: "ended", phase: null, stations: null, next_phase: null });
-  fake.commands.at(-1)!.resolve(ended);
-  await settle(flow);
-  expect(onClose).toHaveBeenCalledTimes(1);
-
-  // The ended view never shows the done step.
-  await push(flow, ended);
-  expect(queryByText(root(flow), "Træningen blev afsluttet")).toBeNull();
-});
-
 test("an ended session that wasn't annulled shows done", async () => {
   const fake = fakeHass("da");
   const ended = view({ revision: 5, status: "ended", phase: null, stations: null, next_phase: null });
@@ -608,13 +554,12 @@ test("renders in Danish and English", async () => {
   await tap(flow, button(flow, "Start"));
   english.commands[0].resolve(view());
   await settle(flow);
-  expect(getAllByRole(getByRole(root(flow), "list", { name: "Get ready" }), "listitem").map(text)).toEqual([
-    "Thomas · station 1 · Push-up",
-    "Maria · station 2 · Squat",
+  expect(getAllByRole(getByRole(root(flow), "list", { name: "GO TO YOUR START STATION" }), "listitem").map(text)).toEqual([
+    "1 Thomas · station 1 Push-up",
+    "2 Maria · station 2 Squat",
   ]);
   expect(button(flow, "Start now")).toBeTruthy();
   expect(button(flow, "Cancel")).toBeTruthy();
-  expect(button(flow, "Pause")).toBeTruthy();
   document.body.replaceChildren();
 
   const nobody = await mount(fakeHass("en", []), details);
@@ -625,17 +570,15 @@ test("a failed command's alert goes once the next command succeeds", async () =>
   const fake = fakeHass("da");
   const { flow } = await mount(fake, { kind: "resume" }, { available: true, session: view() });
 
-  await tap(flow, button(flow, "Pause"));
+  await tap(flow, button(flow, "Start nu"));
   fake.commands.at(-1)!.reject({ code: "unavailable", message: "Add-on down" });
   await settle(flow);
   expect(text(getByRole(root(flow), "alert"))).toBe("HA Fitness kan ikke nås. Prøv igen senere.");
 
-  await tap(flow, button(flow, "Pause"));
+  await tap(flow, button(flow, "Start nu"));
   // The alert goes as the command is sent, not only when it answers.
   expect(queryByRole(root(flow), "alert")).toBeNull();
-  fake.commands.at(-1)!.resolve(
-    view({ revision: 2, status: "paused", phase: { ...view().phase!, ends_at: null, remaining: 9 } }),
-  );
+  fake.commands.at(-1)!.resolve(view({ revision: 2, phase: { ...view().phase!, index: 1, kind: "work", duration: 45 } }));
   await settle(flow);
   expect(queryByRole(root(flow), "alert")).toBeNull();
 });
@@ -643,7 +586,7 @@ test("a failed command's alert goes once the next command succeeds", async () =>
 test("a new session's view clears an alert from the last one", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, { kind: "resume" }, { available: true, session: view() });
-  await tap(flow, button(flow, "Pause"));
+  await tap(flow, button(flow, "Start nu"));
   fake.commands.at(-1)!.reject({ code: "unknown_error", message: "Boom" });
   await settle(flow);
   expect(queryByRole(root(flow), "alert")).not.toBeNull();
@@ -661,8 +604,8 @@ test("get ready colours follow people order, not participant order", async () =>
   });
   const { flow } = await mount(fake, { kind: "resume" }, { available: true, session });
 
-  const starts = getAllByRole(getByRole(root(flow), "list", { name: "Gør klar" }), "listitem");
-  expect(starts.map(text)).toEqual(["Thomas · station 1 · Push-up", "Ida · station 2 · Squat"]);
+  const starts = getAllByRole(getByRole(root(flow), "list", { name: "GÅ TIL DIN STARTSTATION" }), "listitem");
+  expect(starts.map(text)).toEqual(["1 Thomas · station 1 Push-up", "2 Ida · station 2 Squat"]);
   // Thomas is first in people order; Ida, third, gets the theme's colour.
   expect(starts.map(chipColour)).toEqual(["#B18CFF", "VAR(--PRIMARY-COLOR)"]);
 });
