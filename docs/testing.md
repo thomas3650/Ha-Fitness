@@ -155,8 +155,8 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
 8. **Done:** Slut, then Ja. After a full round "Godt gået!" shows; before one, "Træningen blev afsluttet". Luk closes
    it.
 9. **The today card stays visible during an extra session:** with no day open, start a session from
-   `custom:ha-fitness-workout-card` (add it to a panel view by hand; the dev dashboard doesn't have it). The today card
-   shows "Træning i gang" and Fortsæt while the session runs.
+   `custom:ha-fitness-workout-card` (the dev dashboard's Workout view). Back on the first view, the today card shows
+   "Træning i gang" and Fortsæt while the session runs.
 10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at
     5, 4, 3, 2 and 1 s line up with the numbers, and that the change tones and the chime at the end come.
 11. The console is clean throughout.

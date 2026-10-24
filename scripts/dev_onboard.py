@@ -15,8 +15,8 @@ Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry] [--token-f
   (websocket `auth/long_lived_access_token`, client name `ha-fitness-dev`) and writes it there; a valid file is kept.
   `--token-file PATH` uses another file (a relative path is relative to the current folder). The fast loop's add-on
   server reads this file at each call (`HA_FITNESS_HA_TOKEN_FILE`).
-- Creates the dev dashboard `ha-fitness-dev` (websocket `lovelace/dashboards/create`): one sections view holding the
-  card `custom:ha-fitness-today-card` (`lovelace/config/save`). Its config is saved only while it has none, so a
+- Creates the dev dashboard `ha-fitness-dev` (websocket `lovelace/dashboards/create`): two sections views, one holding
+  `custom:ha-fitness-today-card` and one `custom:ha-fitness-workout-card` (`lovelace/config/save`). Its config is saved only while it has none, so a
   dashboard edited by hand is kept. This step also runs with `--no-entry`: the card works once an entry exists.
 - Unless `--no-entry`, creates the HA Fitness config entry through the user step, with the add-on server's URL
   `http://localhost:8765` (the fast loop's). The integration checks that the server answers there, so it must run
@@ -56,7 +56,14 @@ DASHBOARD_CONFIG = {
             "sections": [
                 {"type": "grid", "cards": [{"type": "custom:ha-fitness-today-card"}]}
             ],
-        }
+        },
+        {
+            "title": "Workout",
+            "type": "sections",
+            "sections": [
+                {"type": "grid", "cards": [{"type": "custom:ha-fitness-workout-card"}]}
+            ],
+        },
     ]
 }
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
