@@ -81,7 +81,8 @@ function errorKey(error: unknown): string {
  * the open training days, each with Start and a two-step Spring over (step 4 spec §6). While a
  * session is active the days give way to the session row: the program, the state line and the
  * people line, with Fortsæt (UI polish spec §2). The week ring sits beside the first row's text,
- * and each row's buttons sit under the ring and the text (UI polish spec §2.6).
+ * and each row's buttons sit under the ring and the text (UI polish spec §2.6). Without rows, the
+ * ring sits beside the muted text.
  */
 export class TodayCard extends LitElement {
   static override properties = {
@@ -291,7 +292,7 @@ export class TodayCard extends LitElement {
       cursor: default;
     }
     .error {
-      padding: 12px 16px 0;
+      padding: 12px 20px 0;
       color: var(--error-color);
     }
   `;
