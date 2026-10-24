@@ -128,7 +128,11 @@ class TrainingDay(Base):
     """One program on one local date; `program_name` is a copy, so history keeps the name after a delete."""
 
     __tablename__ = "training_days"
-    __table_args__ = (UniqueConstraint("program_id", "date"),)
+    # AUTOINCREMENT: an id is never reused after a delete, since the card and the service skip by id.
+    __table_args__ = (
+        UniqueConstraint("program_id", "date"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     program_id: Mapped[int | None] = mapped_column(

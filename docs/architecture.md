@@ -29,9 +29,9 @@ The cards are built into the integration: one bundle, released and versioned wit
   - **People** (at most 2) linked to HA person entities, **programs** (one validated JSON document each, D4) and the
     **change log** of every write.
   - **Training days** and the **scheduler** (step 4 spec §3.3, D34). A training day is one program on one local date,
-    stored as open, missed or skipped (done comes with sessions). The scheduler reconciles at start, every minute,
-    after every program write and before every read of the days. One lock serialises the scheduler, skips, program
-    writes and the dev routes.
+    stored as open, missed or skipped (done comes with sessions). Training-day ids are never reused, so a skip by id
+    can't hit a later day. The scheduler reconciles at start, every minute, after every program write and before
+    every read of the days. One lock serialises the scheduler, skips, program writes and the dev routes.
   - **REST** under `/api/v1/` (the routes are step 3 spec §7). `GET /api/v1/health` answers
     `{"status": "ok", "version": "<server version>", "api_version": 1}`. Step 4 adds `GET /api/v1/today`,
     `GET /api/v1/training-days?from=&to=` and `POST /api/v1/training-days/{id}/skip` (step 4 spec §3.4–§3.5).

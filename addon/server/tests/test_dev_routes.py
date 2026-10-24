@@ -149,3 +149,16 @@ async def test_dev_delete_removes_open_and_closed(make_app: MakeApp) -> None:
         assert await _days(client, "2026-10-27", "2026-10-28") == [
             ("2026-10-27", "Sample", "open")
         ]
+
+
+async def test_ids_are_not_reused_after_a_dev_delete(make_app: MakeApp) -> None:
+    """A day made after the dev DELETE removed the newest one gets a new, greater id."""
+    clock = FrozenClock(local(2026, 10, 28, 9))  # a Wednesday
+    async with dev_app(make_app, clock) as client:
+        await _create(client, "Onsdag", ["wed"])
+        [first] = (await client.get(TODAY)).json()["open"]
+        response = await client.delete(DEV, params={"date": "2026-10-28"})
+        assert response.status_code == 204, response.text
+        # The next read reconciles today again and makes the day anew.
+        [again] = (await client.get(TODAY)).json()["open"]
+        assert again["id"] > first["id"]

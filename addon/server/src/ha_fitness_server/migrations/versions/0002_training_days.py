@@ -43,6 +43,8 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "program_id", "date", name=op.f("uq_training_days_program_id")
         ),
+        # An id is never reused after a delete: the card and the service skip by id.
+        sqlite_autoincrement=True,
     )
     op.create_index(op.f("ix_training_days_date"), "training_days", ["date"])
     scheduler_state = op.create_table(

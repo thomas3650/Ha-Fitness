@@ -437,3 +437,18 @@ async def test_training_days_range_is_inclusive_by_date(make_app: MakeApp) -> No
             ("2026-10-29", "Torsdag", "open"),
         ]
         assert (await client.get(DAYS)).status_code == 422
+
+
+async def test_ids_are_not_reused_after_a_switch_off(make_app: MakeApp) -> None:
+    """Switching a program off removes its open day; the day made when it is back on gets a new, greater id."""
+    clock = FrozenClock(local(2026, 10, 28, 9))  # a Wednesday
+    async with started(make_app, clock) as client:
+        program_id = await _create(client, "Onsdag", ["wed"])
+        [first] = (await _today(client))["open"]
+        for active in (False, True):
+            response = await client.put(
+                f"{PROGRAMS}/{program_id}/active", json={"active": active}
+            )
+            assert response.status_code == 200, response.text
+        [again] = (await _today(client))["open"]
+        assert again["id"] > first["id"]
