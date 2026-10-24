@@ -1,4 +1,4 @@
-import { LitElement, type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
+import { LitElement, type PropertyValues, html, nothing } from "lit";
 
 import {
   type ToneKind,
@@ -9,39 +9,16 @@ import {
   scheduleTone,
   unlockAudio,
 } from "./audio";
+import { type DetailsContext, type Person, type Program, detailsStyles, renderDetails } from "./flow/details";
+import { type DoneContext, doneStyles, renderDone } from "./flow/done";
+import { type ReadyContext, readyStyles, renderReady } from "./flow/ready";
+import { type Countdown, type ImageOf, type ReachNote, type SoundButton, renderBack, sharedStyles } from "./flow/shared";
+import { type TimerContext, renderTimer, timerStyles } from "./flow/timer";
 import { type Vars, localize } from "./i18n";
 import { type ImageHass, type ImageKind, imageUrl } from "./images";
 import { type LanguageHass, cardLanguage } from "./language";
-import {
-  type OverlayMode,
-  type PhaseKind,
-  type SessionState,
-  type SessionStation,
-  type SessionView,
-  isActive,
-  lostAt,
-  receivedAt,
-} from "./overlay";
-import { ring } from "./ring";
-
-/** An active program, as `ha_fitness/programs` returns it (spec §4). */
-interface Program {
-  id: number;
-  name: string;
-  rounds: number;
-  work_seconds: number;
-  switch_seconds: number;
-  round_rest_seconds: number;
-  countdown_seconds: number;
-  total_minutes: number;
-  stations: { exercise_id: string; name: string }[];
-}
-
-/** A person, as `ha_fitness/people` returns it (spec §4). */
-interface Person {
-  id: number;
-  name: string;
-}
+import { type OverlayMode, type SessionState, type SessionView, isActive, lostAt, receivedAt } from "./overlay";
+import { personColor } from "./people";
 
 /** The part of Home Assistant's `hass` object the flow uses. */
 interface Hass extends LanguageHass, ImageHass {
@@ -58,8 +35,6 @@ declare global {
 }
 
 const TAG = "ha-fitness-workout-flow";
-/** The people's colours, by people order (design §3.4). Used for borders and badges, never for text. */
-const PERSON_COLORS = ["#B18CFF", "#3DD6C6"];
 const IDLE_MS = 60_000;
 const TICK_MS = 250;
 /** Luk shows after this long unreachable, so a touch-only kiosk is never trapped (spec §5.3). */
@@ -78,36 +53,6 @@ const RESTART_MS = 500;
 const STARTED_S = 2;
 /** No beep falls this soon after a phase starts, where it would clash with the change tone. */
 const QUIET_MS = 300;
-/** The ring's colours: orange for work, blue for the rest (design §3.4). Never used for text. */
-const RING_COLORS: Record<PhaseKind, string> = {
-  countdown: "#4DA8FF",
-  work: "#FF8A3D",
-  switch: "#4DA8FF",
-  rest: "#4DA8FF",
-};
-
-/** What the timer shows of a phase at this moment (spec §5.3). */
-interface Countdown {
-  /** The phase kind whose word shows: the next one at local zero. */
-  kind: PhaseKind;
-  /** The length of the phase shown, in seconds. */
-  duration: number;
-  /** The seconds left, rounded up. */
-  seconds: number;
-  /** The share of the phase left, 0..1. */
-  fraction: number;
-  /** True at local zero, before the message of the next phase has come. */
-  ahead: boolean;
-}
-
-/** `seconds` as m:ss, or h:mm:ss from an hour. */
-function clock(seconds: number): string {
-  const whole = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(whole / 3600);
-  const minutes = Math.floor((whole % 3600) / 60);
-  const secs = String(whole % 60).padStart(2, "0");
-  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${secs}` : `${minutes}:${secs}`;
-}
 
 /** Slut's question. */
 interface EndQuestion {
@@ -200,346 +145,7 @@ export class WorkoutFlow extends LitElement {
     this.busy = false;
   }
 
-  static override styles = css`
-    /* The flow fills the overlay's dialog; each step is centred, and on a large screen kept to a
-       readable width, on a landscape (1368×912) and a portrait (800×1280) tablet alike. */
-    :host {
-      display: flex;
-      flex-direction: column;
-      /* Centred while it fits; content taller than the screen starts at the top and scrolls. */
-      justify-content: safe center;
-      box-sizing: border-box;
-      min-height: 100%;
-      padding: 32px;
-      color: var(--primary-text-color);
-      background: var(--primary-background-color);
-      font-size: 1.25rem;
-    }
-    /* The page is the container the sizes below follow (cqi: 1% of its width). */
-    .page {
-      box-sizing: border-box;
-      width: 100%;
-      max-width: 1280px;
-      margin: 0 auto;
-      container-type: inline-size;
-    }
-    /* Details, get ready and done: one centred column. The timer keeps the wide page. */
-    .page.column {
-      max-width: 720px;
-    }
-    .page.column h2,
-    .page.column > .line {
-      text-align: center;
-    }
-    .page.column .actions,
-    .page.column .chips {
-      justify-content: center;
-    }
-    .page.centred {
-      text-align: center;
-    }
-    .page.centred .starts li {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    h2 {
-      margin: 0 0 8px;
-      font-size: 2.5rem;
-      font-weight: 500;
-    }
-    .line {
-      color: var(--secondary-text-color);
-      margin: 4px 0;
-    }
-    ol,
-    ul {
-      list-style: none;
-      margin: 16px 0;
-      padding: 0;
-    }
-    .stations li {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 8px 0;
-    }
-    .number {
-      min-width: 1.5em;
-      font-weight: 500;
-      color: var(--secondary-text-color);
-    }
-    .thumb {
-      width: 64px;
-      height: 64px;
-      border-radius: 8px;
-      object-fit: cover;
-      background: var(--secondary-background-color, var(--divider-color));
-    }
-    .chips {
-      display: flex;
-      gap: 16px;
-      margin: 16px 0;
-      border: none;
-      padding: 0;
-    }
-    .chips legend {
-      padding: 0;
-      margin-bottom: 8px;
-      color: var(--secondary-text-color);
-    }
-    button {
-      min-height: 48px;
-      min-width: 96px;
-      padding: 0 24px;
-      border-radius: 24px;
-      border: 2px solid var(--primary-color);
-      background: none;
-      color: var(--primary-text-color);
-      font: inherit;
-      font-weight: 500;
-      cursor: pointer;
-    }
-    button.chip {
-      border-color: var(--person-color);
-      border-width: 3px;
-    }
-    button.chip[aria-pressed="true"] {
-      background: color-mix(in srgb, var(--person-color) 25%, transparent);
-    }
-    button.main {
-      min-height: 96px;
-      min-width: 192px;
-      border-radius: 48px;
-      font-size: 1.5rem;
-      background: var(--primary-color);
-      color: var(--text-primary-color);
-    }
-    button:disabled {
-      opacity: 0.4;
-      cursor: default;
-    }
-    .actions {
-      display: flex;
-      gap: 24px;
-      align-items: center;
-      margin-top: 32px;
-    }
-    /* Get ready's countdown, readable across a kitchen: larger than the timer's ring number. */
-    .count {
-      font-size: clamp(8rem, 30cqi, 14rem);
-      font-weight: 500;
-      line-height: 1;
-      text-align: center;
-      font-variant-numeric: tabular-nums;
-      margin: 16px 0;
-    }
-    .badge {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      margin-right: 12px;
-      background: var(--person-color);
-    }
-    .starts li {
-      padding: 8px 0;
-      font-size: 1.5rem;
-    }
-    .error {
-      color: var(--error-color);
-      margin: 16px 0;
-    }
-    .note {
-      display: flex;
-      gap: 24px;
-      align-items: center;
-      margin: 16px 0;
-      color: var(--secondary-text-color);
-    }
-    header.top {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px 32px;
-      align-items: center;
-      font-size: 1.5rem;
-    }
-    /* Each part stays on one line; at a narrow width whole parts wrap instead. */
-    header.top > span,
-    header.top .question {
-      white-space: nowrap;
-    }
-    header.top .elapsed {
-      margin-left: auto;
-      font-variant-numeric: tabular-nums;
-    }
-    header.top .end {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-    }
-    button.slot {
-      min-width: 120px;
-    }
-    .solo,
-    .duo {
-      display: flex;
-      gap: 32px;
-      align-items: center;
-      justify-content: center;
-      margin: 24px 0;
-    }
-    .now,
-    .panel,
-    .next {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      text-align: center;
-    }
-    .now .exercise {
-      font-size: 2rem;
-      font-weight: 500;
-    }
-    .panel {
-      flex: 1;
-      min-width: 0;
-      overflow-wrap: anywhere;
-      padding: 16px;
-      border: 4px solid var(--person-color);
-      border-radius: 16px;
-    }
-    .panel .who {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .panel .name,
-    .panel .exercise {
-      font-weight: 500;
-    }
-    .next .label {
-      color: var(--secondary-text-color);
-      font-weight: 500;
-    }
-    .gif {
-      width: 280px;
-      height: 280px;
-      border-radius: 16px;
-      object-fit: cover;
-      background: var(--secondary-background-color, var(--divider-color));
-    }
-    .duo .gif {
-      width: min(200px, 30cqi);
-      height: min(200px, 30cqi);
-    }
-    .ring {
-      position: relative;
-      flex: none;
-      width: 320px;
-      height: 320px;
-      cursor: pointer;
-    }
-    .ring svg {
-      width: 100%;
-      height: 100%;
-    }
-    .ring .track {
-      stroke: var(--divider-color);
-    }
-    .ring .left {
-      stroke: var(--ring-color);
-    }
-    .ring .middle {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
-    .ring .word {
-      font-size: 1.5rem;
-      font-weight: 500;
-      letter-spacing: 0.1em;
-    }
-    .ring .seconds {
-      font-size: 6rem;
-      font-weight: 500;
-      line-height: 1;
-      font-variant-numeric: tabular-nums;
-    }
-    .ring .then {
-      color: var(--secondary-text-color);
-    }
-    .controls {
-      display: flex;
-      gap: 32px;
-      align-items: center;
-      justify-content: center;
-    }
-    .big {
-      font-size: 2rem;
-      font-weight: 500;
-    }
-    /* A portrait tablet (about 800 px wide): nothing scrolls sideways. */
-    @container (max-width: 1000px) {
-      header.top {
-        gap: 12px 20px;
-        font-size: 1.25rem;
-      }
-      /* Slut, and its question in its place, get a line of their own, right-aligned, so Nej
-         lands where Slut was. */
-      header.top .end {
-        flex-basis: 100%;
-        justify-content: flex-end;
-      }
-      /* Two people: both panels side by side, the ring below them. */
-      .duo {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        grid-template-areas:
-          "first second"
-          "ring ring";
-        gap: 24px;
-        align-items: stretch;
-      }
-      .duo > .panel:first-child {
-        grid-area: first;
-      }
-      .duo > .panel:last-child {
-        grid-area: second;
-      }
-      .duo > .ring {
-        grid-area: ring;
-        justify-self: center;
-      }
-      /* One person: the station and Næste side by side, the ring below them. */
-      .solo {
-        display: grid;
-        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-        grid-template-areas:
-          "now next"
-          "ring ring";
-        gap: 24px;
-      }
-      .solo > .now {
-        grid-area: now;
-      }
-      .solo > .next {
-        grid-area: next;
-      }
-      .solo > .ring {
-        grid-area: ring;
-        justify-self: center;
-      }
-      .solo .gif {
-        width: min(280px, 50cqi);
-        height: min(280px, 50cqi);
-      }
-    }
-  `;
+  static override styles = [sharedStyles, detailsStyles, readyStyles, timerStyles, doneStyles];
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -736,10 +342,14 @@ export class WorkoutFlow extends LitElement {
    * A participant's colour, by the person's place in people order (design §3.4). Beyond the
    * second person, or before the people have loaded for someone not among them, the theme's.
    */
-  private personColor(id: number, participantIndex: number): string {
+  private participantColor(id: number, participantIndex: number): string {
     const people = this.people;
-    const index = people ? people.findIndex((person) => person.id === id) : participantIndex;
-    return PERSON_COLORS[index] ?? "var(--primary-color)";
+    return personColor(people ? people.findIndex((person) => person.id === id) : participantIndex);
+  }
+
+  /** The colours of the view's participants, in their order. */
+  private participantColors(view: SessionView): string[] {
+    return view.participants.map((person, index) => this.participantColor(person.id, index));
   }
 
   private program(): Program | undefined {
@@ -1014,11 +624,10 @@ export class WorkoutFlow extends LitElement {
     this.requestUpdate();
   }
 
-  /** The "Tryk for lyd" button, while no sound can play. */
-  private renderSound() {
+  /** The "Tryk for lyd" button: shown while no sound can play, but a tap could bring it. */
+  private sound(): SoundButton {
     // With no Web Audio at all, no tap could bring sound.
-    if (!audioSupported() || !audioLocked()) return nothing;
-    return html`<button class="sound" @click=${() => this.tapForSound()}>${this.t("flow.tap_for_sound")}</button>`;
+    return { shown: audioSupported() && audioLocked(), onTap: () => this.tapForSound() };
   }
 
   /** Slut's first tap asks; Ja counts only after 0.5 s, and the question goes after 10 s. */
@@ -1051,292 +660,79 @@ export class WorkoutFlow extends LitElement {
   }
 
   /** The unreachable note, and Luk once it has lasted 10 s. */
-  private renderReach() {
-    if (this.reachable()) return nothing;
+  private reach(): ReachNote {
     const since = this.unreachableSince;
-    const luk = since !== undefined && Date.now() - since >= UNREACHABLE_MS;
-    return html`
-      <div class="note">
-        <span role="status">${this.t("flow.unreachable")}</span>
-        ${luk ? html`<button @click=${() => this.close()}>${this.t("flow.close")}</button>` : nothing}
-      </div>
-    `;
+    return {
+      reachable: this.reachable(),
+      canClose: since !== undefined && Date.now() - since >= UNREACHABLE_MS,
+      onClose: () => this.close(),
+    };
   }
 
-  private renderError() {
-    return this.error ? html`<div class="error" role="alert">${this.error}</div>` : nothing;
+  private readonly imageOf: ImageOf = (exerciseId, kind) => this.images.get(`${kind}/${exerciseId}`);
+
+  private readonly texts = (key: string, vars?: Vars): string => this.t(key, vars);
+
+  private detailsContext(): DetailsContext {
+    return {
+      t: this.texts,
+      programs: this.programs,
+      program: this.program(),
+      people: this.people ?? [],
+      selected: this.selected,
+      maxSelected: this.maxSelected(),
+      busy: this.busy,
+      error: this.error,
+      imageOf: this.imageOf,
+      onToggle: (person) => this.toggle(person),
+      onStart: () => void this.start(),
+      onBack: () => this.close(),
+    };
   }
 
-  private renderThumbnail(station: { exercise_id: string; name: string }) {
-    return this.renderImage(station, "thumbnail", "thumb");
+  private readyContext(view: SessionView): ReadyContext {
+    return {
+      t: this.texts,
+      view,
+      countdown: this.countdown(view),
+      colors: this.participantColors(view),
+      reach: this.reach(),
+      sound: this.sound(),
+      error: this.error,
+      onStartNow: () => void this.command("next"),
+      onPause: () => void this.command("pause"),
+      onResume: () => void this.command("resume"),
+      onCancel: () => void this.annul(),
+    };
   }
 
-  /** An exercise's image, or a neutral placeholder while it loads or when it has none. */
-  private renderImage(station: { exercise_id: string; name: string }, kind: ImageKind, className: string) {
-    const url = this.images.get(`${kind}/${station.exercise_id}`);
-    return url
-      ? html`<img class=${className} src=${url} alt=${station.name} />`
-      : html`<span class=${className} role="img" aria-label=${station.name}></span>`;
-  }
-
-  private renderDetails() {
-    if (this.programs === undefined) return html`${this.renderBack()}`;
-    const program = this.program();
-    if (!program) {
-      return html`
-        <div class="error" role="alert">${this.t(this.programs === null ? "flow.error.unavailable" : "flow.error.not_found")}</div>
-        ${this.renderBack()}
-      `;
-    }
-    const people = this.people ?? [];
-    const max = this.maxSelected();
-    return html`
-      <h2>${program.name}</h2>
-      <p class="line">
-        ${this.t("flow.summary", {
-          minutes: this.t("today.minutes", { count: program.total_minutes }),
-          rounds: this.t("today.rounds", { count: program.rounds }),
-        })}
-      </p>
-      <p class="line">
-        ${this.t("flow.seconds", {
-          work: program.work_seconds,
-          switch: program.switch_seconds,
-          rest: program.round_rest_seconds,
-        })}
-      </p>
-      <ol class="stations" aria-label=${this.t("flow.stations")}>
-        ${program.stations.map(
-          (station, index) => html`
-            <li>
-              <span class="number">${index + 1}</span>
-              ${this.renderThumbnail(station)}
-              <span>${station.name}</span>
-            </li>
-          `,
-        )}
-      </ol>
-      ${people.length === 0
-        ? html`<p class="line">${this.t("flow.no_people")}</p>`
-        : html`
-            <fieldset class="chips">
-              <legend>${this.t("flow.who")}</legend>
-              ${people.map((person, index) => {
-                const chosen = this.selected.has(person.id);
-                return html`
-                  <button
-                    class="chip"
-                    style="--person-color: ${PERSON_COLORS[index] ?? "var(--primary-color)"}"
-                    aria-pressed=${chosen ? "true" : "false"}
-                    ?disabled=${this.busy || (!chosen && this.selected.size >= max)}
-                    @click=${() => this.toggle(person)}
-                  >
-                    ${person.name}
-                  </button>
-                `;
-              })}
-            </fieldset>
-          `}
-      ${this.renderError()}
-      <div class="actions">
-        <button
-          class="main"
-          ?disabled=${this.busy || this.selected.size === 0}
-          @click=${() => this.start()}
-        >
-          ${this.t("flow.start")}
-        </button>
-        ${this.renderBack()}
-      </div>
-    `;
-  }
-
-  private renderBack() {
-    return html`<button @click=${() => this.close()}>${this.t("flow.back")}</button>`;
-  }
-
-  private renderReady(view: SessionView) {
-    const paused = view.status === "paused";
-    return html`
-      <h2>${view.program_name}</h2>
-      ${this.renderReach()} ${this.renderSound()}
-      <div class="count">${this.renderReadyCount(view)}</div>
-      <ul class="starts" aria-label=${this.t("flow.get_ready")}>
-        ${view.participants.map((person, index) => {
-          const station = view.stations?.[index]?.current;
-          return html`
-            <li style="--person-color: ${this.personColor(person.id, index)}">
-              <span class="badge"></span>
-              ${this.t("flow.starts_at", {
-                name: person.name,
-                number: station?.number ?? "",
-                exercise: station?.name ?? "",
-              })}
-            </li>
-          `;
-        })}
-      </ul>
-      ${this.renderError()}
-      <div class="actions">
-        <button class="main" @click=${() => this.command("next")}>${this.t("flow.start_now")}</button>
-        <button @click=${() => this.command(paused ? "resume" : "pause")}>
-          ${this.t(paused ? "flow.resume" : "flow.pause")}
-        </button>
-        <button @click=${() => void this.annul()}>${this.t("flow.cancel")}</button>
-      </div>
-    `;
-  }
-
-  /** The countdown's seconds; at local zero, the word of the phase that follows. */
-  private renderReadyCount(view: SessionView) {
-    const countdown = this.countdown(view);
-    return countdown.ahead ? this.t(`flow.phase.${countdown.kind}`) : countdown.seconds;
-  }
-
-  private renderTimer(view: SessionView) {
-    const phase = view.phase!;
-    const paused = view.status === "paused";
-    const countdown = this.countdown(view);
-    const word = this.t(`flow.phase.${paused ? "paused" : countdown.kind}`);
-    const next = view.next_phase;
-    const then =
-      next && !countdown.ahead ? this.t(`flow.then.${next.kind}`, { seconds: next.duration }) : undefined;
-    const theRing = ring({
-      label: word,
-      word,
-      max: countdown.duration,
-      value: countdown.seconds,
-      fraction: countdown.fraction,
-      color: RING_COLORS[countdown.kind],
-      then,
-      onTap: () => {
+  private timerContext(view: SessionView): TimerContext {
+    return {
+      t: this.texts,
+      view,
+      countdown: this.countdown(view),
+      elapsed: this.elapsed(view),
+      colors: this.participantColors(view),
+      imageOf: this.imageOf,
+      reach: this.reach(),
+      sound: this.sound(),
+      error: this.error,
+      asking: this.endQuestion !== undefined,
+      onRingTap: () => {
         if (this.newest?.status === "running") void this.command("pause");
       },
-    });
-    const stations = view.stations ?? [];
-    return html`
-      ${this.renderHeader(view, phase.round, phase.interval)} ${this.renderReach()} ${this.renderSound()}
-      ${this.renderError()}
-      ${stations.length === 1
-        ? this.renderSolo(view, theRing)
-        : html`<div class="duo">${this.renderPanel(view, 0)} ${theRing} ${this.renderPanel(view, 1)}</div>`}
-      <div class="controls">
-        <button @click=${() => this.command("previous")}>${this.t("flow.previous")}</button>
-        <button class="main" @click=${() => this.command(paused ? "resume" : "pause")}>
-          ${this.t(paused ? "flow.resume" : "flow.pause")}
-        </button>
-        <button @click=${() => this.command("next")}>${this.t("flow.next")}</button>
-      </div>
-    `;
+      onPrevious: () => void this.command("previous"),
+      onPause: () => void this.command("pause"),
+      onResume: () => void this.command("resume"),
+      onNext: () => void this.command("next"),
+      onAskEnd: () => this.askEnd(),
+      onConfirmEnd: () => this.confirmEnd(),
+      onKeepGoing: () => this.endAsk(),
+    };
   }
 
-  /** Runde, Interval, the elapsed time against the planned, and Slut with its question. */
-  private renderHeader(view: SessionView, round: number, interval: number) {
-    const question = this.endQuestion;
-    return html`
-      <header class="top">
-        <span>${this.t("flow.round", { round, rounds: view.totals.rounds })}</span>
-        <span>
-          ${view.totals.stations === undefined
-            ? this.t("flow.interval", { interval })
-            : this.t("flow.interval_of", { interval, intervals: view.totals.stations })}
-        </span>
-        <span class="elapsed">
-          ${this.t("flow.elapsed", { elapsed: clock(this.elapsed(view)), planned: clock(view.totals.planned) })}
-        </span>
-        <span class="end">
-          ${question
-            ? html`
-                <span class="question">${this.t("flow.end_confirm")}</span>
-                <button @click=${() => this.confirmEnd()}>${this.t("flow.yes")}</button>
-                <button class="slot" @click=${() => this.endAsk()}>${this.t("flow.no")}</button>
-              `
-            : html`<button class="slot" @click=${() => this.askEnd()}>${this.t("flow.end")}</button>`}
-        </span>
-      </header>
-    `;
-  }
-
-  /** One person: the current station big with its GIF, the ring, and Næste beside them. */
-  private renderSolo(view: SessionView, theRing: TemplateResult) {
-    const station = view.stations![0];
-    const person = view.participants[0];
-    return html`
-      <div class="solo">
-        <section class="now" aria-label=${person?.name ?? ""}>
-          ${this.renderImage(station.current, "gif", "gif")}
-          <span class="station">${this.t("flow.station", { number: station.current.number })}</span>
-          <span class="exercise">${station.current.name}</span>
-        </section>
-        ${theRing} ${station.next ? this.renderNext(station.next) : nothing}
-      </div>
-    `;
-  }
-
-  private renderNext(next: SessionStation) {
-    const label = this.t("flow.next_label");
-    return html`
-      <section class="next" aria-label=${label}>
-        <span class="label">${label}</span>
-        ${this.renderThumbnail(next)}
-        <span>${this.t("flow.station", { number: next.number })}</span>
-        <span>${next.name}</span>
-      </section>
-    `;
-  }
-
-  /** A person's panel in the two-person layout, in the person's colour. */
-  private renderPanel(view: SessionView, index: number) {
-    const person = view.participants[index];
-    const station = view.stations?.[index];
-    if (!person || !station) return nothing;
-    return html`
-      <section class="panel" aria-label=${person.name} style="--person-color: ${this.personColor(person.id, index)}">
-        <div class="who">
-          <span class="badge"></span>
-          <span class="name">${person.name}</span>
-          <span class="station">${this.t("flow.station", { number: station.current.number })}</span>
-        </div>
-        ${this.renderImage(station.current, "gif", "gif")}
-        <span class="exercise">${station.current.name}</span>
-        ${station.next
-          ? html`<span class="line">
-              ${this.t("flow.next_station", { number: station.next.number, exercise: station.next.name })}
-            </span>`
-          : nothing}
-      </section>
-    `;
-  }
-
-  private renderDone(view: SessionView) {
-    if (!view.counted) {
-      return html`
-        <h2>${this.t("flow.done.ended")}</h2>
-        <div class="actions">
-          <button class="main" @click=${() => this.close()}>${this.t("flow.close")}</button>
-        </div>
-      `;
-    }
-    return html`
-      <h2>${this.t("flow.done.counted")}</h2>
-      <p class="line">
-        <span>${this.t("flow.done.time")}</span>
-        <span class="big">${clock(view.time_trained)}</span>
-      </p>
-      <p class="big">${this.t("flow.done.rounds", { done: view.rounds_completed, rounds: view.totals.rounds })}</p>
-      <ul class="starts" aria-label=${this.t("flow.done.who")}>
-        ${view.participants.map(
-          (person, index) => html`
-            <li style="--person-color: ${this.personColor(person.id, index)}">
-              <span class="badge"></span>${person.name}
-            </li>
-          `,
-        )}
-      </ul>
-      <div class="actions">
-        <button class="main" @click=${() => this.close()}>${this.t("flow.close")}</button>
-      </div>
-    `;
+  private doneContext(view: SessionView): DoneContext {
+    return { t: this.texts, view, colors: this.participantColors(view), onClose: () => this.close() };
   }
 
   protected override render() {
@@ -1351,16 +747,16 @@ export class WorkoutFlow extends LitElement {
     const view = this.newest;
     switch (this.step()) {
       case "details":
-        return this.renderDetails();
+        return renderDetails(this.detailsContext());
       case "ready":
-        return this.renderReady(view!);
+        return renderReady(this.readyContext(view!));
       case "timer":
-        return this.renderTimer(view!);
+        return renderTimer(this.timerContext(view!));
       case "done":
-        return view && this.annulled.has(view.id) ? nothing : this.renderDone(view!);
+        return view && this.annulled.has(view.id) ? nothing : renderDone(this.doneContext(view!));
       default:
         // No session to show (a Fortsæt after the session was gone): only a way out.
-        return html`<div class="actions">${this.renderBack()}</div>`;
+        return html`<div class="actions">${renderBack(this.texts, () => this.close())}</div>`;
     }
   }
 }

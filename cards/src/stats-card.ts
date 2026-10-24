@@ -2,6 +2,7 @@ import { LitElement, type PropertyValues, css, html, nothing } from "lit";
 
 import { type Vars, localize } from "./i18n";
 import { type LanguageConfig, type LanguageHass, cardLanguage } from "./language";
+import { PERSON_COLORS } from "./people";
 import { type Connection, WsSubscription } from "./today-data";
 
 /** One person's numbers for a period (spec §3.4). */
@@ -57,8 +58,6 @@ declare global {
 }
 
 const TAG = "ha-fitness-stats-card";
-/** The people's colours in people order, as in the workout flow (step 5); then the primary colour. */
-const PERSON_COLORS = ["#B18CFF", "#3DD6C6"];
 
 /**
  * The workout tab's stats (spec §5.2): one panel per person with the streak and a table of this
