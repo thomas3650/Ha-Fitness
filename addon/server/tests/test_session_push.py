@@ -100,11 +100,12 @@ def _ok(tc: TestClient, command: str) -> dict[str, Any]:
 
 
 def _connect(ws: Any) -> dict[str, Any]:
-    """Read `hello` and `today` of a new connection; return the `session` message that follows."""
+    """Read `hello`, `today`, `session` and `stats` of a new connection; return the `session` message."""
     assert ws.receive_json()["type"] == "hello"
     assert ws.receive_json()["type"] == "today"
     message: dict[str, Any] = ws.receive_json()
     assert message["type"] == "session", message
+    assert ws.receive_json()["type"] == "stats"
     return message
 
 
@@ -164,7 +165,7 @@ def test_loop_wakes_at_deadline(make_app: MakeApp) -> None:
 
 
 def test_ws_events_session_started_completed_ended_done(make_app: MakeApp) -> None:
-    """A day's session: started, then completed by the loop with `done` and `today`; an extra one: ended, not counted."""
+    """A day's session: completed by the loop with `done`, `today` and `stats`; an extra one: ended, not counted."""
     clock = FrozenClock(WEDNESDAY_9)
     with _client(make_app, clock) as tc:
         thomas, program_id = _setup(tc)
@@ -179,6 +180,7 @@ def test_ws_events_session_started_completed_ended_done(make_app: MakeApp) -> No
             completed_event = _event(ws.receive_json())
             done = ws.receive_json()
             today = ws.receive_json()
+            stats = ws.receive_json()
             _start(tc, program_id, thomas)
             extra = _session(ws.receive_json())
             assert _event(ws.receive_json())[0] == "session_started"
@@ -199,6 +201,8 @@ def test_ws_events_session_started_completed_ended_done(make_app: MakeApp) -> No
     assert done["training_day"]["id"] == day_id
     assert today["type"] == "today"
     assert today["data"]["open"] == []
+    assert stats["type"] == "stats"
+    assert stats["data"]["counting_from"] == "2026-10-28"
     assert ended["status"] == "ended"
     assert ended_event == (
         "session_ended",
@@ -277,7 +281,8 @@ def test_command_after_the_last_deadline_keeps_the_completion(
     """`end` just after the last deadline is a 409, but the tick's completion before it stays and is pushed.
 
     The loop waits an hour here, so only the command's own tick can complete the session. A skip of another day
-    then pushes `skipped`: the completion's messages must come before it.
+    then pushes `skipped`: the completion's messages, and the `stats` of its first counted session, must come before
+    it.
     """
     clock = FrozenClock(WEDNESDAY_9)
     with _client(make_app, clock, tick_max=3600) as tc:
@@ -294,10 +299,12 @@ def test_command_after_the_last_deadline_keeps_the_completion(
             assert skipped.status_code == 200, skipped.text
             completed = _session(ws.receive_json())
             event = _event(ws.receive_json())[0]
+            stats = ws.receive_json()
             after = ws.receive_json()
     assert refused.status_code == 409
     assert completed["status"] == "completed"
     assert event == "session_completed"
+    assert stats["type"] == "stats"
     assert (after["type"], after["event"]) == ("event", "skipped")
 
 

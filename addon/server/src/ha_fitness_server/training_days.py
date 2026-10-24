@@ -94,6 +94,8 @@ class TrainingDays:
         self._publish = publish
         self.lock = threading.RLock()
         self._published: TodayView | None = None
+        # Called after every `today` check, changed or not: a people change leaves `today` alone but not the stats.
+        self.on_change: Callable[[], None] = lambda: None
 
     def local_date(self, moment: datetime) -> date:
         """Return the local date of an aware `moment`."""
@@ -204,11 +206,12 @@ class TrainingDays:
         return _event("done", day)
 
     def _publish_today(self) -> None:
-        """Publish `today` when what `/today` returns differs from what was published last."""
+        """Publish `today` when what `/today` returns differs from what was published last, then call `on_change`."""
         view = self._build_view(self.local_today())
         if view != self._published:
             self._published = view
             self._publish({"type": "today", "data": view.model_dump(mode="json")})
+        self.on_change()
 
     def _build_view(self, today: date) -> TodayView:
         """Build the body of `GET /today` for `today` (spec §3.5), without reconciling."""

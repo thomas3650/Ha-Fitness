@@ -21,7 +21,7 @@ from .models import (
 )
 from .schemas import PersonStats, Stats, Totals
 from .sessions import Sessions, time_trained
-from .training_days import TrainingDays
+from .training_days import Publish, TrainingDays
 
 # The app's one row in `app_state` (migration 0003).
 _APP_STATE_ID = 1
@@ -90,15 +90,32 @@ def _streak(outcomes: dict[date, list[str]]) -> int:
 
 
 class StatsService:
-    """Computes `Stats` (stats spec §3) under the training days' lock."""
+    """Computes `Stats` (stats spec §3) under the training days' lock, and publishes them when they change (§4)."""
 
     def __init__(
-        self, engine: Engine, training_days: TrainingDays, sessions: Sessions
+        self,
+        engine: Engine,
+        training_days: TrainingDays,
+        sessions: Sessions,
+        publish: Publish,
     ) -> None:
-        """Use `engine`, the training days (their lock and local dates) and the sessions (for the tick)."""
+        """Use `engine`, the training days (their lock and local dates), the sessions (for the tick) and `publish`."""
         self._engine = engine
         self._training_days = training_days
         self._sessions = sessions
+        self._publish = publish
+        self._published: Stats | None = None
+
+    def publish_if_changed(self) -> None:
+        """Publish `stats` when they differ from the last ones published; the training days call it after each change.
+
+        It is the one memory of what was published. The connect snapshot (`view()`) leaves it alone.
+        """
+        with self._training_days.lock:
+            stats = self.compute()
+            if stats != self._published:
+                self._published = stats
+                self._publish({"type": "stats", "data": stats.model_dump(mode="json")})
 
     def view(self) -> Stats:
         """Tick the session, then reconcile, then compute: the lifespan's order, under the lock (stats spec §4)."""

@@ -135,6 +135,7 @@ def create_app(
         people = People(engine, ha, training_days, the_clock)
         programs = Programs(engine, library, training_days)
         sessions = Sessions(engine, the_clock, training_days, programs, people, publish)
+        stats = StatsService(engine, training_days, sessions, publish)
         holder.set(
             Services(
                 engine=engine,
@@ -143,10 +144,12 @@ def create_app(
                 people=people,
                 programs=programs,
                 sessions=sessions,
-                stats=StatsService(engine, training_days, sessions),
+                stats=stats,
                 training_days=training_days,
             )
         )
+        # Before recover and the reconcile, so the stats' memory of what was published starts filled.
+        training_days.on_change = stats.publish_if_changed
         # Before reconcile: a session ended by the pause limit leaves its day to reconcile like any other.
         sessions.recover()
         training_days.reconcile_now()

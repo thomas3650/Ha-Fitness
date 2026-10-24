@@ -57,6 +57,8 @@ PAUSE_LIMIT = timedelta(minutes=30)
 MAX_HISTORY = 100
 # The app's one row in `app_state` (migration 0003).
 _APP_STATE_ID = 1
+# The events of a finish; any of them may change `today` or the stats.
+_FINISH_EVENTS = frozenset({"done", "session_completed", "session_ended"})
 
 
 class PlanStation(BaseModel):
@@ -466,10 +468,14 @@ class Sessions:
         self._send(messages)
 
     def _send(self, messages: list[dict[str, Any]]) -> None:
-        """Publish the messages of a committed change, then `today` if a day was closed."""
+        """Publish the messages of a committed change, then `today` and the stats if a session finished.
+
+        A finish can close a day (`done`), count an extra session or set `counting_from`, so each finish goes through
+        `publish_today`, which also checks the stats.
+        """
         for message in messages:
             self._publish(message)
-        if any(message.get("event") == "done" for message in messages):
+        if any(message.get("event") in _FINISH_EVENTS for message in messages):
             self._training_days.publish_today()
 
     def _tick(self, db_session: Session, now: datetime) -> list[dict[str, Any]]:

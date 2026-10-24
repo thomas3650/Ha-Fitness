@@ -27,6 +27,7 @@ from tests.session_helpers import (
     SMALL_STARTS,
     create_small,
     current,
+    make_session_app,
     ok,
     open_day,
     set_people,
@@ -281,10 +282,32 @@ async def test_two_programs_one_date_one_missed_breaks_streak(
     assert person["streak"] == 0
 
 
+async def test_stats_read_ticks_the_session_first(make_app: MakeApp) -> None:
+    """`GET /stats` ticks the session first: a session past its end, never read since, counts (spec §4).
+
+    The loop waits an hour here, so only the read's own tick can complete the session.
+    """
+    clock = FrozenClock(local(2026, 10, 14, 9))
+    app = make_session_app(clock, make_app, {"session_tick_max": 3600})
+    async with running(app) as client:
+        [thomas] = await set_people(client, THOMAS)
+        program = await create_small(client, "Lille")
+        await start(
+            client, program["id"], [thomas], await open_day(client, program["id"])
+        )
+        clock.advance(timedelta(minutes=5))
+        person = of(await stats(client), thomas)
+    assert person["all_time"] == totals(done=1, time_trained=SMALL_TIME)
+    assert person["streak"] == 1
+
+
 async def test_extra_session_counts_done_extra_time_not_streak(
     make_app: MakeApp,
 ) -> None:
-    """An extra session adds one done, one extra and its time; the streak stays (spec §3.1)."""
+    """An extra session adds one done, one extra and its time; the streak stays (spec §3.1).
+
+    It is on Thursday, a date with no day, so an extra session counted into the streak would make it 2.
+    """
     clock = FrozenClock(local(2026, 10, 14, 9))
     async with started(clock, make_app) as client:
         [thomas] = await set_people(client, THOMAS)
@@ -297,7 +320,7 @@ async def test_extra_session_counts_done_extra_time_not_streak(
             await open_day(client, program["id"]),
         )
         before = of(await stats(client), thomas)
-        clock.set(local(2026, 10, 14, 18))
+        clock.set(local(2026, 10, 15, 18))
         await start(client, program["id"], [thomas])
         # Paused 30 s inside the first work phase: the time is the active seconds.
         clock.advance(timedelta(seconds=10))
