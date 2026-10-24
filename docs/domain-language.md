@@ -35,7 +35,7 @@ spec already names.
 
 | Term | Danish UI | Meaning |
 | --- | --- | --- |
-| **Training day** | | One program on one of its weekdays, created at 00:00 HA time. |
+| **Training day** | | One program on one of its weekdays (one local date). Created at 00:00 HA time, and also during the day when a program is created, switched on, or gets today's weekday (D34). |
 | **Due** | | Today's training day, not done yet. |
 | **Late** | Forfalden | A due day that has passed untouched. It stays visible until the next training day of any program begins. |
 | **Missed** | | A late day closed because the next training day began. |
@@ -68,5 +68,14 @@ spec already names.
 
 | Term | Meaning |
 | --- | --- |
-| **Exercise library** | The exercises filtered from `hasaneyldrm/exercises-dataset`, with their GIFs (downloaded, D13). Names and instructions stay in English. |
-| **Custom exercise** | An exercise added through Claude, stored apart from the library. |
+| **Exercise library** | The exercises filtered from `hasaneyldrm/exercises-dataset`. The data is built into the add-on (D30); the GIFs and thumbnails are downloaded (D13). Names and instructions stay in English. |
+| **Exercise id** | A library exercise keeps the dataset's id (`0001` …). A custom exercise gets `custom-1`, `custom-2` … in the order added. A station stores the id. |
+| **Custom exercise** | An exercise added through Claude, stored apart from the library. It has no media, and its name may not equal any other exercise's name. |
+
+## The change log
+
+| Term | Meaning |
+| --- | --- |
+| **Change log** | The add-on's record of every successful write: one row each, never changed. A failed write adds none. |
+| **Client** | Who made the write: `mcp:<client name>` for MCP, `rest:<User-Agent>` for REST. |
+| **Summary** | One English line that says what changed, e.g. "Updated program Onsdag: rounds 5 → 4, stations". |

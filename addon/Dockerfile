@@ -25,7 +25,9 @@ COPY server/ ./
 RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     uv sync --frozen --no-dev --no-editable
 
-CMD ["/opt/venv/bin/python", "-m", "ha_fitness_server"]
+# The base image's /init (s6-overlay) starts CMD with only PATH set; with-contenv passes the container's
+# environment on, so the server sees SUPERVISOR_TOKEN and TZ (docs/ha-notes.md, The Supervisor).
+CMD ["/usr/bin/with-contenv", "/opt/venv/bin/python", "-m", "ha_fitness_server"]
 
 LABEL \
     io.hass.type="app" \

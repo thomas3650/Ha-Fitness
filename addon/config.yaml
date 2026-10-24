@@ -10,7 +10,22 @@ arch:
 image: ghcr.io/thomas3650/ha-fitness-addon
 init: false
 homeassistant_api: true
+# Tells HA where the API is, so it offers to set up the integration (step 4 spec §3.7).
+discovery:
+  - ha_fitness
 ports:
   8765/tcp: 8765
 ports_description:
-  8765/tcp: HA Fitness API (REST, used by the integration)
+  8765/tcp: HA Fitness API (REST and MCP)
+ingress: true
+ingress_port: 8765
+panel_icon: mdi:dumbbell
+panel_title: HA Fitness
+# A consistent copy of the database (backup/snapshot.db) before each hot backup; the live database and the
+# downloaded media are left out (the media is downloaded again after a restore).
+backup_pre: /usr/bin/with-contenv /opt/venv/bin/python -m ha_fitness_server.snapshot
+backup_exclude:
+  - ha_fitness.db
+  - ha_fitness.db-wal
+  - ha_fitness.db-shm
+  - library/media

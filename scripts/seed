@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Seed the dev Home Assistant and the dev add-on server: the persons Thomas and Elin, the people, and the
+# program "Sample". Only for localhost; safe to run again. Details: scripts/seed.py.
+#
+#   scripts/seed [--ha-url URL] [--server-url URL]   defaults http://localhost:8123 and http://localhost:8765
+#   scripts/seed --today                             also make Sample due today
+#   scripts/seed --late                              also make Sample late (its day of yesterday open)
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+# As a module from the repo root, so it can import scripts.dev_onboard.
+exec uv run python -m scripts.seed "$@"

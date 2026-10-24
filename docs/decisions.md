@@ -222,3 +222,71 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   add-on feature with docs also released an unchanged integration.
 - **Source:** the step 3 spec (programs through chat) §12; Claude, 2026-10-24
   (Thomas's delegation for the night)
+
+### D30: The library's data is built in; its media is downloaded
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The filtered exercise data (721 records, English steps) is committed as
+  `addon/server/src/ha_fitness_server/library/exercises.json` and ships in the image. Only the GIFs and thumbnails are
+  downloaded, into the data folder (D13).
+- **Why:** The data is MIT licensed, the media is Gym visual's. Built-in data makes search work offline from the first
+  start, and tests need no network.
+- **Source:** [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md) §3.1; Claude, 2026-10-24
+  (Thomas's delegation for the night)
+
+### D31: Hot backups hold a `VACUUM INTO` snapshot, not the live database
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** Backups stay hot. `backup_pre` writes a consistent copy of the database to `backup/snapshot.db` with
+  SQLite's `VACUUM INTO`, and `backup_exclude` leaves out the live database files and the media. A start with no
+  database and a snapshot restores the snapshot.
+- **Why:** A backup must never stop a running workout, and a raw copy of a WAL database while it runs can be
+  inconsistent.
+- **Source:** [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md) §10; Claude, 2026-10-24
+  (Thomas's delegation for the night)
+
+### D32: The dev HA token lives in `local/dev-ha-token`
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** `scripts/dev_onboard.py` keeps a long-lived token for the dev user in `local/dev-ha-token` (mode 600).
+  The fast loop's add-on server reads it at each call through `HA_FITNESS_HA_TOKEN_FILE`. Nothing reads `.env`. This
+  replaces design spec §4's token from a git-ignored `.env`.
+- **Why:** The token is made by a script, not by hand, and a token written after the server started works without a
+  restart.
+- **Source:** [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md) §11; Claude, 2026-10-24
+  (Thomas's delegation for the night)
+
+### D33: Person ids are never reused
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The `people` table uses `AUTOINCREMENT`, so a removed person's id is never given out again.
+- **Why:** Step 5's history is keyed on the person id. A reused id would hand a removed person's history to someone new.
+- **Source:** the step 3 build (Task 5 review); Claude, 2026-10-24
+
+### D34: The scheduler's rules
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The scheduler handles each local date from the day after the last handled one up to and including
+  today, and today again on every run. The first run starts at today and makes up no past days. Program writes
+  reconcile first, then act: switching off or deleting removes the program's open days (closed days stay), a rename
+  renames its open days, and a weekday change leaves existing days alone. So a pause on a day the program doesn't
+  train removes its late day, which then never counts as missed. `training_days` uses `AUTOINCREMENT`, so an id
+  removed by a switch-off, a delete or the dev DELETE is never given out again; the card and the service skip by id.
+- **Why:** A program made or switched on in the morning reminds the same day. Counting starts when the app is live.
+  Reconciling first means a write right after midnight never changes a day that should already be closed.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.3; reconcile-first: the step 4
+  build (Task A2 review); Claude, 2026-10-24 (Thomas's delegation for the night)
+
+### D35: The push channel's protocol
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** `GET /api/v1/ws` sends `hello` (with `api_version`), then `today`. After that it sends a new `today`
+  whenever `/today` changes, and one `event` (`due`, `skipped`, `missed`) per state change of a training day. The
+  client sends nothing, unknown message types are ignored on both sides, and events are fire-and-forget.
+- **Why:** The `today` state alone is enough to draw the card after any reconnect, and ignoring unknown types keeps
+  the protocol forward compatible. This makes D6 concrete.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.6; Claude, 2026-10-24
+  (Thomas's delegation for the night)
+
+### D36: The add-on's timezone comes from the environment
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The add-on's local time comes from `HA_FITNESS_TIMEZONE`, else `TZ`, else UTC with a log line. A
+  change takes effect at the add-on's next start. The `tzdata` package ships the zone data.
+- **Why:** The Supervisor passes HA's timezone as `TZ`, so the add-on needs no call to HA for midnight. The fast loop
+  sets `HA_FITNESS_TIMEZONE`, so a `TZ` in the Mac's shell doesn't matter.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.2; Claude, 2026-10-24
+  (Thomas's delegation for the night)
