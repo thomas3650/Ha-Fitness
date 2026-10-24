@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
+import logging
 import threading
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -31,6 +32,8 @@ from .schemas import (
     TrainingDayOut,
     Week,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 type Publish = Callable[[dict[str, Any]], None]
 
@@ -207,12 +210,19 @@ class TrainingDays:
         return _event("done", day)
 
     def _publish_today(self) -> None:
-        """Publish `today` when what `/today` returns differs from what was published last, then call `on_change`."""
+        """Publish `today` when what `/today` returns differs from what was published last, then call `on_change`.
+
+        The write has committed by now, so an error in `on_change` (the stats) is logged and swallowed: it never
+        turns the write into a failure.
+        """
         view = self._build_view(self.local_today())
         if view != self._published:
             self._published = view
             self._publish({"type": "today", "data": view.model_dump(mode="json")})
-        self.on_change()
+        try:
+            self.on_change()
+        except Exception:
+            _LOGGER.exception("Updating the stats after a change failed")
 
     def _build_view(self, today: date) -> TodayView:
         """Build the body of `GET /today` for `today` (spec §3.5), without reconciling."""

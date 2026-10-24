@@ -1,7 +1,7 @@
 """The cards' websocket commands (the workout spec §4).
 
 The subscriptions to today (step 4 spec §4.5), to the session and to the stats (the stats spec
-§5.1); the session command; the programs and people lists. None needs an admin: the wallpanel user isn't one.
+§5.1); the session command; the programs and people lists. None needs an admin: the tablet's user isn't one.
 """
 
 from datetime import datetime

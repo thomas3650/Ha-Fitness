@@ -35,6 +35,9 @@ path = "src/ha_fitness_server/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ha_fitness_server"]
 
+[tool.coverage.report]
+fail_under = 90
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

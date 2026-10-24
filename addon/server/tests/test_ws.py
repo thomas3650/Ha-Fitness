@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 from ha_fitness_server import __version__
+from ha_fitness_server.push import Hub
 
 from tests.conftest import FrozenClock, MakeApp
 from tests.test_scheduler import FIVE, ZONE, local
@@ -211,3 +212,30 @@ def test_messages_from_the_client_are_ignored(make_app: MakeApp) -> None:
         ws.send_text("hello?")
         clock.set(local(2026, 10, 27, 0, 1))
         assert _today(ws.receive_json()) == ("2026-10-27", [])
+
+
+async def test_hub_drops_a_subscriber_that_falls_behind() -> None:
+    """A subscriber that never reads is dropped once its queue is full; one that reads gets every message.
+
+    The hub is tested directly: the test transport has no backpressure, so a slow websocket can't be made.
+    """
+    hub = Hub()
+    async with (
+        hub.subscribe() as (slow, slow_dropped),
+        hub.subscribe() as (reader, reader_dropped),
+    ):
+        received: list[dict[str, Any]] = []
+        for number in range(101):
+            if number == 100:
+                assert not slow_dropped.is_set()
+                assert slow.qsize() == 100
+            hub.broadcast({"type": "event", "number": number})
+            while not reader.empty():
+                received.append(reader.get_nowait())
+        assert slow_dropped.is_set()
+        assert not reader_dropped.is_set()
+        assert received == [{"type": "event", "number": n} for n in range(101)]
+        held = slow.qsize()
+        hub.broadcast({"type": "event", "number": 101})
+        assert slow.qsize() == held
+        assert reader.get_nowait() == {"type": "event", "number": 101}

@@ -29,6 +29,7 @@
   "weekday_fri": "fre",
   "weekday_sat": "lør",
   "weekday_sun": "søn",
+  "list_separator": ", ",
   "links": "Links",
   "library_json": "Bibliotekets status (JSON)",
   "health": "Sundhedstjek (JSON)"

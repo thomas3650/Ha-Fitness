@@ -1,6 +1,8 @@
 """Tests for the programs (spec §5, §3.5 station resolution, §6 change log)."""
 
 from datetime import datetime
+from pathlib import Path
+import sqlite3
 from typing import Any
 
 import httpx
@@ -492,3 +494,54 @@ async def test_program_equipment_empty(client: httpx.AsyncClient) -> None:
     """A program of body-weight exercises has no equipment."""
     body = await _create(client)
     assert body["equipment"] == []
+
+
+async def _program_with_lost_exercise(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> dict[str, Any]:
+    """Store a program whose second station's custom exercise then leaves the library; return the stored program.
+
+    The exercise is added through the API; deleting its row is setup only (review backlog §2.2): no public interface
+    removes a custom exercise yet.
+    """
+    added = await client.post(
+        "/api/v1/exercises",
+        json={"name": "Garden swing", "steps": ["Swing."], "equipment": "sandbag"},
+    )
+    assert added.status_code == 201, added.text
+    assert added.json()["id"] == "custom-1"
+    program = await _create(
+        client, stations=[{"exercise": "0285"}, {"exercise": "custom-1"}]
+    )
+    with sqlite3.connect(tmp_path / "ha_fitness.db") as connection:
+        connection.execute("DELETE FROM custom_exercises")
+    connection.close()
+    return program
+
+
+async def test_missing_exercise_named_by_id(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    """A stored exercise that left the library is named by its id and adds no equipment (review backlog §2.2)."""
+    program = await _program_with_lost_exercise(client, tmp_path)
+    listed = await client.get(PROGRAMS)
+    fetched = await client.get(f"{PROGRAMS}/{program['id']}")
+    assert listed.status_code == 200, listed.text
+    assert fetched.status_code == 200, fetched.text
+    [from_list] = listed.json()
+    for body in (from_list, fetched.json()):
+        assert body["station_names"] == [program["station_names"][0], "custom-1"]
+        assert body["equipment"] == ["dumbbell"]
+        assert body["program"]["stations"] == program["program"]["stations"]
+
+
+async def test_update_with_missing_exercise_is_422(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    """Sending back a document that still holds the missing id is refused with 422 at that station (review backlog §2.2)."""
+    program = await _program_with_lost_exercise(client, tmp_path)
+    response = await client.put(f"{PROGRAMS}/{program['id']}", json=program["program"])
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["station"] == 2
+    assert "custom-1" in detail["message"]

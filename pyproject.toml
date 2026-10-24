@@ -18,6 +18,9 @@ dev = [
   "zizmor",
 ]
 
+[tool.coverage.report]
+fail_under = 95
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

@@ -3,6 +3,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from pathlib import Path
+import sqlite3
 from typing import Any
 
 import httpx
@@ -337,4 +339,31 @@ async def test_start_logs_session_started(make_app: MakeApp) -> None:
         "action": "session.started",
         "target": f"session:{view['id']}",
         "summary": "Started session of Onsdag for Thomas, Elin",
+    }
+
+
+async def test_start_with_missing_exercise_names_it_by_id(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """A station whose custom exercise left the library is named by its id in the plan (review backlog §2.2).
+
+    The exercise is added through the API; deleting its row is setup only: no public interface removes one yet.
+    """
+    async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
+        [thomas] = await _set_people(client, THOMAS)
+        added = await client.post(
+            "/api/v1/exercises", json={"name": "Garden swing", "steps": ["Swing."]}
+        )
+        assert added.status_code == 201, added.text
+        program = await _create(client, "Onsdag", stations=["0001", added.json()["id"]])
+        with sqlite3.connect(tmp_path / "ha_fitness.db") as connection:
+            connection.execute("DELETE FROM custom_exercises")
+        connection.close()
+        response = await _start(client, program["id"], [thomas])
+    assert response.status_code == 201, response.text
+    [station] = response.json()["stations"]
+    assert station["next"] == {
+        "number": 2,
+        "exercise_id": added.json()["id"],
+        "name": added.json()["id"],
     }

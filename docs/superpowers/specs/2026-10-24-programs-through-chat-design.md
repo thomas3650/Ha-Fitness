@@ -5,7 +5,7 @@
 - **Implements:** [design spec](2026-10-23-ha-fitness-design.md) §10 step 3, with §3.1, §3.6, §3.7 and §4. Issue #3.
 - **Needs an update on the real Home Assistant:** **yes.** A new add-on version; the integration doesn't change and
   must not be released by this step (§12). After installing:
-  - The house checks that port 8765 answers on the LAN and is not reachable through Cloudflared (design §3.7).
+  - The house checks that port 8765 answers on the LAN and is not reachable through remote access (design §3.7).
   - An HA person for Elin exists before the people are set.
   - Thomas adds the real endpoint to Claude Code under the name **`ha-fitness-house`**, in local scope, from a folder
     **outside this repo** (for example his home folder): `claude mcp add --transport http ha-fitness-house

@@ -40,7 +40,7 @@ exercises. The equipment filter of spec §3.6 (body weight, band, resistance ban
 129 MB. `data/exercises.json` is 17 MB with ten languages; the 721 records with English steps only are about 0.5 MB.
 
 From raw.githubusercontent.com to the Mac on the home network: **39 s** with 8 downloads in parallel. One at a time
-takes about 0.25 s per file, so about 6 minutes for the set. The Yellow's time is not measured.
+takes about 0.25 s per file, so about 6 minutes for the set. The HA host's time is not measured.
 
 ## 2026-10-24: Alembic batch rebuilds fire foreign-key actions
 

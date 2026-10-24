@@ -268,7 +268,7 @@ then holds the data as of the shutdown; only a crash leaves the last backup's sn
   - `ha_fitness_session_ended`;
   - `ha_fitness_phase_changed`;
   - `ha_fitness_training_day_done`.
-- **Websocket commands** (a logged-in user, not necessarily an admin; the wallpanel user isn't one):
+- **Websocket commands** (a logged-in user, not necessarily an admin; the tablet's user isn't one):
   - **`ha_fitness/session/subscribe`** sends `{"available": bool, "session": <view or null>}`.
     - It sends at once and after each change.
     - The integration compares views without `server_time` to decide whether something changed, then replaces
@@ -320,7 +320,7 @@ then holds the data as of the shutdown; only a crash leaves the last backup's sn
   - It shows the active programs, each with its line and **Start**, which opens the overlay. A start from here is an
     extra session (design §3.3).
   - While a session exists it shows "Træning i gang" and Fortsæt.
-  - It has no flow of its own, so a view change (WallPanel) can't tear down a running flow; the overlay is page-level.
+  - It has no flow of its own, so a view change (the screensaver) can't tear down a running flow; the overlay is page-level.
 - When the page is reloaded while a session runs, nothing opens by itself. Fortsæt on either card opens the overlay.
 
 ### 5.2 The flow
@@ -338,7 +338,7 @@ then holds the data as of the shutdown; only a crash leaves the last backup's sn
    - **Start** (96 px) sends `start`. It passes `training_day_id` when the flow was opened from the today card's row.
      **Tilbage** closes the overlay.
    - **Idle guard** (Claude's call): with no tap for **60 s** the details step closes the overlay. The house confirms its
-     dim and screensaver times are longer (the `fitness` issue); the top layer sits above WallPanel's screensaver, so
+     dim and screensaver times are longer (the `fitness` issue); the top layer sits above the screensaver, so
      this guard is the protection. A wake tap after the
      screen dims can then never land on Start (design §1).
    - A failed start shows a text from the card's language files and stays on the details step: `conflict` with a
@@ -584,7 +584,7 @@ tabs.
 **While `binary_sensor.ha_fitness_session_running` is on** (design §3.4):
 - keep the tablet awake;
 - hold the photo slideshow;
-- hold WallPanel's return to the overview;
+- hold the screensaver's return to the overview;
 - the install script refuses.
 
 **Asked of the house, optional:** allow autoplay for HA's origin in Edge (`AutoplayAllowed` or an allowlist). Then the

@@ -29,17 +29,15 @@ Anti-goals (a failure even if it technically works):
 
 - **Thomas:** only Thomas and Elin train. No guests. So 1 or 2 participants per session.
 - They train in the combined kitchen/living room, in sight of the **kitchen tablet**.
-- The kitchen tablet (facts from ha-claude-a8, the session that manages Thomas's HA): Surface Pro (2017), Windows 10,
-  Edge in full screen with kiosk-mode, HA user `wallpanel`, about **1368×912 CSS px** (3:2 landscape, worked out, not
-  measured), touch only (no hover), HA's default **light** theme, dashboard `dashboard-kitchen` in **Danish**. The screen
+- The kitchen tablet (facts from the house assistant, the session that manages the home's HA): a Windows 10 tablet,
+  a browser in full screen with kiosk-mode, its own HA user, about **1368×912 CSS px** (3:2 landscape, worked out, not
+  measured), touch only (no hover), HA's default **light** theme, the kitchen dashboard in **Danish**. The screen
   dims when idle; **the first touch wakes it and also clicks whatever is under the finger.** A photo slideshow covers it in
   set hours.
-- Person entities today: `person.thomas` only. **Thomas:** he (or ha-claude-a8) creates a person for Elin in HA. No HA
+- Person entities today: one trainer has a person entity. **Thomas:** he (or the house assistant) creates a person for the other trainer in HA. No HA
   changes are made from this project's sessions.
-- HA host: Home Assistant Yellow (**aarch64**), HA OS, Core 2026.10.2, Tailscale add-on installed. Remote access by name
-  goes through **Cloudflared**, so HA's own port is reachable from the internet.
-- Speakers (Music Assistant 2.10.6, local build): `media_player.kids_room` (Sonos), `media_player.libratonezipp_2`
-  (Libratone, living room, often unavailable), `media_player.tv` (living room). None in the kitchen.
+- HA host: **aarch64**, HA OS. Remote access to HA's own port exists, so it must not expose the add-on's port.
+- Speakers: Music Assistant with a few speakers, some often unavailable. None in the kitchen.
 
 ## 3. What v1 does
 
@@ -109,7 +107,7 @@ labels are Danish, while exercise names and instructions stay in English, as in 
 
 **Language (Thomas):** everything is built in English, and every UI text comes from a language file. v1 ships **English
 (the base) and Danish**. The integration uses HA's own translations (entity, service and repair texts); the cards have
-their own language files and follow the HA user's language, so the kitchen tablet (user `wallpanel`) shows Danish when
+their own language files and follow the HA user's language, so the kitchen tablet (the tablet's HA user) shows Danish when
 that user's language is Danish. Exercise names and instructions are never translated. The Danish words used in this
 document ("Træning i dag", "Spring over", "Forfalden", "Slut", "Musik utilgængelig") are the Danish file's texts.
 
@@ -119,8 +117,8 @@ document ("Træning i dag", "Spring over", "Forfalden", "Slut", "Musik utilgæng
 - **Claude's call:** a short line under the name (exercises · rounds · about how many minutes).
 - **Claude's call:** Start never starts the clock. It opens the workout's details step, so a wake-tap can't start a
   workout. Spring over asks once to confirm.
-- **Claude's call:** where this card goes on the overview, and the new **workout tab** on `dashboard-kitchen`, are agreed
-  with ha-claude-a8 in step 4, because the dashboards are that session's job (the house repo's own rule: a dashboard
+- **Claude's call:** where this card goes on the overview, and the new **workout tab** on the kitchen dashboard, are agreed
+  with the house assistant in step 4, because the dashboards are that session's job (the house repo's own rule: a dashboard
   change is specced there first and each HA change needs Thomas's yes). The overview has no free spot today.
 
 **Workout flow** (full screen on the tablet):
@@ -182,8 +180,8 @@ of steps 4–6 update the screens they touch to light, Danish and 3:2.
 
 - Served by the add-on on **its own port**: MCP at `http://<ha-host>:<port>/mcp` (Streamable HTTP) and REST at
   `/api/v1/` with OpenAPI. Both are thin adapters over **one service layer**, which the integration's API also uses.
-- **No login.** **Thomas:** in v1 it is used **only from home, on the local network** (access over Tailscale is not a v1
-  requirement). The port must **not** be published through Cloudflared (Cloudflared only forwards HA's own port today;
+- **No login.** **Thomas:** in v1 it is used **only from home, on the local network** (remote access is not a v1
+  requirement). The port must **not** be exposed by remote access (which only forwards HA's own port today;
   the first real install confirms).
 - Every change is recorded in a change log (client, time, what changed).
 - **Claude's call:** v1 tools (exact names left to step 3's spec): search exercises; list/get programs; create, update,
@@ -205,7 +203,7 @@ step 4's spec (domain `ha_fitness`):
 Phone notifications and actionable reminders (**Claude's call:** the dashboard card is the reminder; add notifications
 later if it isn't enough), voice cues, 3–4 participants and guests, any editing UI (v2), other workout types (Tabata,
 HIIT, sets & reps, EMOM, AMRAP), schedule types other than weekdays, `todo`/`calendar` entities, authentication, https,
-watch/Health Connect import, access from outside home (Tailscale), a manual "done" for workouts done without the app.
+watch/Health Connect import, access from outside home, a manual "done" for workouts done without the app.
 
 ## 4. Architecture
 
@@ -236,7 +234,7 @@ may require a newer version of the other part.
   the service layer, like each REST route, so REST is **not** auto-converted to MCP. Why: FastMCP's own docs say LLMs do
   significantly better with curated tools than with tools generated from OpenAPI, and the tools need LLM-oriented
   descriptions, close-match errors and destructive hints. The same endpoint serves Claude Code on Thomas's Mac and,
-  if wanted later, the house assistant on the Yellow.
+  if wanted later, the house assistant on the HA host.
 - **Database access:** SQLAlchemy 2 with Alembic migrations (migrations from the first schema, §10).
 - **Push channel to the integration:** a websocket on the add-on.
 - **Database: SQLite** in the add-on's `/data` (included in HA backups). **Claude's call, Thomas agreed:** each program is
@@ -244,7 +242,7 @@ may require a newer version of the other part.
   tables.
 - **Cards** (and later the v2 website): **Lit + TypeScript**.
 - **Integration:** Python, tested with `pytest-homeassistant-custom-component` and a fake add-on API.
-- **Docker Desktop:** **Thomas:** installed on his Mac (Apple Silicon, arm64, same arch as the Yellow) in step 1.
+- **Docker Desktop:** **Thomas:** installed on his Mac (Apple Silicon, arm64, same arch as the HA host) in step 1.
 
 ## 6. Way of working
 
@@ -374,7 +372,7 @@ Thomas can try.
 installed with Thomas's yes (§8). So step 1 must already produce a public, pullable add-on image, a HACS release and the
 house-issue routine. Real data exists from step 3 on, so database migrations are in place from the first schema. The
 first real install (step 3) also checks that the MCP port answers on the LAN address and is not reachable through
-Cloudflared.
+remote access.
 
 1. **Ground structure:** repo and settings, docs (§7), agents, CI, both release pipelines, dev HA + add-on server
    scaffolds, Supervisor dev container, Docker Desktop. Mockups (including their 12 GIFs) move to `docs/mockups/`;

@@ -161,6 +161,8 @@ The cards are built into the integration: one bundle, released and versioned wit
 - The stats add `stats` ([below](#stats-on-the-push-channel)): it follows `session` on connect, and comes again when
   the numbers change. A new message type isn't a breaking change, so `api_version` stays 1.
 - Events are fire-and-forget: a client that isn't connected misses them. The `today` state is what counts.
+- Each subscriber's queue holds 100 messages. A subscriber that falls behind is dropped with close code 1013 and
+  reconnects.
 
 ```json
 {"type": "event", "event": "skipped", "training_day": {"id": 12, "program_id": 3, "program_name": "Onsdag", "date": "2026-10-28"}}
@@ -210,7 +212,7 @@ The integration relays it.
   - The schema only checks the types. The add-on checks the rest, so its refusal is the one shown.
   - A refusal (`not_found`, `conflict` or `invalid` in the add-on's `detail.code`) raises a translated validation
     error with the key `session_<code>`. Anything else that fails is `unavailable`.
-- **The websocket commands.** None needs an admin, because the wallpanel user isn't one.
+- **The websocket commands.** None needs an admin, because the tablet's user isn't one.
   - `ha_fitness/session/subscribe` sends `{available, session}` at once and after each change. The relay is described
     below.
   - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end` or
