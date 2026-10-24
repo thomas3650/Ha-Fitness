@@ -76,8 +76,14 @@ The status page shows how many are there.
 Backups run while the add-on runs (hot backups). Before each backup the add-on writes a consistent copy of its
 database to `backup/snapshot.db` in its data folder. The backup holds that copy, not the live database files, and not
 the downloaded media. After a restore the add-on starts from the copy, and downloads the media again.
-A backup taken while the add-on is stopped holds the last snapshot only, because the Supervisor runs the snapshot
-command only in a running add-on.
+The add-on also writes the snapshot when it stops, so a backup taken while it is stopped holds the data as of the
+stop. Only after a crash does such a backup hold an older snapshot: the Supervisor runs the snapshot command only in a
+running add-on.
+
+## Workouts
+
+Stopping or updating the add-on pauses a running workout; resume it on the tablet afterwards. A workout that stays
+paused for 30 minutes ends.
 
 ## Support
 

@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 import json
 from typing import Any
 
@@ -13,6 +14,15 @@ from mcp.types import LATEST_PROTOCOL_VERSION, Implementation
 import pytest
 
 from tests.conftest import FrozenClock, MakeApp, running
+from tests.session_helpers import (
+    SESSION,
+    SESSIONS,
+    create_small,
+    ok,
+    set_people,
+    start,
+    started_with_mcp,
+)
 from tests.test_people import ELIN, HA_PERSONS, HA_URL, THOMAS, TOKEN, FakeHa
 from tests.test_scheduler import ZONE, local
 
@@ -26,6 +36,8 @@ READ_TOOLS = {
     "list_people",
     "get_change_log",
     "get_today",
+    "get_session",
+    "list_sessions",
 }
 DESTRUCTIVE_TOOLS = {
     "update_program",
@@ -69,11 +81,11 @@ def _program(name: str = "Onsdag", **fields: Any) -> dict[str, Any]:
 
 
 async def test_tool_names_are_exactly_the_spec_list(make_app: MakeApp) -> None:
-    """The server has the twelve tools of spec §8, step 4's two, and no others."""
+    """The server has the twelve tools of spec §8, step 4's two, step 5's two, and no others."""
     async with mcp_client(make_app()) as session:
         names = {tool.name for tool in await session.list_tools()}
     assert names == READ_TOOLS | DESTRUCTIVE_TOOLS | ADDING_TOOLS
-    assert len(names) == 14
+    assert len(names) == 16
 
 
 async def test_annotations(make_app: MakeApp) -> None:
@@ -440,3 +452,37 @@ async def test_skip_tool_logs_mcp_client(make_app: MakeApp) -> None:
     assert newest["action"] == "training_day.skipped"
     assert newest["target"] == f"training_day:{day['id']}"
     assert newest["summary"] == "Skipped Onsdag (2026-10-28)"
+
+
+async def test_mcp_get_session_and_list_sessions(make_app: MakeApp) -> None:
+    """`get_session` and `list_sessions` answer what `GET /session` and `GET /sessions` do; a bad limit is JSON."""
+    clock = FrozenClock(local(2026, 10, 28, 9))
+    async with started_with_mcp(clock, make_app) as (client, session):
+        none = await call(session, "get_session")
+        [thomas] = await set_people(client, THOMAS)
+        program = await create_small(client, "Lille")
+        await start(client, program["id"], [thomas])
+        running_view = await call(session, "get_session")
+        rest_running = (await client.get(SESSION)).json()
+        first = await ok(client, "end")
+        clock.advance(timedelta(minutes=1))
+        await start(client, program["id"], [thomas])
+        second = await ok(client, "end")
+        history = await call(session, "list_sessions")
+        rest_history = (await client.get(SESSIONS)).json()
+        one = await call(session, "list_sessions", limit=1)
+        with pytest.raises(ToolError) as refused:
+            await call(session, "list_sessions", limit=0)
+    assert none == {"result": None}
+    assert running_view == {"result": rest_running}
+    assert history == rest_history
+    assert history["counting_from"] is None
+    assert [listed["id"] for listed in history["sessions"]] == [
+        second["id"],
+        first["id"],
+    ]
+    assert one == {**rest_history, "sessions": rest_history["sessions"][:1]}
+    assert len(one["sessions"]) == 1
+    detail = json.loads(str(refused.value))
+    assert detail["code"] == "invalid"
+    assert "limit" in detail["message"]

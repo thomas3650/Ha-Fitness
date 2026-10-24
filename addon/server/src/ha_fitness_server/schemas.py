@@ -1,13 +1,14 @@
 """The Pydantic models REST and MCP share, so both expose one JSON schema."""
 
 import datetime as dt
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal, Self
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PlainSerializer,
     StringConstraints,
     field_validator,
     model_validator,
@@ -275,3 +276,108 @@ class TodayView(BaseModel):
     date: dt.date
     open: list[OpenDay]
     next: NextTraining | None
+
+
+def _utc_millis(moment: datetime) -> str:
+    """Write an aware time as UTC ISO with milliseconds: `2026-10-28T08:00:05.000Z`."""
+    return (
+        moment.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    )
+
+
+# A time in the session view (step 5 spec §3.5): UTC ISO with milliseconds in JSON.
+UtcMillis = Annotated[
+    datetime, PlainSerializer(_utc_millis, return_type=str, when_used="json")
+]
+
+PhaseKind = Literal["countdown", "work", "switch", "rest"]
+
+
+class NewSession(BaseModel):
+    """Body of `POST /api/v1/session`; the participant rules are the service's, so a bad list has the session shape."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    program_id: int
+    participants: list[int]
+    training_day_id: int | None = None
+
+
+class SessionParticipantOut(BaseModel):
+    """A participant of a session, with the name frozen at the start."""
+
+    id: int
+    name: str
+
+
+class SessionPhase(BaseModel):
+    """The current phase; `ends_at` is set while running, `remaining` (seconds) while paused."""
+
+    index: int
+    kind: PhaseKind
+    round: int
+    interval: int
+    duration: int
+    ends_at: UtcMillis | None
+    remaining: float | None
+
+
+class NextPhase(BaseModel):
+    """The phase after the current one."""
+
+    kind: PhaseKind
+    duration: int
+
+
+class StationRef(BaseModel):
+    """A station of the plan: its number from 1, and its exercise."""
+
+    number: int
+    exercise_id: str
+    name: str
+
+
+class SessionStation(BaseModel):
+    """Where one participant is now and goes next (step 5 spec §3.1); `next` is null when no work phase follows."""
+
+    current: StationRef
+    next: StationRef | None
+
+
+class SessionTotals(BaseModel):
+    """`planned` is the seconds of every work, switch and rest phase; the countdown is left out."""
+
+    planned: int
+    rounds: int
+    stations: int
+
+
+class SessionView(BaseModel):
+    """A session as `GET /api/v1/session` and the push channel give it (step 5 spec §3.5).
+
+    `phase`, `next_phase` and `stations` are null for a finished session in history.
+    """
+
+    id: int
+    revision: int
+    status: Literal["running", "paused", "completed", "ended"]
+    counted: bool
+    program_name: str
+    training_day_id: int | None
+    participants: list[SessionParticipantOut]
+    phase: SessionPhase | None
+    next_phase: NextPhase | None
+    stations: list[SessionStation] | None
+    totals: SessionTotals
+    started_at: UtcMillis | None
+    ended_at: UtcMillis | None
+    rounds_completed: int
+    time_trained: int
+    server_time: UtcMillis
+
+
+class SessionHistory(BaseModel):
+    """Body of `GET /api/v1/sessions`: the finished sessions, newest first, and the date counting starts from."""
+
+    counting_from: dt.date | None
+    sessions: list[SessionView]

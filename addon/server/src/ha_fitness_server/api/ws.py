@@ -16,30 +16,40 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def push_channel(websocket: WebSocket) -> None:
-    """Send `hello`, then `today`, then every message the hub broadcasts; the client sends nothing.
+    """Send `hello`, `today` and `session`, then every message the hub broadcasts; the client sends nothing.
 
-    It subscribes before it builds the snapshot, so nothing published meanwhile is lost. Every publish runs under the
+    It subscribes before it builds the snapshots, so nothing published meanwhile is lost. Every publish runs under the
     training days' lock, so the queue holds them in lock order. A `today` can be queued after the snapshot was built
     (a skip, a write or a tick in the gap before the drain), and `_publish_today` won't send that view again. So when
     the drain holds a `today`, the last one is the newest view and is sent instead of the snapshot. Otherwise the
-    snapshot is the newest: a later change would have queued a `today`. The queued events follow, in queue order.
+    snapshot is the newest: a later change would have queued a `today`. `session` works the same way: every change of
+    the session publishes one, and reading the snapshot can tick. The queued events follow, in queue order.
     """
     hub: Hub = websocket.app.state.hub
     holder: ServicesHolder = websocket.app.state.services
     await websocket.accept()
     async with hub.subscribe() as queue:
-        view = await anyio.to_thread.run_sync(holder.get().training_days.today_view)
+        services = holder.get()
+        view = await anyio.to_thread.run_sync(services.training_days.today_view)
         today: Message = {"type": "today", "data": view.model_dump(mode="json")}
+        current = await anyio.to_thread.run_sync(services.sessions.current)
+        session: Message = {
+            "type": "session",
+            "data": None if current is None else current.model_dump(mode="json"),
+        }
         events: list[Message] = []
         for message in _drain(queue):
             if message.get("type") == "today":
                 today = message
+            elif message.get("type") == "session":
+                session = message
             else:
                 events.append(message)
         await websocket.send_json(
             {"type": "hello", "version": __version__, "api_version": API_VERSION}
         )
         await websocket.send_json(today)
+        await websocket.send_json(session)
         for message in events:
             await websocket.send_json(message)
         await _serve(websocket, queue)

@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     Dialect,
     Enum,
+    Float,
     ForeignKey,
     MetaData,
     String,
@@ -159,3 +160,74 @@ class SchedulerState(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     last_date: Mapped[dt.date | None] = mapped_column(Date)
+
+
+class SessionStatus(StrEnum):
+    """The status of a session (step 5 spec §3.2): `running` or `paused` while active, then `completed` or `ended`."""
+
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    ENDED = "ended"
+
+
+# "A session is active": running or paused. One session at a time can be.
+ACTIVE_SESSION_STATUSES = (SessionStatus.RUNNING, SessionStatus.PAUSED)
+
+
+class WorkoutSession(Base):
+    """One workout (step 5 spec §3.2); `plan` is frozen at the start, so later edits change nothing here.
+
+    Called `WorkoutSession` so it never clashes with SQLAlchemy's `Session`.
+    """
+
+    __tablename__ = "sessions"
+    # AUTOINCREMENT: an id is never reused, since history and the cards refer to sessions by id.
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan: Mapped[dict[str, Any]] = mapped_column(JSON)
+    training_day_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_days.id", ondelete="SET NULL")
+    )
+    status: Mapped[SessionStatus] = mapped_column(
+        Enum(
+            SessionStatus,
+            native_enum=False,
+            length=16,
+            values_callable=lambda members: [member.value for member in members],
+        ),
+        index=True,
+    )
+    counted: Mapped[bool]
+    phase_index: Mapped[int]
+    phase_started_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    paused_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    paused_seconds: Mapped[float] = mapped_column(Float)
+    last_tick_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    started_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    ended_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    rounds_completed: Mapped[int]
+    revision: Mapped[int]
+
+
+class SessionParticipant(Base):
+    """One person in a session, in order; no foreign key to `people`, so history keeps a removed person's name."""
+
+    __tablename__ = "session_participants"
+
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int]
+    name: Mapped[str] = mapped_column(String)
+
+
+class AppState(Base):
+    """The app's one row: `counting_from` is the local date of the first counted session, null until then."""
+
+    __tablename__ = "app_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    counting_from: Mapped[dt.date | None] = mapped_column(Date)

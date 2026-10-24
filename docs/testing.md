@@ -37,18 +37,27 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
 6. For dev data: `scripts/seed`. It creates the HA persons "Thomas" and "Elin", sets them as the people, and creates
    the program "Sample" (Wednesday, 5 body-weight stations). A second run changes nothing. It refuses any host but
    `localhost` or `127.0.0.1`, so it never touches a real HA or add-on. Use the wrapper: run directly,
-   `scripts/seed.py` fails on its import. Two flags make a training day on purpose, through the dev routes; "today" is
-   the date in Europe/Copenhagen. Both refuse, before any change, when the server has no dev routes.
+   `scripts/seed.py` fails on its import. Three flags make a training day on purpose, through the dev routes; "today"
+   is the date in Europe/Copenhagen. Each refuses, before any change, when the server has no dev routes.
    - `scripts/seed --today` makes Sample due today: it adds today's weekday to Sample, switches Sample on when it is
      off, and opens (or reopens, after a skip) its day for today.
    - `scripts/seed --late` makes Sample late, with yesterday's day open. It refuses, before it changes anything, when
      another active program trains today: that program's day would close the late one.
+   - `scripts/seed --short` makes the short program "Kort" due today: 2 body-weight stations, 1 round, work 10 s,
+     switch 0 s, countdown 5 s. It creates Kort with today's weekday only, or sets an existing Kort's weekdays to
+     today's only and switches it on, then opens (or reopens) its day for today. Kort's day for today closes any
+     earlier late day as missed, and makes `scripts/seed --late` refuse on that weekday until Kort is switched off.
 
    The dev routes exist only with `HA_FITNESS_DEV=1`. Without it they answer 404 and aren't in OpenAPI, so the add-on
    never has them. `POST /api/v1/dev/training-days` with `{"program_id", "date"}` opens a day on today or an earlier
    date, or reopens the one there is. `DELETE /api/v1/dev/training-days?date=` removes every training day of that date,
    open or closed.
-7. `scripts/develop stop` stops all three.
+7. **A short run**, after `scripts/seed --short`: start Kort on its day for today and let it run to the end, about
+   25 s. Through REST, take the person ids from `GET /api/v1/people` and Kort's day (`id`, `program_id`) from
+   `GET /api/v1/today`. Then `POST /api/v1/session` with `{"program_id", "participants": [person ids],
+   "training_day_id"}`, and follow it with `GET /api/v1/session`. When it completes, `GET /api/v1/today` no longer
+   lists Kort's day. With the workout flow's cards, Start on the today card runs the same path.
+8. `scripts/develop stop` stops all three.
 
 `scripts/smoke` starts the dev HA once in the foreground (150 s, `SMOKE_SECONDS` to change), and fails if HA doesn't
 start, if `ha_fitness` isn't set up, or on an error from the integration. The full log is `local/smoke.log`. It needs

@@ -1,0 +1,318 @@
+"""Tests for the session's push messages (step 5 spec §3.5): the loop, the events, the pause limit and the null push.
+
+Through the websocket with `TestClient` alone, on a frozen clock in Copenhagen time, on the program `SMALL` (its
+phases are in `tests/session_helpers.py`). The session loop wakes every 0.05 s here, so a test that only moves the
+clock sees what the loop pushes. `receive_json()` has no timeout, so every test asserts on the exact next message.
+"""
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import timedelta
+from typing import Any
+
+from fastapi.testclient import TestClient
+from ha_fitness_server import __version__
+
+from tests.conftest import FrozenClock, MakeApp
+from tests.session_helpers import (
+    AGENT,
+    PEOPLE,
+    PROGRAMS,
+    SESSION,
+    SMALL,
+    SMALL_END,
+    SMALL_STARTS,
+    TODAY,
+    at,
+    make_session_app,
+)
+from tests.test_people import THOMAS
+from tests.test_scheduler import local
+
+WS = "/api/v1/ws"
+WEDNESDAY_9 = local(2026, 10, 28, 9)
+FAST = 0.05
+LIMIT = timedelta(minutes=30)
+KEPT = timedelta(minutes=5)
+
+
+@contextmanager
+def _client(
+    make_app: MakeApp, clock: FrozenClock, tick_max: float = FAST
+) -> Iterator[TestClient]:
+    """Run a session app with the session loop waking at least every `tick_max` seconds."""
+    app = make_session_app(clock, make_app, {"session_tick_max": tick_max})
+    with TestClient(app) as tc:
+        yield tc
+
+
+def _setup(tc: TestClient, name: str = "Lille") -> tuple[int, int]:
+    """Set Thomas and create `SMALL` as `name`, training on Wednesdays; return (Thomas's id, the program's id)."""
+    response = tc.put(PEOPLE, json={"people": [THOMAS]})
+    assert response.status_code == 200, response.text
+    [thomas] = [person["id"] for person in response.json()]
+    return thomas, _program(tc, name)
+
+
+def _program(tc: TestClient, name: str) -> int:
+    """Create `SMALL` as `name`, training on Wednesdays; return its id."""
+    document = {
+        "name": name,
+        "weekdays": ["wed"],
+        "stations": [{"exercise": exercise} for exercise in SMALL["stations"]],
+        **{key: value for key, value in SMALL.items() if key != "stations"},
+    }
+    response = tc.post(PROGRAMS, json=document)
+    assert response.status_code == 201, response.text
+    program_id: int = response.json()["id"]
+    return program_id
+
+
+def _day(tc: TestClient, program_id: int) -> int:
+    """Return the id of the program's open day."""
+    [day_id] = [
+        day["id"]
+        for day in tc.get(TODAY).json()["open"]
+        if day["program_id"] == program_id
+    ]
+    return int(day_id)
+
+
+def _start(
+    tc: TestClient, program_id: int, person: int, day_id: int | None = None
+) -> dict[str, Any]:
+    """Start a session; it must succeed. Return the view."""
+    body: dict[str, Any] = {"program_id": program_id, "participants": [person]}
+    if day_id is not None:
+        body["training_day_id"] = day_id
+    response = tc.post(SESSION, json=body, headers=AGENT)
+    assert response.status_code == 201, response.text
+    view: dict[str, Any] = response.json()
+    return view
+
+
+def _ok(tc: TestClient, command: str) -> dict[str, Any]:
+    """Send a session command; it must succeed. Return the view."""
+    response = tc.post(f"{SESSION}/{command}", headers=AGENT)
+    assert response.status_code == 200, response.text
+    view: dict[str, Any] = response.json()
+    return view
+
+
+def _connect(ws: Any) -> dict[str, Any]:
+    """Read `hello` and `today` of a new connection; return the `session` message that follows."""
+    assert ws.receive_json()["type"] == "hello"
+    assert ws.receive_json()["type"] == "today"
+    message: dict[str, Any] = ws.receive_json()
+    assert message["type"] == "session", message
+    return message
+
+
+def _session(message: dict[str, Any]) -> dict[str, Any]:
+    """Return the view of a `session` message; fail on another type or on null."""
+    assert message["type"] == "session", message
+    view: dict[str, Any] = message["data"]
+    assert view is not None
+    return view
+
+
+def _event(message: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Return a session event as (event, its `session` part); fail on another message."""
+    assert message["type"] == "event", message
+    return message["event"], message["session"]
+
+
+def test_ws_session_after_today_on_connect(make_app: MakeApp) -> None:
+    """On connect `session` follows `today`: null without a session, else the same view `GET /session` returns."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas, program_id = _setup(tc)
+        with tc.websocket_connect(WS) as ws:
+            assert ws.receive_json() == {
+                "type": "hello",
+                "version": __version__,
+                "api_version": 1,
+            }
+            assert ws.receive_json()["type"] == "today"
+            assert ws.receive_json() == {"type": "session", "data": None}
+        _start(tc, program_id, thomas)
+        with tc.websocket_connect(WS) as ws:
+            message = _connect(ws)
+            view = tc.get(SESSION).json()
+    assert message == {"type": "session", "data": view}
+    assert view["status"] == "running"
+
+
+def test_loop_wakes_at_deadline(make_app: MakeApp) -> None:
+    """With no request, the loop moves the session on at the countdown's deadline: `session`, then `phase_changed`."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas, program_id = _setup(tc)
+        with tc.websocket_connect(WS) as ws:
+            _connect(ws)
+            first = _start(tc, program_id, thomas)
+            assert _session(ws.receive_json()) == first
+            assert _event(ws.receive_json())[0] == "session_started"
+            clock.set(at(WEDNESDAY_9, SMALL_STARTS[1]))
+            moved = _session(ws.receive_json())
+            event, part = _event(ws.receive_json())
+    assert first["phase"]["kind"] == "countdown"
+    assert (moved["phase"]["index"], moved["phase"]["kind"]) == (1, "work")
+    assert moved["revision"] == first["revision"] + 1
+    assert event == "phase_changed"
+    assert part["phase"] == moved["phase"]
+
+
+def test_ws_events_session_started_completed_ended_done(make_app: MakeApp) -> None:
+    """A day's session: started, then completed by the loop with `done` and `today`; an extra one: ended, not counted."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas, program_id = _setup(tc)
+        day_id = _day(tc, program_id)
+        with tc.websocket_connect(WS) as ws:
+            _connect(ws)
+            _start(tc, program_id, thomas, day_id)
+            begun = _session(ws.receive_json())
+            started_event = _event(ws.receive_json())
+            clock.set(at(WEDNESDAY_9, SMALL_END))
+            completed = _session(ws.receive_json())
+            completed_event = _event(ws.receive_json())
+            done = ws.receive_json()
+            today = ws.receive_json()
+            _start(tc, program_id, thomas)
+            extra = _session(ws.receive_json())
+            assert _event(ws.receive_json())[0] == "session_started"
+            _ok(tc, "end")
+            ended = _session(ws.receive_json())
+            ended_event = _event(ws.receive_json())
+    assert started_event == (
+        "session_started",
+        {"id": begun["id"], "program_name": "Lille", "training_day_id": day_id},
+    )
+    assert completed["status"] == "completed"
+    assert completed_event == (
+        "session_completed",
+        {"id": begun["id"], "program_name": "Lille", "training_day_id": day_id},
+    )
+    assert done["type"] == "event"
+    assert done["event"] == "done"
+    assert done["training_day"]["id"] == day_id
+    assert today["type"] == "today"
+    assert today["data"]["open"] == []
+    assert ended["status"] == "ended"
+    assert ended_event == (
+        "session_ended",
+        {
+            "id": extra["id"],
+            "program_name": "Lille",
+            "training_day_id": None,
+            "counted": False,
+        },
+    )
+
+
+def test_pause_limit_ends_after_30_minutes_on_ws(make_app: MakeApp) -> None:
+    """The loop ends a session paused for 30 minutes: its finished view, then `session_ended`; `GET /session` agrees."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas, program_id = _setup(tc)
+        with tc.websocket_connect(WS) as ws:
+            _connect(ws)
+            _start(tc, program_id, thomas)
+            _session(ws.receive_json())
+            _event(ws.receive_json())
+            _ok(tc, "pause")
+            paused = _session(ws.receive_json())
+            clock.set(WEDNESDAY_9 + LIMIT)
+            ended = _session(ws.receive_json())
+            event, part = _event(ws.receive_json())
+            read = tc.get(SESSION).json()
+    assert paused["status"] == "paused"
+    assert ended["status"] == "ended"
+    assert ended == {**read, "server_time": ended["server_time"]}
+    assert (event, part["counted"]) == ("session_ended", False)
+
+
+def test_null_push_after_finished_window(make_app: MakeApp) -> None:
+    """The loop sends `session: null` once the finished view's 5 minutes are over; a new session cancels it."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas, program_id = _setup(tc)
+        with tc.websocket_connect(WS) as ws:
+            _connect(ws)
+            _start(tc, program_id, thomas)
+            _session(ws.receive_json())
+            _event(ws.receive_json())
+            clock.set(at(WEDNESDAY_9, 1))
+            first = _ok(tc, "end")
+            assert _session(ws.receive_json())["status"] == "ended"
+            assert _event(ws.receive_json())[0] == "session_ended"
+            clock.set(at(WEDNESDAY_9, 1) + KEPT)
+            null = ws.receive_json()
+            # A second session, finished and followed by a third before its window ends: no null while that one runs.
+            _start(tc, program_id, thomas)
+            _session(ws.receive_json())
+            _event(ws.receive_json())
+            second_end = clock.now() + timedelta(seconds=1)
+            clock.set(second_end)
+            _ok(tc, "end")
+            _session(ws.receive_json())
+            _event(ws.receive_json())
+            _start(tc, program_id, thomas)
+            _session(ws.receive_json())
+            _event(ws.receive_json())
+            _ok(tc, "pause")
+            _session(ws.receive_json())
+            clock.set(second_end + KEPT + timedelta(seconds=1))
+            resumed = _ok(tc, "resume")
+            after = ws.receive_json()
+    assert first["status"] == "ended"
+    assert null == {"type": "session", "data": None}
+    assert after == {"type": "session", "data": resumed}
+
+
+def test_command_after_the_last_deadline_keeps_the_completion(
+    make_app: MakeApp,
+) -> None:
+    """`end` just after the last deadline is a 409, but the tick's completion before it stays and is pushed.
+
+    The loop waits an hour here, so only the command's own tick can complete the session. A skip of another day
+    then pushes `skipped`: the completion's messages must come before it.
+    """
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock, tick_max=3600) as tc:
+        thomas, program_id = _setup(tc)
+        other_day = _day(tc, _program(tc, "Anden"))
+        with tc.websocket_connect(WS) as ws:
+            _connect(ws)
+            _start(tc, program_id, thomas)
+            _session(ws.receive_json())
+            _event(ws.receive_json())
+            clock.set(at(WEDNESDAY_9, SMALL_END + 1))
+            refused = tc.post(f"{SESSION}/end", headers=AGENT)
+            skipped = tc.post(f"/api/v1/training-days/{other_day}/skip")
+            assert skipped.status_code == 200, skipped.text
+            completed = _session(ws.receive_json())
+            event = _event(ws.receive_json())[0]
+            after = ws.receive_json()
+    assert refused.status_code == 409
+    assert completed["status"] == "completed"
+    assert event == "session_completed"
+    assert (after["type"], after["event"]) == ("event", "skipped")
+
+
+def test_null_push_after_a_restart_inside_the_window(make_app: MakeApp) -> None:
+    """A restart inside a finished view's 5 minutes keeps that view on connect, and the loop still sends the null."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas, program_id = _setup(tc)
+        _start(tc, program_id, thomas)
+        clock.set(at(WEDNESDAY_9, 1))
+        ended = _ok(tc, "end")
+    clock.set(at(WEDNESDAY_9, 1) + KEPT - timedelta(seconds=1))
+    with _client(make_app, clock) as tc, tc.websocket_connect(WS) as ws:
+        shown = _session(_connect(ws))
+        clock.set(at(WEDNESDAY_9, 1) + KEPT)
+        null = ws.receive_json()
+    assert shown == {**ended, "server_time": shown["server_time"]}
+    assert null == {"type": "session", "data": None}
