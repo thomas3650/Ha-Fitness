@@ -45,6 +45,21 @@ moved closer to their mockups. All of it stays in HA's light theme with HA's ico
 5. **Button heights stay:** 48 px for normal buttons, 64 for the feeling buttons, 72 / 104 for the timer, 96 for the
    main action.
 
+6. **Today card layout, second look (Thomas, evening 2026-10-24).** Thomas compared the built card with the
+   `StatusCard` mockup on screenshots and chose a trial layout ("G"). It replaces the button placement of §2.1:
+   - **Top line:** unchanged. The streak stays at the card's right edge.
+   - **The ring and the text:** the week ring (96 px) at the left, beside the name and the two lines, centred
+     against them. The name is bold (600) and 1.5em; the lines are 1.0625em.
+   - **The buttons:** a row under the ring and the text, starting at the card's left edge (under the ring). Start,
+     Spring over, Ja, Nej and Fortsæt all have one fixed width of 10em, so Ja lands in Start's place and Nej in
+     Spring over's: the double-tap rule of §2.1 holds. The button text is 1.0625em and bold (600). The 48 px height
+     stays.
+   - **More days:** the ring sits beside the first row only. A later row's text starts at the card's left edge.
+     This is Claude's call; the late-plus-due case is rare.
+   - **Spacing:** 20 px at the sides.
+   - **Grid rows:** the card is taller, so HA's grid rows become one for the top line plus three per row: 4 for one
+     day or a session, 7 for two days.
+
 ## 3. Carried to the rest, closer to the mockups (Claude's calls)
 
 ### 3.1 The card look (every screen)
