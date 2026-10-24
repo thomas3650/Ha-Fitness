@@ -8,6 +8,8 @@ Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry] [--token-f
   onboarding is done HA answers 404 there; the script then logs in as `dev` and goes on.
 - Sets that user's frontend language to Danish (`frontend/set_user_data`, key `language`); onboarding's
   `language` field only names the default areas.
+- Sets the dev HA's timezone to Europe/Copenhagen (websocket `config/core/update`, `time_zone`), the zone that
+  `scripts/develop` gives the add-on server, so both agree on the date.
 - Keeps a long-lived token for the dev user in `local/dev-ha-token` (relative to the repo root, mode 600; a dev
   token only): when the file is missing or HA rejects the token in it (`GET /api/` answers 401), it creates a new one
   (websocket `auth/long_lived_access_token`, client name `ha-fitness-dev`) and writes it there; a valid file is kept.
@@ -42,6 +44,8 @@ DEFAULT_TOKEN_FILE = Path(__file__).resolve().parents[1] / "local" / "dev-ha-tok
 TOKEN_CLIENT_NAME = "ha-fitness-dev"
 TOKEN_LIFESPAN_DAYS = 3650
 LONG_LIVED = "long_lived_access_token"
+# The dev HA's zone; `scripts/develop` gives the add-on server the same one (HA_FITNESS_TIMEZONE).
+TIMEZONE = "Europe/Copenhagen"
 # The frontend saves the language as its locale settings; the rest follow the language.
 LANGUAGE = {
     "language": "da",
@@ -210,6 +214,17 @@ async def _set_language(session: aiohttp.ClientSession, token: str) -> None:
         print(f"onboard: frontend language is {stored.get('value')}")
 
 
+async def _set_timezone(session: aiohttp.ClientSession, token: str) -> None:
+    """Set Home Assistant's own timezone to `TIMEZONE` unless it has it."""
+    async with websocket(session, token) as call:
+        current = (await call(type="get_config"))["time_zone"]
+        if current == TIMEZONE:
+            print(f"onboard: the timezone is {TIMEZONE}")
+            return
+        await call(type="config/core/update", time_zone=TIMEZONE)
+        print(f"onboard: set the timezone to {TIMEZONE} (was {current})")
+
+
 async def _token_is_valid(session: aiohttp.ClientSession, token: str) -> bool:
     """Ask HA whether it accepts `token`: 200 yes, 401 no; anything else is an error."""
     if not token:
@@ -290,6 +305,7 @@ async def _run(base: str, add_entry: bool, token_file: Path) -> None:
     async with aiohttp.ClientSession(base_url=base) as session:
         token = await _onboard(session, base)
         await _set_language(session, token)
+        await _set_timezone(session, token)
         await _keep_token(session, token, token_file)
         if add_entry:
             await _add_entry(session, token)
