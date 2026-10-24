@@ -8,6 +8,9 @@
 #   scripts/full-loop install  stage addon/ for the Supervisor, then install and start the add-on
 #                              (rebuild and start when it is installed already)
 #   scripts/full-loop check    print the add-on's health (http://localhost:8765/api/v1/health)
+#   scripts/full-loop music    copy the dev-only fake Music Assistant (scripts/dev/fake_music_assistant, D55)
+#                              into Home Assistant's custom_components in the container, restart Core, and
+#                              add the fake's entry (dev_onboard.py --fake-music-only)
 #   scripts/full-loop down     stop and remove the container (and its anonymous volumes)
 #
 # Only local/full-loop/ (git-ignored) is mounted at the Supervisor's local apps folder
@@ -33,6 +36,8 @@ devcontainer=(npx --yes @devcontainers/cli@0.89.0)
 slug=local_ha_fitness
 stage=local/full-loop
 ha_url=http://localhost:7123
+# Home Assistant's config folder in the container; it belongs to root.
+ha_config=/mnt/supervisor/homeassistant
 health_url=http://localhost:8765/api/v1/health
 
 # The container the devcontainer CLI started for this repo and config (empty when there is none).
@@ -108,6 +113,26 @@ check() {
   echo
 }
 
+music() {
+  require_container
+  local id dest
+  id="$(container_id)"
+  dest="$ha_config/custom_components/music_assistant"
+  # The repo isn't mounted in the container, so the fake is copied, as root.
+  docker exec -u root "$id" rm -rf "$dest"
+  docker exec -u root "$id" mkdir -p "$dest"
+  docker cp scripts/dev/fake_music_assistant/. "$id:$dest"
+  # The fast loop runs the fake from the repo, so the copy may bring its __pycache__.
+  docker exec -u root "$id" find "$dest" -name __pycache__ -prune -exec rm -rf {} +
+  ha core restart
+  # Wait for Home Assistant again. Not on /api/onboarding, which answers 404 once onboarding is done; a redirect
+  # (the 8123 transition) is an error, so it is retried.
+  curl -sf -o /dev/null -L --max-redirs 0 --retry 60 --retry-delay 5 --retry-connrefused \
+    --retry-all-errors --max-time 10 "$ha_url/manifest.json"
+  uv run python scripts/dev_onboard.py --url "$ha_url" --fake-music-only --token-file local/full-loop-ha-token
+  echo "full-loop: the fake Music Assistant runs on $ha_url."
+}
+
 down() {
   local id
   id="$(container_id)"
@@ -124,9 +149,10 @@ case "${1:-}" in
   up) up ;;
   install) install ;;
   check) check ;;
+  music) music ;;
   down) down ;;
   *)
-    echo "usage: scripts/full-loop up|install|check|down" >&2
+    echo "usage: scripts/full-loop up|install|check|music|down" >&2
     exit 2
     ;;
 esac

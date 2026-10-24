@@ -19,7 +19,8 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
      reaches the dev HA with the token in `local/dev-ha-token` (D32), which it reads at each call. It runs with
      `HA_FITNESS_DEV=1` (the dev routes, below) and `HA_FITNESS_TIMEZONE=Europe/Copenhagen` (D36);
    - dev Home Assistant on `http://localhost:8123`, config in `config/` (git-ignored), with
-     `config/custom_components/ha_fitness` linked to the repo.
+     `config/custom_components/ha_fitness` linked to the repo. `config/custom_components/music_assistant` links the
+     [fake Music Assistant](#the-fake-music-assistant).
 3. Wait for HA: `curl -sf -o /dev/null --retry 60 --retry-delay 2 --retry-connrefused --retry-all-errors
    http://localhost:8123/manifest.json`.
 4. On a fresh `config/`: `uv run python scripts/dev_onboard.py`, while the add-on server runs. It onboards HA with the
@@ -28,6 +29,9 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    one there when HA still accepts it. It is safe to run again, and the server needs no restart after it.
    - It adds the HA Fitness entry through the user step, with the URL `http://localhost:8765`. The integration checks
      that the server answers there; if it doesn't, the script stops and says so.
+   - It then adds the fake Music Assistant's entry, "Fake Music Assistant", when HA has no `music_assistant` entry. It
+     stops with an error when the flow answers anything else, for example when the fake isn't linked yet: start the
+     fast loop again after pulling the fake.
    - It creates the **dev dashboard** `ha-fitness-dev` ("HA Fitness dev" in the sidebar, at
      `http://localhost:8123/ha-fitness-dev`): two sections views, one holding the card `custom:ha-fitness-today-card`
      and one (Workout, `max_columns: 2`) with a section for `custom:ha-fitness-workout-card` and below it a
@@ -92,12 +96,15 @@ Desktop must run.
 2. `scripts/full-loop install` copies `addon/` to `local/full-loop/ha_fitness/` without its `image:` line, then
    installs and starts the add-on as the local app `local_ha_fitness`, or rebuilds it when it is installed
    ([why the copy](ha-notes.md#the-supervisor)). Run it again after each add-on change.
-3. `scripts/full-loop check` prints the add-on's health from `http://localhost:8765/api/v1/health`. The version must be
+3. When the test needs music: `scripts/full-loop music` copies the [fake Music Assistant](#the-fake-music-assistant)
+   into HA's `custom_components` in the container, restarts Core, and adds the fake's entry
+   (`dev_onboard.py --fake-music-only`). Run it again after a change to the fake.
+4. `scripts/full-loop check` prints the add-on's health from `http://localhost:8765/api/v1/health`. The version must be
    the working tree's.
-4. `scripts/seed --ha-url http://localhost:7123` creates the persons and the sample program there. Then
+5. `scripts/seed --ha-url http://localhost:7123` creates the persons and the sample program there. Then
    `curl -s http://localhost:8765/api/v1/people` lists them: the add-on reaches its HA through the Supervisor.
    `GET /api/v1/library` reaches media state `done`.
-5. Check Ingress in Chrome (below): the add-on's page at `http://localhost:7123/app/local_ha_fitness`, in Danish for
+6. Check Ingress in Chrome (below): the add-on's page at `http://localhost:7123/app/local_ha_fitness`, in Danish for
    the Danish user. Then the integration:
    - install it ([how](ha-notes.md#the-supervisor): copy `custom_components/ha_fitness`, with the built cards, and
      restart HA);
@@ -106,9 +113,9 @@ Desktop must run.
    - the today card is on `http://localhost:7123/ha-fitness-dev`, and edit mode shows its note. The full loop has no
      dev routes, so `seed --today` refuses there: the card shows a row only when a program trains today, for example
      one made in the MCP check.
-6. The MCP check (below) against `http://localhost:8765/mcp`.
-7. The backup check (below).
-8. `scripts/full-loop down` removes the container and its volumes. The next `up` downloads HA Core again.
+7. The MCP check (below) against `http://localhost:8765/mcp`.
+8. The backup check (below).
+9. `scripts/full-loop down` removes the container and its volumes. The next `up` downloads HA Core again.
 
 The fast loop and the full loop both use port 8765: stop one before starting the other. The Supervisor's log is
 `/tmp/supervisor_run.log` inside the container.
@@ -123,6 +130,36 @@ In the full loop, with at least one program stored:
    `ha_fitness.db`, `ha_fitness.db-wal`, `ha_fitness.db-shm` and `library/media/` must not be.
 3. Restore the add-on from it: `ha backups restore <slug> --app local_ha_fitness`.
 4. The programs are still listed (`GET /api/v1/programs`), and the media is downloaded again.
+
+## The fake Music Assistant
+
+A dev-only stand-in for Music Assistant, in `scripts/dev/fake_music_assistant/` (D55). It is a custom integration
+with the domain `music_assistant`, so it overrides core's integration, and HA logs a warning about that. It is never
+shipped: it isn't under `custom_components/` and isn't in the add-on. It copies the parts of core's integration that
+HA Fitness uses ([the facts](ha-notes.md#music-assistant)).
+
+- **The entry:** a config flow with no fields makes one entry, titled "Fake Music Assistant".
+- **Three players:** `media_player.fake_kitchen` "Kitchen speaker", `media_player.fake_living_room` "Living room
+  speaker" and `media_player.fake_garage` "Garage speaker". Each has a unique id and the attribute
+  `mass_player_type: player`. The garage speaker can't set its volume.
+- **Their state changes:** play, pause, next track, volume and shuffle work. After `play_media`, `media_title` is the
+  playlist's name; each next track gives "Track 2", "Track 3" and so on. As on a real Music Assistant, shuffle does
+  nothing until `play_media` has given the player a queue.
+- **`music_assistant.play_media`:** core's schema. It plays one of the four playlists below. Another URI fails with
+  an error.
+- **`music_assistant.get_library`:** core's schema and response, response only. It answers four playlists, filtered
+  by `search`: "Workout Mix" (`library://playlist/1`), "Cardio Beats" (`library://playlist/2`), "Calm Stretch"
+  (`library://playlist/3`) and "Rock Classics" (`library://playlist/4`).
+- **`music_assistant.fake_set_available`:** `{entity_id, available}` makes a player unavailable, or available again.
+  Use it to check the unavailable path:
+
+  ```bash
+  curl -s -X POST -H "Authorization: Bearer $(cat local/dev-ha-token)" \
+    -d '{"entity_id": "media_player.fake_garage", "available": false}' \
+    http://localhost:8123/api/services/music_assistant/fake_set_available
+  ```
+
+The integration's tests don't use this fake. They register their own fakes in the test HA, after the same facts.
 
 ## Chrome check
 

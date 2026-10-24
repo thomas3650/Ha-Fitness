@@ -1,0 +1,112 @@
+# The fake Music Assistant's services (dev only). play_media and get_library copy core's music_assistant.
+play_media:
+  target:
+    entity:
+      domain: media_player
+      integration: music_assistant
+      supported_features:
+        - media_player.MediaPlayerEntityFeature.PLAY_MEDIA
+  fields:
+    media_id:
+      required: true
+      example: "library://playlist/1"
+      selector:
+        object:
+    media_type:
+      example: "playlist"
+      selector:
+        select:
+          options:
+            - artist
+            - album
+            - audiobook
+            - folder
+            - playlist
+            - podcast
+            - track
+            - radio
+    artist:
+      selector:
+        text:
+    album:
+      selector:
+        text:
+    enqueue:
+      selector:
+        select:
+          options:
+            - "play"
+            - "replace"
+            - "next"
+            - "replace_next"
+            - "add"
+    radio_mode:
+      selector:
+        boolean:
+    username:
+      selector:
+        text:
+
+get_library:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: music_assistant
+    media_type:
+      required: true
+      example: "playlist"
+      selector:
+        select:
+          options:
+            - artist
+            - album
+            - audiobook
+            - playlist
+            - podcast
+            - track
+            - radio
+    favorite:
+      default: false
+      selector:
+        boolean:
+    search:
+      example: "workout"
+      selector:
+        text:
+    limit:
+      example: 25
+      default: 25
+      selector:
+        number:
+          min: 1
+          max: 500
+          step: 1
+    offset:
+      example: 0
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 1
+    order_by:
+      example: "name"
+      selector:
+        text:
+
+fake_set_available:
+  fields:
+    entity_id:
+      required: true
+      example: "media_player.fake_kitchen"
+      selector:
+        entity:
+          domain: media_player
+          integration: music_assistant
+    available:
+      required: true
+      example: false
+      selector:
+        boolean:

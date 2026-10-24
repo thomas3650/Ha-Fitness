@@ -66,6 +66,37 @@ fit no doc stay in [`notes.md`](notes.md).
   `entity_platform.py`). A Danish HA would show "days". So avoid a unit that needs translating: the streak sensors
   have no unit, and their name carries the meaning.
 
+## Music Assistant
+
+From HA core's `music_assistant` integration and HA's REST API (HA 2026.10). The
+[fake](testing.md#the-fake-music-assistant) copies them.
+
+- **Players:** Music Assistant's players are `media_player` entities of the `music_assistant` platform. The
+  integration also creates button, number, select, switch and text entities, so filter on `media_player.`.
+- **`mass_player_type`:** an available player's state has the attribute `mass_player_type`. An unavailable entity has
+  no extra attributes, so the attribute is missing then. So a speaker can't be found through the attribute.
+- **`integration_entities('music_assistant')`** (a template function) answers the registry entries of a config entry
+  whose title is the argument. Otherwise it falls back to `entity_sources`: the entities loaded on the platform,
+  unavailable ones included. Music Assistant's entry is titled "Music Assistant", so the fallback applies: loaded
+  players, not disabled ones.
+- **`config_entry_id('<entity>')`** (a template function) reads the entity registry. So an entity needs a unique id
+  to have one.
+- **Volume and shuffle:** a player supports `VOLUME_SET` only when it can set its volume. `SHUFFLE_SET` is always
+  supported, but setting shuffle returns silently while the player has no active queue.
+- **`music_assistant.play_media`** is an entity service on Music Assistant's players. It takes `media_id` (required;
+  a string or a list), `media_type` (`playlist` …), `enqueue` (`play`, `replace`, `next`, `replace_next`, `add`),
+  `artist`, `album`, `radio_mode` and `username`.
+- **`music_assistant.get_library`** supports a response only. It needs `config_entry_id` and `media_type`. It also
+  takes `favorite`, `search`, `limit` (default 25; no maximum in the schema, though `services.yaml` caps the UI at
+  500), `offset` and `order_by`. It answers `{items: [{media_type, uri, name, version, image, favorite, explicit}],
+  limit, offset, order_by, media_type}`.
+- **An entity service skips unavailable entities.** HA leaves an unavailable entity out of an entity service call,
+  with a warning and no error. So the fake's `fake_set_available` is a plain service: an entity service couldn't make
+  a player available again (checked in HA's `helpers/service.py`).
+- **REST:** `POST /api/services/<domain>/<service>?return_response` answers `{"changed_states": [...],
+  "service_response": {...}}`. `POST /api/template` renders a template and answers plain text; it needs an admin
+  user.
+
 ## The frontend
 
 - **Authenticated images.** An `<img src>` request sends no `Authorization` header, so a view with `requires_auth`
