@@ -439,3 +439,56 @@ async def test_get_then_send_back(client: httpx.AsyncClient) -> None:
     copy = await client.post(PROGRAMS, json={**document, "name": "Kopi"})
     assert copy.status_code == 201
     assert copy.json()["program"] == {**document, "name": "Kopi"}
+
+
+async def test_program_equipment_distinct_in_station_order(
+    client: httpx.AsyncClient,
+) -> None:
+    """Each equipment value shows once, in the order the stations first use it."""
+    stations = [{"exercise": "0285"}, {"exercise": "0968"}, {"exercise": "0286"}]
+    body = await _create(client, stations=stations)
+    assert body["equipment"] == ["dumbbell", "band"]
+    fetched = await client.get(f"{PROGRAMS}/{body['id']}")
+    assert fetched.json()["equipment"] == ["dumbbell", "band"]
+
+
+async def test_program_equipment_leaves_out_body_weight_and_none(
+    client: httpx.AsyncClient,
+) -> None:
+    """Body weight (in any case) and exercises without equipment add nothing."""
+    bare = await client.post(
+        "/api/v1/exercises", json={"name": "Bare move", "steps": ["Move."]}
+    )
+    shouting = await client.post(
+        "/api/v1/exercises",
+        json={"name": "Loud move", "steps": ["Move."], "equipment": "Body Weight"},
+    )
+    stations = [
+        {"exercise": "0001"},
+        {"exercise": bare.json()["id"]},
+        {"exercise": shouting.json()["id"]},
+        {"exercise": "0285"},
+    ]
+    body = await _create(client, stations=stations)
+    assert body["equipment"] == ["dumbbell"]
+
+
+async def test_program_equipment_includes_custom_exercises(
+    client: httpx.AsyncClient,
+) -> None:
+    """A custom exercise's equipment counts like a library exercise's."""
+    added = await client.post(
+        "/api/v1/exercises",
+        json={"name": "Garden swing", "steps": ["Swing."], "equipment": "sandbag"},
+    )
+    assert added.status_code == 201
+    body = await _create(
+        client, stations=[{"exercise": "0285"}, {"exercise": added.json()["id"]}]
+    )
+    assert body["equipment"] == ["dumbbell", "sandbag"]
+
+
+async def test_program_equipment_empty(client: httpx.AsyncClient) -> None:
+    """A program of body-weight exercises has no equipment."""
+    body = await _create(client)
+    assert body["equipment"] == []

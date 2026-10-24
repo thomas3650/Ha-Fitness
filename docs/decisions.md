@@ -414,6 +414,15 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   ([`ha-notes.md`](ha-notes.md#the-integration)).
 - **Source:** [stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.1 and §7; the unit, Claude, 2026-10-24
 
+### D50: How a workout felt is stored with the session, for Claude
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** A completed session can be rated too easy, just right or too hard within its 5-minute finished view. The
+  rating is stored on the session and shown in the session history and the MCP `list_sessions`. Only completed sessions
+  are rated.
+- **Why:** Claude makes the programs, so it needs to know how a workout felt to adjust the next one. A rating on the
+  session survives program edits and needs no new table.
+- **Source:** [UI refresh spec](superpowers/specs/2026-10-24-ui-refresh-design.md) §3.3; Claude, 2026-10-24
+
 ### D51: The screens follow the mockups' layout, with HA's light theme and HA's icons
 - **Date:** 2026-10-24 · **Status:** active
 - **Decision:** The built screens follow the mockups' layout and hierarchy, in HA's light theme and with its colour

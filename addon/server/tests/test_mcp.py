@@ -191,6 +191,15 @@ async def test_get_update_activate_and_delete_program(make_app: MakeApp) -> None
         created = await call(session, "create_program", program=_program())
         program_id = created["id"]
         assert await call(session, "get_program", program_id=program_id) == created
+        assert created["equipment"] == []
+        with_bells = await call(
+            session,
+            "create_program",
+            program=_program(name="Bells", stations=[{"exercise": "0285"}]),
+        )
+        got = await call(session, "get_program", program_id=with_bells["id"])
+        assert got["equipment"] == ["dumbbell"]
+        await call(session, "delete_program", program_id=with_bells["id"])
         updated = await call(
             session,
             "update_program",

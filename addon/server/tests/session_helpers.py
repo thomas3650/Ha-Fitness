@@ -24,16 +24,18 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 import fastmcp
 from fastmcp.client.transports import FastMCPTransport
 import httpx
 from mcp.types import Implementation
 
 from tests.conftest import FrozenClock, MakeApp, running
-from tests.test_people import HA_URL, TOKEN, FakeHa
+from tests.test_people import HA_URL, THOMAS, TOKEN, FakeHa
 from tests.test_scheduler import FIVE, ZONE
 
 SESSION = "/api/v1/session"
+WS = "/api/v1/ws"
 SESSIONS = "/api/v1/sessions"
 PROGRAMS = "/api/v1/programs"
 PEOPLE = "/api/v1/people"
@@ -217,3 +219,59 @@ def numbers(view: dict[str, Any]) -> list[tuple[int, int | None]]:
         )
         for station in view["stations"]
     ]
+
+
+# Helpers on a sync `TestClient` and its websocket, for the push tests.
+
+
+def tc_setup(tc: TestClient, name: str = "Lille") -> tuple[int, int]:
+    """Set Thomas and create `SMALL` as `name`, training on Wednesdays; return (Thomas's id, the program's id)."""
+    response = tc.put(PEOPLE, json={"people": [THOMAS]})
+    assert response.status_code == 200, response.text
+    [thomas] = [person["id"] for person in response.json()]
+    return thomas, tc_program(tc, name)
+
+
+def tc_program(tc: TestClient, name: str) -> int:
+    """Create `SMALL` as `name`, training on Wednesdays; return its id."""
+    document = {
+        "name": name,
+        "weekdays": ["wed"],
+        "stations": [{"exercise": exercise} for exercise in SMALL["stations"]],
+        **{key: value for key, value in SMALL.items() if key != "stations"},
+    }
+    response = tc.post(PROGRAMS, json=document)
+    assert response.status_code == 201, response.text
+    program_id: int = response.json()["id"]
+    return program_id
+
+
+def tc_start(
+    tc: TestClient, program_id: int, person: int, day_id: int | None = None
+) -> dict[str, Any]:
+    """Start a session; it must succeed. Return the view."""
+    body: dict[str, Any] = {"program_id": program_id, "participants": [person]}
+    if day_id is not None:
+        body["training_day_id"] = day_id
+    response = tc.post(SESSION, json=body, headers=AGENT)
+    assert response.status_code == 201, response.text
+    view: dict[str, Any] = response.json()
+    return view
+
+
+def ws_connect(ws: Any) -> dict[str, Any]:
+    """Read `hello`, `today`, `session` and `stats` of a new connection; return the `session` message."""
+    assert ws.receive_json()["type"] == "hello"
+    assert ws.receive_json()["type"] == "today"
+    message: dict[str, Any] = ws.receive_json()
+    assert message["type"] == "session", message
+    assert ws.receive_json()["type"] == "stats"
+    return message
+
+
+def ws_session(message: dict[str, Any]) -> dict[str, Any]:
+    """Return the view of a `session` message; fail on another type or on null."""
+    assert message["type"] == "session", message
+    view: dict[str, Any] = message["data"]
+    assert view is not None
+    return view

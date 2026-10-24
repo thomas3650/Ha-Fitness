@@ -159,7 +159,9 @@ def build_mcp(holder: ServicesHolder) -> FastMCP:
 
     @mcp.tool(annotations=_READ)
     def get_program(program_id: int) -> ProgramOut:
-        """Return one program: its document (station exercise ids), the station names and its length in seconds.
+        """Return one program: its document (station exercise ids), the station names, the equipment it needs and its length in seconds.
+
+        `equipment` lists each kind of equipment once, in station order; body weight is left out.
 
         The `program` field is a valid document as it stands: change it and pass it to update_program.
         """
@@ -248,7 +250,8 @@ old values.
         """Return today's open training days, due (today) or late (an earlier date), and the next date a program trains.
 
         Each open day has its id, program, date, state, station count, rounds and length in whole minutes. `next` is
-        null when no program is active.
+        null when no program is active. `week` counts this local week, Monday to Sunday: `planned` is its training
+        days, past, today's and still to come, and `done` is those trained.
         """
         with _tool_errors():
             return holder.get().training_days.today_view()
@@ -276,7 +279,8 @@ old values.
     def list_sessions(limit: int = 20) -> SessionHistory:
         """Return the finished sessions, newest first, and `counting_from`, the date the counting starts (or null).
 
-        `limit` is 1-100, default 20.
+        `limit` is 1-100, default 20. Each session's `feeling` is how the workout felt, rated on the tablet just after
+        it completed: `too_easy`, `just_right`, `too_hard`, or null when not rated.
         """
         with _tool_errors():
             return holder.get().sessions.finished(limit)

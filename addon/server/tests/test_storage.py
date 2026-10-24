@@ -8,6 +8,8 @@ import sqlite3
 import subprocess
 import sys
 
+from alembic import command
+from alembic.config import Config
 from ha_fitness_server import db
 from ha_fitness_server.errors import DatabaseTooNew
 import httpx
@@ -220,3 +222,43 @@ async def test_migration_0002_keeps_programs(make_app: MakeApp, tmp_path: Path) 
             "/api/v1/training-days", params={"from": "2026-10-01", "to": "2026-10-31"}
         )
         assert response.status_code == 200
+
+
+def test_migration_0005_downgrade_keeps_participants(tmp_path: Path) -> None:
+    """Downgrading 0005 with the add-on's pragmas on drops `feeling` and keeps every session's participants.
+
+    A table rebuild would drop `sessions`, and with `foreign_keys=ON` that deletes the participants on cascade.
+    """
+    engine = db.open_database(tmp_path)
+    try:
+        # Raw-database setup and check: a downgrade has no public interface.
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO sessions (id, plan, training_day_id, status, counted, phase_index, phase_started_at, "
+                "paused_at, paused_seconds, last_tick_at, started_at, ended_at, rounds_completed, revision, "
+                "feeling) VALUES (1, '{}', NULL, 'completed', 1, 8, '2026-10-07 07:01:10', NULL, 0, "
+                "'2026-10-07 07:01:20', '2026-10-07 07:00:05', '2026-10-07 07:01:20', 2, 9, 'just_right')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO session_participants (session_id, position, person_id, name) "
+                "VALUES (1, 0, 1, 'Thomas')"
+            )
+        config = Config()
+        config.set_main_option("script_location", "ha_fitness_server:migrations")
+        with engine.begin() as connection:
+            assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0004_people_added_at")
+        with engine.connect() as connection:
+            participants = connection.exec_driver_sql(
+                "SELECT session_id, name FROM session_participants"
+            ).all()
+            columns = {
+                row[1]
+                for row in connection.exec_driver_sql("PRAGMA table_info(sessions)")
+            }
+    finally:
+        engine.dispose()
+    assert [tuple(row) for row in participants] == [(1, "Thomas")]
+    assert "feeling" not in columns
+    assert "revision" in columns

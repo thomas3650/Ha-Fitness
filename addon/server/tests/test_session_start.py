@@ -141,6 +141,7 @@ async def test_start_returns_view_at_phase_0(make_app: MakeApp) -> None:
         "rounds_completed": 0,
         "time_trained": 0,
         "server_time": "2026-10-28T08:00:00.000Z",
+        "feeling": None,
     }
     assert again.pop("server_time") == "2026-10-28T08:00:02.000Z"
     view.pop("server_time")

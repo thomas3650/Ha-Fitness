@@ -41,3 +41,11 @@ exercises. The equipment filter of spec §3.6 (body weight, band, resistance ban
 
 From raw.githubusercontent.com to the Mac on the home network: **39 s** with 8 downloads in parallel. One at a time
 takes about 0.25 s per file, so about 6 minutes for the set. The Yellow's time is not measured.
+
+## 2026-10-24: Alembic batch rebuilds fire foreign-key actions
+
+The add-on turns on `PRAGMA foreign_keys=ON` for every connection (`db.py`). An Alembic batch operation rebuilds a
+table and drops the old one. With foreign keys on, that drop fires the actions of the tables that reference it:
+`sessions` deletes every `session_participants` row on cascade, `training_days` sets `sessions.training_day_id` to
+null, and `programs` sets `training_days.program_id` to null. Drop a column with a native
+`ALTER TABLE … DROP COLUMN` instead (SQLite 3.35 or later; the add-on image has 3.53).

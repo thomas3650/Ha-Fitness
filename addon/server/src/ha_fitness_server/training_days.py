@@ -29,6 +29,7 @@ from .schemas import (
     ProgramDocument,
     TodayView,
     TrainingDayOut,
+    Week,
 )
 
 type Publish = Callable[[dict[str, Any]], None]
@@ -224,9 +225,41 @@ class TrainingDays:
             active = list(
                 db_session.scalars(select(ProgramRow).where(ProgramRow.active))
             )
+            week = self._week(db_session, active, today)
         open_days = [self._open_day(day, program, today) for day, program in rows]
         open_days.sort(key=lambda day: (day.program_name.casefold(), day.id))
-        return TodayView(date=today, open=open_days, next=self._next(active, today))
+        return TodayView(
+            date=today, open=open_days, next=self._next(active, today), week=week
+        )
+
+    @staticmethod
+    def _week(db_session: Session, active: list[ProgramRow], today: date) -> Week:
+        """Return the week of `today`, Monday to Sunday (UI refresh spec §3.1).
+
+        `planned` is the training days dated in the week, any status, plus the days the active programs will still
+        make from tomorrow to Sunday; `done` is the week's days with status done.
+        """
+        monday = today - timedelta(days=today.weekday())
+        sunday = monday + timedelta(days=6)
+        days = list(
+            db_session.execute(
+                select(
+                    TrainingDay.program_id, TrainingDay.date, TrainingDay.status
+                ).where(TrainingDay.date >= monday, TrainingDay.date <= sunday)
+            ).all()
+        )
+        made = {(program_id, day) for program_id, day, _ in days}
+        planned = len(days)
+        day = today + timedelta(days=1)
+        while day <= sunday:
+            planned += sum(
+                1
+                for program in active
+                if _trains_on(program, day) and (program.id, day) not in made
+            )
+            day += timedelta(days=1)
+        done = sum(1 for _, _, status in days if status == TrainingDayStatus.DONE)
+        return Week(done=done, planned=planned)
 
     @staticmethod
     def _open_day(day: TrainingDay, program: ProgramRow, today: date) -> OpenDay:
