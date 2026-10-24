@@ -25,6 +25,9 @@ class HaFitnessConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Ask for the add-on's URL and check that the add-on answers there."""
+        # Any entry counts: a version 1 entry gets its unique id only when it is migrated.
+        if self._async_current_entries():
+            return self.async_abort(reason="already_configured")
         await self.async_set_unique_id(UNIQUE_ID)
         self._abort_if_unique_id_configured()
 
@@ -51,6 +54,17 @@ class HaFitnessConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle the add-on's Supervisor discovery; an existing entry gets the new address."""
         url = f"http://{discovery_info.config['host']}:{discovery_info.config['port']}"
+        for entry in self._async_current_entries():
+            if entry.unique_id is None:
+                # A version 1 entry not migrated (so not loaded) yet: give it the version 2
+                # shape with this URL; its setup then skips the migration and uses the URL.
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={CONF_URL: url},
+                    unique_id=UNIQUE_ID,
+                    version=self.VERSION,
+                )
+                return self.async_abort(reason="already_configured")
         await self.async_set_unique_id(UNIQUE_ID)
         self._abort_if_unique_id_configured(updates={CONF_URL: url})
         self._url = url
