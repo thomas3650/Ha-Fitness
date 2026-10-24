@@ -483,14 +483,14 @@ async def test_probe_sets_music_supported(
     hass_ws_client: WebSocketGenerator,
     fake_addon: FakeAddon,
     config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
 ) -> None:
     """Each probe sets music_supported from /music's answer; a disconnect keeps it."""
     fake_addon.no_music = True
     await set_up(hass, config_entry)
-    await wait_for(hass, lambda: fake_addon.music_requests == 1)
+    # The issue is raised only after /music answered 404, so the probe has run.
+    await wait_for(hass, _has_issue(issue_registry, TOO_OLD))
     coordinator = config_entry.runtime_data
-    for _ in range(SETTLE_ROUNDS):
-        await asyncio.sleep(0)
     assert not coordinator.music_supported
     assert all(
         program["music"] is None for program in await _programs(hass_ws_client, hass)

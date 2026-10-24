@@ -1,10 +1,10 @@
 """Tests for the card's subscription, ha_fitness/today/subscribe, and the music in the cards' commands."""
 
-import asyncio
 import copy
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import (
@@ -12,13 +12,13 @@ from pytest_homeassistant_custom_component.typing import (
     WebSocketGenerator,
 )
 
+from custom_components.ha_fitness.const import DOMAIN
+
 from .common import is_open, set_up, unload, wait_for
 from .fake_addon import PROGRAMS, TODAY_DUE, FakeAddon
 from .music_fakes import async_setup_music_assistant, async_setup_other_player
 
 SUBSCRIBE = {"type": "ha_fitness/today/subscribe"}
-# Event-loop rounds to let a background probe finish after its request.
-SETTLE_ROUNDS = 1000
 
 
 @pytest.mark.usefixtures("cards_bundle")
@@ -105,12 +105,10 @@ START = {
 async def _music_probed(
     hass: HomeAssistant, fake_addon: FakeAddon, config_entry: MockConfigEntry
 ) -> None:
-    """Set the entry up and wait until the add-on is open and the music probe has answered."""
+    """Set the entry up and wait until the add-on is open and the music probe found its music route."""
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: is_open(hass))
-    await wait_for(hass, lambda: fake_addon.music_requests >= 1)
-    for _ in range(SETTLE_ROUNDS):
-        await asyncio.sleep(0)
+    await wait_for(hass, lambda: config_entry.runtime_data.music_supported)
 
 
 async def _result(client: MockHAClientWebSocket, message: dict[str, Any]) -> Any:
@@ -206,11 +204,19 @@ async def test_no_music_without_music_supported(
     hass_ws_client: WebSocketGenerator,
     fake_addon: FakeAddon,
     config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
 ) -> None:
-    """Against an add-on from before music, programs carry no music and a start drops its speaker."""
-    fake_addon.no_music = True
+    """Once the add-on lacks music, programs carry no music and a start drops its speaker."""
     await _music_probed(hass, fake_addon, config_entry)
     client = await hass_ws_client(hass)
+
+    # The add-on is replaced by one from before music: the probe after its hello gets 404.
+    fake_addon.no_music = True
+    await fake_addon.push({"type": "hello", "version": "0.2.0", "api_version": 1})
+    await wait_for(
+        hass,
+        lambda: issue_registry.async_get_issue(DOMAIN, "addon_too_old") is not None,
+    )
 
     programs = await _result(client, {"type": "ha_fitness/programs"})
     assert [program["music"] for program in programs] == [None, None]
