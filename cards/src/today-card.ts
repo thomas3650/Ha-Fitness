@@ -404,7 +404,9 @@ export class TodayCard extends LitElement {
   }
 }
 
-if (!customElements.get(TAG)) {
+/** Define the card and offer it in the card picker; `index.ts` calls this once HA has booted. */
+export function registerTodayCard(): void {
+  if (customElements.get(TAG)) return;
   customElements.define(TAG, TodayCard);
   window.customCards = window.customCards ?? [];
   window.customCards.push({

@@ -87,6 +87,11 @@ fit no doc stay in [`notes.md`](notes.md).
   after an `await` may no longer count as the gesture. So the cards call `unlockAudio()` synchronously in the Start and
   Fortsæt tap handlers, before anything awaits. After a reload without a tap the context stays suspended, and the timer
   shows "Tryk for lyd".
+- **Register a card after HA's frontend boots.** HA's `index.html` loads extra modules, such as the cards bundle, in
+  parallel with its own frontend. Once the frontend boots, it replaces `window.customElements` with a scoped registry
+  polyfill. A card defined at import can land in the native registry before that happens; the polyfill's registry then
+  doesn't know it, and Lovelace shows a configuration error until a normal reload. So the bundle registers its
+  elements only once `home-assistant` is defined in the then-current `customElements` (`cards/src/register.ts`).
 
 ## Testing
 

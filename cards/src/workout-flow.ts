@@ -1249,4 +1249,7 @@ export class WorkoutFlow extends LitElement {
   }
 }
 
-if (!customElements.get(TAG)) customElements.define(TAG, WorkoutFlow);
+/** Define the flow element; `index.ts` calls this once HA has booted. */
+export function registerWorkoutFlow(): void {
+  if (!customElements.get(TAG)) customElements.define(TAG, WorkoutFlow);
+}

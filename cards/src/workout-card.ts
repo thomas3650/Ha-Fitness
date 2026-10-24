@@ -296,7 +296,9 @@ export class WorkoutCard extends LitElement {
   }
 }
 
-if (!customElements.get(TAG)) {
+/** Define the card and offer it in the card picker; `index.ts` calls this once HA has booted. */
+export function registerWorkoutCard(): void {
+  if (customElements.get(TAG)) return;
   customElements.define(TAG, WorkoutCard);
   window.customCards = window.customCards ?? [];
   window.customCards.push({
