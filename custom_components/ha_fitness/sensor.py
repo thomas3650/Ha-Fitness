@@ -227,7 +227,7 @@ class PersonStatsSensor(FitnessEntity, SensorEntity):
 
 
 class StreakSensor(PersonStatsSensor):
-    """The person's streak, in days; the unit comes from the translations."""
+    """The person's streak, in days, with no unit: a translated unit would show in English (ha-notes.md)."""
 
     stat = "streak"
     _attr_state_class = SensorStateClass.MEASUREMENT

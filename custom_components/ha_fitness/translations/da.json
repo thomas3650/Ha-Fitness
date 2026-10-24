@@ -58,8 +58,7 @@
         }
       },
       "streak": {
-        "name": "{person} i træk",
-        "unit_of_measurement": "dage"
+        "name": "{person} i træk"
       },
       "done": {
         "name": "{person} gennemført",

@@ -132,7 +132,8 @@ async def test_four_sensors_per_person_with_states_and_attributes(
     streak, attributes = _state("sensor.ha_fitness_anna_streak")
     assert streak == "3"
     assert attributes["state_class"] == "measurement"
-    assert attributes["unit_of_measurement"] == "days"
+    # No unit: HA would show a translated unit in English on a Danish HA (ha-notes.md).
+    assert "unit_of_measurement" not in attributes
     assert "device_class" not in attributes
 
     done, attributes = _state("sensor.ha_fitness_anna_done")
@@ -187,7 +188,7 @@ async def test_four_sensors_per_person_with_states_and_attributes(
 
 
 @pytest.mark.parametrize(
-    ("language", "names", "unit", "attribute_names"),
+    ("language", "names", "attribute_names"),
     [
         (
             "en",
@@ -197,7 +198,6 @@ async def test_four_sensors_per_person_with_states_and_attributes(
                 "HA Fitness Anna missed",
                 "HA Fitness Anna time trained",
             ],
-            "days",
             {
                 "done": {
                     "this_month": "This month",
@@ -220,7 +220,6 @@ async def test_four_sensors_per_person_with_states_and_attributes(
                 "HA Fitness Anna missede",
                 "HA Fitness Anna træningstid",
             ],
-            "dage",
             {
                 "done": {
                     "this_month": "Denne måned",
@@ -244,10 +243,9 @@ async def test_sensor_names_translated_with_person(
     config_entry: MockConfigEntry,
     language: str,
     names: list[str],
-    unit: str,
     attribute_names: dict[str, dict[str, str]],
 ) -> None:
-    """The names carry the add-on person's name; the names, unit and attribute names are translated."""
+    """The names carry the add-on person's name; the names and attribute names are translated."""
     hass.config.language = language
     fake_addon.stats = _stats(PERSON_STATS)
     await set_up(hass, config_entry)
@@ -258,14 +256,10 @@ async def test_sensor_names_translated_with_person(
         for entity_id in _ids("anna")
     ]
     assert friendly == names
+
     translations = await async_get_translations(hass, language, "entity", {DOMAIN})
     prefix = f"component.{DOMAIN}.entity.sensor"
-    assert translations[f"{prefix}.streak.unit_of_measurement"] == unit
-    # HA takes a translated unit from the English translations, whatever the language.
-    streak = hass.states.get("sensor.ha_fitness_anna_streak")
-    assert streak is not None
-    assert streak.attributes["unit_of_measurement"] == "days"
-
+    assert f"{prefix}.streak.unit_of_measurement" not in translations
     for key, attributes in attribute_names.items():
         state = hass.states.get(f"sensor.ha_fitness_anna_{key}")
         assert state is not None

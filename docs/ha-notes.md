@@ -61,6 +61,10 @@ fit no doc stay in [`notes.md`](notes.md).
   tab, CR or LF once decoded (`%0A`), or a `../` after unquoting, however often it was encoded (`..%2F`). The view
   never sees such a request. A lone `%2F` isn't filtered. So the media proxy's tests expect 400 for those paths, and
   404 for every other path outside its patterns (checked in HA's `http/security_filter.py`).
+- **Translated units are always English.** A sensor's unit from a `unit_of_measurement` translation key comes from
+  the English translations, whatever HA's language (HA 2026.10, `default_language_platform_translations` in
+  `entity_platform.py`). A Danish HA would show "days". So avoid a unit that needs translating: the streak sensors
+  have no unit, and their name carries the meaning.
 
 ## The frontend
 

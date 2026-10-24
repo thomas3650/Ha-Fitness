@@ -69,7 +69,7 @@ async def test_stats_subscribe_first_message_and_change(
     await wait_for(hass, lambda: is_open(hass))
     client = await hass_ws_client(hass)
     first = await _subscribe(client)
-    if not first["available"]:
+    while not first["available"]:
         first = await _next_event(client)
     assert first == {"available": True, "stats": _stats_with_person()}
 

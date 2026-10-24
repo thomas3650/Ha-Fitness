@@ -58,8 +58,7 @@
         }
       },
       "streak": {
-        "name": "{person} streak",
-        "unit_of_measurement": "days"
+        "name": "{person} streak"
       },
       "done": {
         "name": "{person} done",
