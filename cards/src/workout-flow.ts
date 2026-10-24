@@ -18,6 +18,7 @@ import {
   type SessionState,
   type SessionStation,
   type SessionView,
+  isActive,
   lostAt,
   receivedAt,
 } from "./overlay";
@@ -71,6 +72,8 @@ const CONFIRM_MS = 10_000;
 const DONE_MS = 60_000;
 /** The beeps before a phase ends, in seconds left (spec §5.4). */
 const BEEP_SECONDS = 5;
+/** A running phase whose end moves later by more than this was started again (Forrige), in ms. */
+const RESTART_MS = 500;
 /** How long a started tone is remembered, so a new plan doesn't play it again (seconds). */
 const STARTED_S = 2;
 /** No beep falls this soon after a phase starts, where it would clash with the change tone. */
@@ -113,10 +116,6 @@ interface EndQuestion {
 }
 /** The command errors with a text of their own; any other gets the general text. */
 const KNOWN_ERRORS = new Set(["not_found", "invalid", "unavailable"]);
-
-function isActive(session: SessionView | null | undefined): boolean {
-  return session?.status === "running" || session?.status === "paused";
-}
 
 /** The ws error code of a rejected `callWS`, which rejects with `{code, message}`. */
 function errorCode(error: unknown): string | undefined {
@@ -752,13 +751,20 @@ export class WorkoutFlow extends LitElement {
   }
 
   /**
-   * Næste and Forrige start a phase before the old one ran out: its change tone plays now. A phase
+   * Næste and Forrige start a phase before the old one ran out: its change tone plays now. That
+   * includes Forrige restarting the running phase, which keeps its index but ends later. A phase
    * that started because the old one ran out had its tone at local zero, so it gets none here.
+   * Nothing plays while paused.
    */
   private playSkipTone(previous: SessionView | undefined, view: SessionView): void {
     const before = previous?.id === view.id ? previous.phase : null;
     const after = view.phase;
-    if (!before?.ends_at || !after || after.index === before.index) return;
+    if (!before?.ends_at || !after) return;
+    const restarted =
+      after.index === before.index &&
+      after.ends_at !== null &&
+      Date.parse(after.ends_at) - Date.parse(before.ends_at) > RESTART_MS;
+    if (after.index === before.index && !restarted) return;
     if (view.status !== "running" || after.kind === "countdown" || audioLocked()) return;
     const now = this.now();
     if (Date.parse(before.ends_at) <= now) return;

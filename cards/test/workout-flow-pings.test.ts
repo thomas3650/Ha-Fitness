@@ -253,21 +253,22 @@ test("rescheduled after pause, next and newer revision", async () => {
   expect(live()).toEqual([{ kind: "rest", start: 35 }, ...beeps(45, 46, 47, 48, 49), { kind: "work", start: 50 }]);
   mark = audio.tones().length;
 
-  // A newer revision that moves the end to 52 s.
+  // A newer revision that moves the end earlier, to 48 s. (One that moves it later is a restart,
+  // with a tone of its own: the Forrige test.)
   await push(
     flow,
     view({
       revision: 14,
-      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: at(52) }),
+      phase: phase({ index: 4, kind: "switch", duration: 15, ends_at: at(48) }),
       next_phase: { kind: "work", duration: 45 },
       server_time: at(35),
     }),
   );
-  expect(live()).toEqual([...beeps(47, 48, 49, 50, 51), { kind: "work", start: 52 }]);
+  expect(live()).toEqual([...beeps(43, 44, 45, 46, 47), { kind: "work", start: 48 }]);
 
   // An older revision changes nothing.
   await push(flow, view({ revision: 12, phase: phase({ ends_at: at(50) }), server_time: at(35) }));
-  expect(live()).toEqual([...beeps(47, 48, 49, 50, 51), { kind: "work", start: 52 }]);
+  expect(live()).toEqual([...beeps(43, 44, 45, 46, 47), { kind: "work", start: 48 }]);
 });
 
 test("work and switch/rest tones at local zero", async () => {
@@ -467,4 +468,31 @@ test("a clock correction never loses a tone that was waiting", async () => {
   // already. It plays at once instead of being dropped; the ones ahead move by the 0.2 s.
   await push(flow, view({ server_time: at(41.05) }));
   expect(live()).toEqual([...beeps(40, 40.85, 41.8, 42.8, 43.8), { kind: "rest", start: 44.8 }]);
+});
+
+test("Forrige that restarts the current work phase plays its change tone", async () => {
+  const fake = fakeHass("da");
+  const flow = await mount(fake, view());
+  await wait(flow, 30_000);
+
+  // 30 s into work, Forrige starts the same work phase again: its high tone now, and it ends at 75 s.
+  mark = audio.tones().length;
+  await tap(flow, "Forrige");
+  fake.commands[0].resolve(view({ revision: 11, phase: phase({ ends_at: at(75) }), server_time: at(30) }));
+  await settle(flow);
+  expect(live()).toEqual([{ kind: "work", start: 30 }, ...beeps(70, 71, 72, 73, 74), { kind: "rest", start: 75 }]);
+
+  // Paused, Forrige restarts the phase with no tone; the resume plays none either.
+  await tap(flow, "Pause");
+  fake.commands[1].resolve(
+    view({ revision: 12, status: "paused", phase: phase({ ends_at: null, remaining: 45 }), server_time: at(30) }),
+  );
+  await settle(flow);
+  mark = audio.tones().length;
+  await tap(flow, "Forrige");
+  fake.commands[2].resolve(
+    view({ revision: 13, status: "paused", phase: phase({ ends_at: null, remaining: 45 }), server_time: at(30) }),
+  );
+  await settle(flow);
+  expect(live()).toEqual([]);
 });

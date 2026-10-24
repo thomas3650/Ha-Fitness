@@ -58,7 +58,12 @@ type Message = { type: string } & Record<string, unknown>;
  */
 function fakeHass(language = "da", initialSession: unknown = NO_SESSION) {
   const sessionListeners: Listener[] = [];
+  const events = new Map<string, Set<() => void>>();
   const fake = {
+    /** Send a connection event such as `ready` (sent after a reconnect). */
+    fire(type: string) {
+      for (const callback of [...(events.get(type) ?? [])]) callback();
+    },
     programs: [onsdag, styrke] as Program[] | Error,
     callWS: vi.fn((message: Message): Promise<unknown> => {
       if (message.type === "ha_fitness/programs") {
@@ -81,8 +86,13 @@ function fakeHass(language = "da", initialSession: unknown = NO_SESSION) {
       void Promise.resolve().then(() => callback(initialSession));
       return Promise.resolve(vi.fn());
     },
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
+    addEventListener(type: string, callback: () => void) {
+      if (!events.has(type)) events.set(type, new Set());
+      events.get(type)!.add(callback);
+    },
+    removeEventListener(type: string, callback: () => void) {
+      events.get(type)?.delete(callback);
+    },
   };
   fake.hass = {
     locale: { language },
@@ -328,4 +338,91 @@ test("is offered in the card picker, in English", () => {
   const entry = window.customCards?.find((card) => card.type === "ha-fitness-workout-card");
   expect(entry?.name).toBe(en.picker_workout.name);
   expect(entry?.description).toBe(en.picker_workout.description);
+});
+
+test("a failed fetch is tried again after 5, 10 and 30 s, then every 30 s", async () => {
+  const fake = fakeHass();
+  fake.programs = new Error("unavailable");
+  const card = await mount(fake);
+  expect(text(root(card))).toBe("HA Fitness kan ikke nås");
+
+  for (const [delay, fetches] of [
+    [5_000, 2],
+    [10_000, 3],
+    [30_000, 4],
+    [30_000, 5],
+  ]) {
+    await vi.advanceTimersByTimeAsync(delay - 1);
+    expect(programFetches(fake)).toBe(fetches - 1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(programFetches(fake)).toBe(fetches);
+  }
+
+  // The add-on is back: the list shows, and the retries stop.
+  fake.programs = [onsdag];
+  await vi.advanceTimersByTimeAsync(30_000);
+  await card.updateComplete;
+  expect(rows(card).map(text)).toEqual(["Onsdag 5 øvelser · 5 runder · ca. 29 min Start"]);
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(programFetches(fake)).toBe(6);
+
+  // Taken off the page while failing, the card stops trying.
+  fake.programs = new Error("unavailable");
+  fake.fire("ready");
+  await settle(card);
+  card.remove();
+  const fetches = programFetches(fake);
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(programFetches(fake)).toBe(fetches);
+});
+
+test("fetches again when the add-on is back and after a reconnect", async () => {
+  const fake = fakeHass();
+  fake.programs = [];
+  const card = await mount(fake);
+  expect(text(root(card))).toBe("Ingen aktive programmer");
+  expect(programFetches(fake)).toBe(1);
+
+  // The add-on goes and comes back: the list is fetched again.
+  fake.pushSession({ available: false, session: null });
+  await settle(card);
+  expect(programFetches(fake)).toBe(1);
+  fake.programs = [styrke];
+  fake.pushSession({ available: true, session: null });
+  await settle(card);
+  expect(programFetches(fake)).toBe(2);
+  expect(rows(card).map(text)).toEqual(["Styrke 1 øvelse · 1 runde · ca. 12 min Start"]);
+
+  // A message that doesn't change the reach fetches nothing.
+  fake.pushSession({ available: true, session: null });
+  await settle(card);
+  expect(programFetches(fake)).toBe(2);
+
+  // After HA reconnects (the connection's `ready`).
+  fake.programs = [onsdag, styrke];
+  fake.fire("ready");
+  await settle(card);
+  expect(programFetches(fake)).toBe(3);
+  expect(rows(card)).toHaveLength(2);
+});
+
+test("a double tap on Start opens once", async () => {
+  const fake = fakeHass();
+  const card = await mount(fake);
+
+  // The second tap comes while the first one's fetch runs: it does nothing. One fetch by the card,
+  // and one by the details that open.
+  const start = getByRole(rows(card)[0], "button", { name: "Start" });
+  start.click();
+  start.click();
+  await settle(card);
+  expect(programFetches(fake)).toBe(1 + 1 + 1);
+  expect(theDialog()?.open).toBe(true);
+
+  // A later tap, after the first has opened, works again.
+  overlay.close();
+  getByRole(rows(card)[0], "button", { name: "Start" }).click();
+  await settle(card);
+  expect(programFetches(fake)).toBe(3 + 1 + 1);
+  expect(theDialog()?.open).toBe(true);
 });

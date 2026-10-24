@@ -33,6 +33,8 @@ declare global {
 }
 
 const TAG = "ha-fitness-workout-card";
+/** The waits before the retries of a failed fetch; the last one repeats. */
+const RETRY_MS = [5_000, 10_000, 30_000];
 
 /**
  * The workout tab's card (spec §5.1): the active programs, each with Start, which opens the page's
@@ -59,6 +61,17 @@ export class WorkoutCard extends LitElement {
   private fetched = false;
   /** Only the newest fetch's answer counts. */
   private fetchCount = 0;
+  /** The add-on's reach in the controller's last message, once this card has heard one. */
+  private available?: boolean;
+  /** The connection whose `ready` (after a reconnect) fetches again. */
+  private connection?: Connection;
+  private retries = 0;
+  private retryTimer?: ReturnType<typeof setTimeout>;
+  /** A Start's fetch is running; another tap waits for it. */
+  private starting = false;
+  private readonly onReady = (): void => {
+    void this.fetchPrograms();
+  };
 
   static override styles = css`
     :host {
@@ -121,7 +134,16 @@ export class WorkoutCard extends LitElement {
     if (this.hass) overlay.setHass(this.hass);
     // Another card may already hold a session; the controller hands this one its state at once.
     this.receiveSession(overlay.state().session);
-    this.stopListening = overlay.subscribe((state) => this.receiveSession(state.session));
+    this.available = undefined;
+    this.stopListening = overlay.subscribe((state) => {
+      this.receiveSession(state.session);
+      // The add-on is back: the list may have changed while it was gone. The first message only
+      // says how things stand.
+      const back = this.available === false && state.available;
+      this.available = state.available;
+      if (back) void this.fetchPrograms();
+    });
+    this.listen(this.hass?.connection);
     this.fetchOnce();
   }
 
@@ -129,14 +151,42 @@ export class WorkoutCard extends LitElement {
     super.disconnectedCallback();
     this.stopListening?.();
     this.stopListening = undefined;
+    this.listen(undefined);
+    this.stopRetry();
     this.fetched = false;
   }
 
   protected override willUpdate(changed: PropertyValues<this>): void {
     if (changed.has("hass") && this.isConnected && this.hass) {
       overlay.setHass(this.hass);
+      this.listen(this.hass.connection);
       this.fetchOnce();
     }
+  }
+
+  /** Listen for `ready` on `connection`, and on no other. */
+  private listen(connection: Connection | undefined): void {
+    if (connection === this.connection) return;
+    this.connection?.removeEventListener?.("ready", this.onReady);
+    this.connection = connection;
+    connection?.addEventListener?.("ready", this.onReady);
+  }
+
+  private stopRetry(): void {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    this.retries = 0;
+  }
+
+  /** While the programs couldn't be fetched, try again after 5, 10 and 30 s, then every 30 s. */
+  private retryLater(): void {
+    clearTimeout(this.retryTimer);
+    const delay = RETRY_MS[Math.min(this.retries, RETRY_MS.length - 1)];
+    this.retries += 1;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      void this.fetchPrograms();
+    }, delay);
   }
 
   private t(key: string, vars?: Vars): string {
@@ -165,7 +215,11 @@ export class WorkoutCard extends LitElement {
     } catch {
       programs = null;
     }
-    if (count === this.fetchCount) this.programs = programs;
+    if (count === this.fetchCount && this.isConnected) {
+      this.programs = programs;
+      if (programs === null) this.retryLater();
+      else this.stopRetry();
+    }
     return programs;
   }
 
@@ -176,9 +230,16 @@ export class WorkoutCard extends LitElement {
    */
   private async start(program: Program): Promise<void> {
     unlockAudio();
-    const programs = await this.fetchPrograms();
-    if (programs !== null && !programs.some((fresh) => fresh.id === program.id)) return;
-    overlay.open({ kind: "details", programId: program.id });
+    // A double tap opens once.
+    if (this.starting) return;
+    this.starting = true;
+    try {
+      const programs = await this.fetchPrograms();
+      if (programs !== null && !programs.some((fresh) => fresh.id === program.id)) return;
+      overlay.open({ kind: "details", programId: program.id });
+    } finally {
+      this.starting = false;
+    }
   }
 
   /** Fortsæt: unlock audio in the tap itself, then reopen the overlay at the session. */
