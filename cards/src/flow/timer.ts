@@ -469,6 +469,7 @@ export const timerStyles = css`
     justify-content: center;
   }
   .ring .word {
+    color: var(--word-color, inherit);
     font-size: 1.5rem;
     font-weight: 500;
     letter-spacing: 0.1em;

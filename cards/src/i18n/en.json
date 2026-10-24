@@ -99,6 +99,7 @@
     "round_rest": "Rest between rounds",
     "seconds": "{seconds} s",
     "need": "You'll need",
+    "no_equipment": "No equipment",
     "total": "Total time",
     "ask_claude": "Change the program by asking Claude",
     "who": "Who's training?",

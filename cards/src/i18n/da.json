@@ -99,6 +99,7 @@
     "round_rest": "Pause mellem runder",
     "seconds": "{seconds} s",
     "need": "Du skal bruge",
+    "no_equipment": "Intet udstyr",
     "total": "Samlet tid",
     "ask_claude": "Ret programmet ved at spørge Claude",
     "who": "Hvem træner?",

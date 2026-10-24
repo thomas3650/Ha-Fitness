@@ -10,8 +10,10 @@ export interface RingOptions {
   value: number;
   /** The share of the phase left, 0..1, with fractions, so the ring moves smoothly. */
   fraction: number;
-  /** The ring's colour; text never takes it. */
+  /** The ring's colour; text never takes it (the word takes `wordColor`). */
   color: string;
+  /** The phase word's colour, darker than the ring's for contrast; inherited when missing. */
+  wordColor?: string;
   /** The phase word over the seconds. */
   word: string;
   /** The line under the seconds ("sekunder tilbage"), if any. */
@@ -39,7 +41,7 @@ export function ring(options: RingOptions) {
       aria-valuemin="0"
       aria-valuemax=${options.max}
       aria-valuenow=${options.value}
-      style="--ring-color: ${options.color}"
+      style="--ring-color: ${options.color}${options.wordColor ? `; --word-color: ${options.wordColor}` : ""}"
       @click=${() => options.onTap?.()}
     >
       <svg viewBox="0 0 ${SIZE} ${SIZE}" aria-hidden="true">

@@ -281,12 +281,19 @@ test("from an older add-on: no equipment, the total from the minutes, no round r
   expect(equipment(flow, "Du skal bruge")).toBeNull();
 });
 
-test("an empty equipment list shows no chips", async () => {
+test("an empty equipment list reads Intet udstyr", async () => {
   const bare: Program = { ...onsdag, equipment: [] };
   const fake = fakeHass("da", [thomas, maria], [bare]);
   const { flow } = await mount(fake, details);
 
-  expect(facts(flow).map(([term]) => term)).toEqual(["Runder", "Arbejde / skift", "Pause mellem runder", "Samlet tid"]);
+  expect(facts(flow).map(([term]) => term)).toEqual([
+    "Runder",
+    "Arbejde / skift",
+    "Pause mellem runder",
+    "Du skal bruge",
+    "Samlet tid",
+  ]);
+  expect(facts(flow)).toContainEqual(["Du skal bruge", "Intet udstyr"]);
   expect(equipment(flow, "Du skal bruge")).toBeNull();
 });
 
