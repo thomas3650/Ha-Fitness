@@ -25,6 +25,7 @@ from .client import (
     async_people,
     async_programs,
     async_session_command,
+    async_session_feeling,
     async_start_session,
 )
 from .const import DOMAIN, SIGNAL_UPDATE
@@ -32,7 +33,15 @@ from .coordinator import FitnessCoordinator, usable_coordinator
 
 _MISSING = object()
 
-SESSION_COMMANDS = ("start", "pause", "resume", "next", "previous", "end")
+SESSION_COMMANDS = (
+    "start",
+    "pause",
+    "resume",
+    "next",
+    "previous",
+    "end",
+    "feeling",
+)
 
 
 @callback
@@ -237,6 +246,7 @@ def _usable(
         probatio.Optional("program_id"): int,
         probatio.Optional("participants"): [int],
         probatio.Optional("training_day_id"): int,
+        probatio.Optional("feeling"): str,
     }
 )
 @async_response
@@ -247,17 +257,27 @@ async def ws_session_command(
 ) -> None:
     """Relay a command to the add-on and return the session view.
 
-    `start` needs `program_id` and `participants`; the add-on checks the rest. A refusal keeps the
-    add-on's code (not_found, conflict, invalid); anything else that fails is unavailable.
+    `start` needs `program_id` and `participants`, `feeling` needs `feeling`; the add-on checks the rest. A refusal
+    keeps the add-on's code (not_found, conflict, invalid); anything else that fails is unavailable.
     """
     command: str = msg["command"]
     if command == "start" and ("program_id" not in msg or "participants" not in msg):
         _send_error(connection, msg["id"], "invalid")
         return
+    if command == "feeling" and "feeling" not in msg:
+        _send_error(connection, msg["id"], "invalid")
+        return
     if (coordinator := _usable(hass, connection, msg)) is None:
         return
     try:
-        if command == "start":
+        if command == "feeling":
+            view = await async_session_feeling(
+                coordinator.http_session,
+                coordinator.url,
+                msg["feeling"],
+                coordinator.integration_version,
+            )
+        elif command == "start":
             view = await async_start_session(
                 coordinator.http_session,
                 coordinator.url,
@@ -295,6 +315,9 @@ def _program(stored: dict[str, Any]) -> dict[str, Any]:
         "countdown_seconds": program["countdown_seconds"],
         # A half minute rounds up, as step 3's total_minutes does.
         "total_minutes": (stored["total_seconds"] + 30) // 60,
+        "total_seconds": stored["total_seconds"],
+        # An add-on from before equipment leaves it out.
+        "equipment": stored.get("equipment", []),
         "stations": [
             {"exercise_id": station["exercise"], "name": name}
             for station, name in zip(

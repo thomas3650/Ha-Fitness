@@ -3,6 +3,9 @@ import en from "./en.json";
 
 type Strings = { [key: string]: string | Strings };
 
+/** The weekday keys of the texts (`weekday.<key>`), Sunday first like `Date.getDay()`. */
+export const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
 /** Values for a text's `{name}` placeholders. A `count` also picks the plural form. */
 export type Vars = Record<string, string | number>;
 

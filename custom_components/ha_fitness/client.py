@@ -243,6 +243,19 @@ async def async_session_command(
     )
 
 
+async def async_session_feeling(
+    session: aiohttp.ClientSession, url: str, feeling: str, integration_version: str
+) -> dict[str, Any]:
+    """Send how the workout felt (`POST /api/v1/session/feeling`); return the view."""
+    return await _async_session_post(
+        session,
+        url,
+        "/api/v1/session/feeling",
+        integration_version,
+        {"feeling": feeling},
+    )
+
+
 async def _async_get_json(session: aiohttp.ClientSession, url: str, path: str) -> Any:
     try:
         async with session.get(

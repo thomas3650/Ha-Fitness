@@ -177,6 +177,18 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
     5, 4, 3, 2 and 1 s line up with the numbers, and that the change tones and the chime at the end come.
 11. The console is clean throughout.
 
+### The refreshed screens
+
+After a change to the today card or the workout flow, check each screen at 1368×912 and at 800×1280, in Danish, against
+the mockups' layout ([`mockups/README.md`](mockups/README.md)). When Chrome's window can't be resized, use the
+portrait frame in [`ha-notes.md`](ha-notes.md#the-frontend). The design is in the
+[UI refresh spec](superpowers/specs/2026-10-24-ui-refresh-design.md).
+
+- **The today card:** an open day, a late day, a running session and a narrow (500 px) column.
+- **The flow:** details, get ready (also paused), the timer (work, switch, paused, last interval), two people, done with
+  a feeling, and ended both counted and not counted.
+- Every icon-only button has a name, and every touch target is at least 48 px.
+
 ### The stats card
 
 On the dev dashboard's Workout view, as the Danish user, with a screenshot of each step. The design is in the

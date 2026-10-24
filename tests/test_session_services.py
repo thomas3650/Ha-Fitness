@@ -207,6 +207,53 @@ async def test_ws_command_start_needs_its_arguments_and_a_loaded_entry(
 
 
 @pytest.mark.usefixtures("cards_bundle")
+async def test_ws_feeling_relays_the_view_and_keeps_refusal_codes(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+) -> None:
+    """The feeling reaches the add-on and returns the view; a refusal keeps the add-on's code."""
+    await _connected(hass, config_entry)
+    client = await hass_ws_client(hass)
+
+    reply = await _command(client, command="feeling", feeling="too_hard")
+    assert reply["success"]
+    assert reply["result"] == SESSION_RUNNING
+    assert [call[:2] for call in fake_addon.session_calls] == [
+        ("feeling", {"feeling": "too_hard"})
+    ]
+
+    for status, code in ((409, "conflict"), (422, "invalid")):
+        fake_addon.session_error = (status, _refusal(code))
+        reply = await _command(client, command="feeling", feeling="just_right")
+        assert not reply["success"]
+        assert reply["error"]["code"] == code
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_ws_feeling_needs_its_value_and_the_addon(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A feeling without a value is invalid and never reaches the add-on; with no add-on, unavailable."""
+    await _connected(hass, config_entry)
+    client = await hass_ws_client(hass)
+
+    reply = await _command(client, command="feeling")
+    assert reply["error"]["code"] == "invalid"
+    assert fake_addon.session_calls == []
+
+    await unload(hass, config_entry)
+    reply = await _command(client, command="feeling", feeling="too_easy")
+    assert reply["error"]["code"] == "unavailable"
+    assert fake_addon.session_calls == []
+
+
+@pytest.mark.usefixtures("cards_bundle")
 async def test_ws_programs_shape_active_only(
     hass: HomeAssistant,
     hass_ws_client: WebSocketGenerator,
@@ -231,6 +278,8 @@ async def test_ws_programs_shape_active_only(
             "round_rest_seconds": 60,
             "countdown_seconds": 5,
             "total_minutes": 29,
+            "total_seconds": 1769,
+            "equipment": ["dumbbells", "mat"],
             "stations": [
                 {"exercise_id": "0001", "name": "Squat"},
                 {"exercise_id": "custom-2", "name": "Wall sit"},
@@ -245,6 +294,8 @@ async def test_ws_programs_shape_active_only(
             "round_rest_seconds": 0,
             "countdown_seconds": 0,
             "total_minutes": 30,
+            "total_seconds": 1770,
+            "equipment": [],
             "stations": [{"exercise_id": "0002", "name": "Push-up"}],
         },
     ]

@@ -110,6 +110,7 @@ PROGRAMS: list[dict[str, Any]] = [
             },
         },
         "station_names": ["Squat", "Wall sit"],
+        "equipment": ["dumbbells", "mat"],
         "total_seconds": 1769,
         "created_at": "2026-10-20T08:00:00Z",
         "updated_at": "2026-10-21T08:00:00Z",
@@ -273,8 +274,10 @@ class FakeAddon:
 
     async def _session_command(self, request: web.Request) -> web.Response:
         command = request.match_info["command"]
+        # Only feeling carries a body.
+        body = await request.json() if request.can_read_body else None
         self.session_calls.append(
-            (command, None, request.headers.get("User-Agent", ""))
+            (command, body, request.headers.get("User-Agent", ""))
         )
         if self.session_error is not None:
             return self._session_error(self.session_error)

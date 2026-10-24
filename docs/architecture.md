@@ -99,14 +99,17 @@ The cards are built into the integration: one bundle, released and versioned wit
   ([`ha-notes.md`](ha-notes.md#the-frontend)). The texts come from `cards/src/i18n/`
   (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the HA user's language
   (D11, D38).
-  - **"Træning i dag"** (`custom:ha-fitness-today-card`) shows one row per open training day, with a two-tap Spring
-    over. It hides itself when nothing is open, except in edit mode, and shows one line while the add-on can't be
-    reached (step 4 spec §6). From step 5 it also shows Start on each row, and "Træning i gang" with Fortsæt while a
-    session is running or paused.
+  - **"Træning i dag"** (`custom:ha-fitness-today-card`) has a top line with the streak badge, the week ring, then
+    one row per open training day (a two-tap Spring over, and Start), or the session row ("Træning i gang" with
+    Fortsæt) while a session runs or is paused. The badge follows `ha_fitness/stats/subscribe`. It is hidden before
+    counting, while the stats are unavailable and with no people. The ring comes from the `today` message's `week`.
+    It is hidden without `week` or with `planned` 0. The card hides itself when nothing is open, except in edit
+    mode, and shows one line while the add-on can't be reached.
   - **The workout card** (`custom:ha-fitness-workout-card`) lists the active programs with Start, for a workout on
     any day (an extra session).
   - **The workout flow** is one page-level overlay (D45), a `<dialog>` opened with `showModal()`: details and the
-    people, get ready, the timer, paused and done. It follows the session through `ha_fitness/session/subscribe`,
+    people, get ready, the timer, paused and done. Its source is split by step in `cards/src/flow/`. The done step
+    subscribes to the stats only while it shows a counted session. It follows the session through `ha_fitness/session/subscribe`,
     starts and steers it through `ha_fitness/session/command`, shows the media through the proxy (D44), and plays the
     beeps with Web Audio (step 5 spec §5).
   - **The stats card** (`custom:ha-fitness-stats-card`) goes on the workout tab, below the workout card. It follows
@@ -209,12 +212,14 @@ The integration relays it.
 - **The websocket commands.** None needs an admin, because the wallpanel user isn't one.
   - `ha_fitness/session/subscribe` sends `{available, session}` at once and after each change. The relay is described
     below.
-  - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous` or `end`), and for
-    `start` also `program_id`, `participants` and an optional `training_day_id`. It returns the add-on's view. Its
+  - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end` or
+    `feeling`), and for `start` also `program_id`, `participants` and an optional `training_day_id`. For `feeling` it
+    takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's view. Its
     error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
     `invalid` before any relay. A field of the wrong type fails HA's own schema, as `invalid_format`.
   - `ha_fitness/programs` gives the active programs, in the add-on's order, in the shape of workout spec §4. It is
-    built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up.
+    built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up. It also relays `total_seconds` and
+    `equipment` (`[]` from an older add-on).
   - `ha_fitness/people` gives `[{id, name}]` from `GET /api/v1/people`.
   - The lists answer `unavailable` when the add-on can't be used, or sends an item they can't read.
 

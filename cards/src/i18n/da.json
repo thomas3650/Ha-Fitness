@@ -12,20 +12,26 @@
     "description": "Pr. person: i træk, gennemførte og missede træninger og træningstid, denne måned og i alt."
   },
   "today": {
+    "title": "TRÆNING",
     "stations_one": "{count} øvelse",
     "stations_other": "{count} øvelser",
     "rounds_one": "{count} runde",
     "rounds_other": "{count} runder",
     "minutes": "ca. {count} min",
     "summary": "{stations} · {rounds} · {minutes}",
-    "late": "Forfalden · {weekday} · {summary}",
+    "short_summary": "{stations} · {minutes}",
+    "short_minutes": "{count} min",
+    "due": "I dag",
+    "late": "Forfalden · {weekday}",
     "start": "Start",
     "skip": "Spring over",
     "skip_confirm": "Spring over?",
     "yes": "Ja",
     "no": "Nej",
     "nothing_open": "Ingen træning i dag",
-    "unreachable": "HA Fitness kan ikke nås"
+    "unreachable": "HA Fitness kan ikke nås",
+    "week": "Denne uge",
+    "streak_label": "I træk: {list}"
   },
   "session": {
     "running": "Træning i gang · {program}",
@@ -60,6 +66,20 @@
     "saturday": "lørdag",
     "sunday": "søndag"
   },
+  "month": {
+    "january": "januar",
+    "february": "februar",
+    "march": "marts",
+    "april": "april",
+    "may": "maj",
+    "june": "juni",
+    "july": "juli",
+    "august": "august",
+    "september": "september",
+    "october": "oktober",
+    "november": "november",
+    "december": "december"
+  },
   "error": {
     "not_found": "Træningsdagen findes ikke længere.",
     "not_open": "Træningsdagen er allerede afsluttet.",
@@ -67,34 +87,65 @@
     "general": "Noget gik galt. Prøv igen."
   },
   "flow": {
-    "summary": "{minutes} · {rounds}",
-    "seconds": "Arbejde {work} s · Skift {switch} s · Pause {rest} s",
     "stations": "Øvelser",
+    "stations_line": "{stations} · alle skifter én station hvert interval",
+    "rounds": "Runder",
+    "work_switch": "Arbejde / skift",
+    "round_rest": "Pause mellem runder",
+    "seconds": "{seconds} s",
+    "need": "Du skal bruge",
+    "total": "Samlet tid",
+    "ask_claude": "Ret programmet ved at spørge Claude",
     "who": "Hvem træner?",
     "no_people": "Ingen personer – bed Claude oprette dem",
     "start": "Start",
     "back": "Tilbage",
-    "get_ready": "Gør klar",
-    "starts_at": "{name} · station {number} · {exercise}",
+    "ready_summary": "{program} · {people} · {rounds} · {minutes}",
+    "people_one": "{count} person",
+    "people_other": "{count} personer",
+    "round_count_one": "{count} runde",
+    "round_count_other": "{count} runder",
+    "minutes": "{count} min",
+    "go_to_start": "GÅ TIL DIN STARTSTATION",
+    "start_station": "{name} · station {number}",
     "start_now": "Start nu",
     "cancel": "Annullér",
     "pause": "Pause",
     "resume": "Fortsæt",
+    "paused": "PAUSET",
     "tap_for_sound": "Tryk for lyd",
     "close": "Luk",
     "phase": {
       "countdown": "GØR KLAR",
       "work": "ARBEJD",
       "switch": "SKIFT",
-      "rest": "PAUSE",
-      "paused": "PAUSE"
+      "rest": "PAUSE"
     },
     "done": {
-      "counted": "Godt gået!",
+      "complete": "Træning gennemført",
+      "ended_after": "Afsluttet efter {done} af {rounds} runder",
       "ended": "Træningen blev afsluttet",
+      "check": "Gennemført",
+      "subtitle": "{program} · {date}",
+      "date": "{weekday} {day}. {month}",
       "time": "Tid",
-      "rounds": "{done}/{rounds} runder",
-      "who": "Hvem trænede"
+      "rounds": "Runder",
+      "rounds_value": "{done} / {rounds}",
+      "trained": "Trænede",
+      "streak": "I træk",
+      "feeling": "Hvordan føltes det?",
+      "feelings": {
+        "too_easy": "For let",
+        "just_right": "Tilpas",
+        "too_hard": "For hårdt"
+      },
+      "feeling_error": {
+        "conflict": "Træningen kan ikke længere vurderes.",
+        "invalid": "Det svar kendes ikke.",
+        "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
+        "general": "Noget gik galt. Prøv igen."
+      },
+      "finish": "Færdig"
     },
     "unreachable": "HA Fitness kan ikke nås",
     "round": "Runde {round}/{rounds}",
@@ -107,13 +158,20 @@
     "no": "Nej",
     "previous": "Forrige",
     "next": "Næste",
-    "next_label": "Næste",
     "station": "Station {number}",
     "next_station": "Næste: station {number} · {exercise}",
-    "then": {
-      "work": "så {seconds} s arbejde",
-      "switch": "så {seconds} s skift",
-      "rest": "så {seconds} s pause"
+    "station_of": "Station {station}/{stations}",
+    "go_to_next": "GÅ TIL NÆSTE STATION",
+    "seconds_left": "sekunder tilbage",
+    "tap_to_resume": "tryk på ringen for at fortsætte",
+    "whole_workout": "Hele træningen",
+    "next_card": "NÆSTE",
+    "then_card": "DEREFTER",
+    "after": {
+      "work": "efter {seconds} s arbejde",
+      "switch": "efter {seconds} s skift",
+      "rest": "efter {seconds} s pause",
+      "none": "derefter"
     },
     "error": {
       "already_running": "En træning er allerede i gang.",
@@ -123,5 +181,11 @@
       "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
       "general": "Noget gik galt. Prøv igen."
     }
+  },
+  "equipment": {
+    "dumbbell": "håndvægt",
+    "band": "elastik",
+    "kettlebell": "kettlebell",
+    "resistance_band": "modstandselastik"
   }
 }

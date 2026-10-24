@@ -422,3 +422,11 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** Claude makes the programs, so it needs to know how a workout felt to adjust the next one. A rating on the
   session survives program edits and needs no new table.
 - **Source:** [UI refresh spec](superpowers/specs/2026-10-24-ui-refresh-design.md) §3.3; Claude, 2026-10-24
+
+### D51: The screens follow the mockups' layout, with HA's light theme and HA's icons
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The built screens follow the mockups' layout and hierarchy, in HA's light theme and with its colour
+  variables. Icons are `<ha-icon icon="mdi:…">`; no icon package is added.
+- **Why:** The kitchen tablet runs HA's light theme, so the dark mockups are a reference for layout only. `ha-icon`
+  needs no extra bundle.
+- **Source:** [UI refresh spec](superpowers/specs/2026-10-24-ui-refresh-design.md) §6; Thomas, 2026-10-24

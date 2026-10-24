@@ -46,7 +46,12 @@ export interface SessionView {
   time_trained: number;
   /** The sender's UTC ISO time with milliseconds. */
   server_time: string;
+  /** How a completed session felt (UI refresh spec §3.3); null until rated, absent from an older add-on. */
+  feeling?: Feeling | null;
 }
+
+/** The answers to "How did it feel?" (UI refresh spec §3.3). */
+export type Feeling = "too_easy" | "just_right" | "too_hard";
 
 /** What `ha_fitness/session/subscribe` sends: the add-on's reachability and the session view. */
 export interface SessionState {
@@ -72,7 +77,10 @@ export interface OverlayHass {
   connection?: Connection;
 }
 
-/** The properties the controller sets on the flow element; the flow never subscribes itself. */
+/**
+ * The properties the controller sets on the flow element. The flow never subscribes to the session
+ * itself; it subscribes to the stats only, while its done step shows.
+ */
 interface FlowElement extends HTMLElement {
   hass?: unknown;
   state?: SessionState;
