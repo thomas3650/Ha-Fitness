@@ -482,7 +482,9 @@ class Sessions:
             self._tick_alone(now)
             with session(self._engine) as db_session:
                 if self._active(db_session) is not None:
-                    raise SessionError(409, "conflict", "The session is still running")
+                    raise SessionError(
+                        409, "conflict", "A session is still in progress"
+                    )
                 row = self._last_finished(db_session)
                 if (
                     row is None

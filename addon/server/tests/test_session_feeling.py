@@ -19,6 +19,7 @@ from tests.session_helpers import (
     SESSIONS,
     SMALL_END,
     SMALL_STARTS,
+    WS,
     at,
     create_small,
     current,
@@ -28,11 +29,15 @@ from tests.session_helpers import (
     start,
     started,
     started_with_mcp,
+    tc_program,
+    tc_setup,
+    tc_start,
+    ws_connect,
+    ws_session,
 )
 from tests.test_mcp import call
 from tests.test_people import THOMAS
 from tests.test_scheduler import local
-from tests.test_session_push import WS, _connect, _program, _session, _setup, _start
 
 WEDNESDAY_9 = local(2026, 10, 28, 9)
 FEELING = f"{SESSION}/feeling"
@@ -89,21 +94,21 @@ def test_feeling_pushes_session(make_app: MakeApp) -> None:
     clock = FrozenClock(WEDNESDAY_9)
     app = make_session_app(clock, make_app, {"session_tick_max": 0.05})
     with TestClient(app) as tc:
-        thomas, program_id = _setup(tc)
+        thomas, program_id = tc_setup(tc)
         with tc.websocket_connect(WS) as ws:
-            _connect(ws)
-            _start(tc, program_id, thomas)
-            _session(ws.receive_json())
+            ws_connect(ws)
+            tc_start(tc, program_id, thomas)
+            ws_session(ws.receive_json())
             assert ws.receive_json()["event"] == "session_started"
             clock.set(at(WEDNESDAY_9, SMALL_END))
-            completed = _session(ws.receive_json())
+            completed = ws_session(ws.receive_json())
             # An extra session's finish: its event, then the stats (the first counted session); `today` is unchanged.
             assert ws.receive_json()["event"] == "session_completed"
             assert ws.receive_json()["type"] == "stats"
             response = tc.post(FEELING, json={"feeling": "just_right"}, headers=AGENT)
-            pushed = _session(ws.receive_json())
+            pushed = ws_session(ws.receive_json())
             # A program created after the rating pushes its own messages; the next one isn't a second `session`.
-            _program(tc, "Næste")
+            tc_program(tc, "Næste")
             after = ws.receive_json()
     assert response.status_code == 200, response.text
     assert pushed == response.json()
