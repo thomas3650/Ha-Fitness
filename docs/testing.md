@@ -30,9 +30,9 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
      that the server answers there; if it doesn't, the script stops and says so.
    - It creates the **dev dashboard** `ha-fitness-dev` ("HA Fitness dev" in the sidebar, at
      `http://localhost:8123/ha-fitness-dev`): two sections views, one holding the card `custom:ha-fitness-today-card`
-     and one (Workout) with a section for `custom:ha-fitness-workout-card` and a two-column section
-     (`column_span: 2`) for `custom:ha-fitness-stats-card`, with no visibility rule and no `language` option. A
-     dashboard that already has a config is kept as it is.
+     and one (Workout, `max_columns: 2`) with a section for `custom:ha-fitness-workout-card` and below it a
+     two-column section (`column_span: 2`) for `custom:ha-fitness-stats-card`, with no visibility rule and no
+     `language` option. A dashboard that already has a config is kept as it is.
 5. Check: `curl -s http://localhost:8765/api/v1/health` gives the health JSON,
    `http://localhost:8123/ha_fitness_frontend/ha-fitness-cards.js` answers 200, and
    `curl -s http://localhost:8765/api/v1/people` has a list in `ha_persons`, not `null`.
@@ -191,15 +191,20 @@ it; step 9 of the workout flow check says how to get it.
    - with no stats since the entry was loaded: stop the add-on server alone (`kill "$(cat local/addon-server.pid)"`),
      then reload the entry (Settings → Devices & services → HA Fitness → Reload). Only "HA Fitness kan ikke nås"
      shows. Start the fast loop again afterwards.
-2. **The panels at 1368×912:** the view has three columns (with the sidebar open), so the stats section sits beside
-   the workout card's section and is about 690 px wide. One panel per person, side by side, in the people's order.
+2. **The panels at 1368×912:** the view has two columns (`max_columns: 2`), so the stats section, two columns wide,
+   sits below the workout card's section and is about 1030 px wide. One panel per person, side by side, in the people's
+   order.
    Each has the person's colour as a dot by the name (purple, then teal), the streak ("1 i træk"), and the table with
    "Denne måned" and "I alt". After an extra session, Gennemført shows "· 1 ekstra"; after a skip, Missede shows "· 1
    sprunget over".
-3. **At 800×1280:** HA hides the sidebar (below 870 px) and shows two columns, so the stats section goes below the
-   workout card's section and is about 740 px wide. The panels still sit side by side. They stack only below 600 px
-   of card width, so only in a one-column view: under about 700 px of view width. HA's sections view fits
-   `floor((width − 64 + 32) / (320 + 32))` columns, at most 500 px each.
+3. **Stacking at about 600×1000:** HA hides the sidebar (below 870 px) and shows one column, so the stats card is
+   about 580 px wide and the panels stack, one above the other. The panels stack below 600 px of card width, so only
+   in a one-column view: at 800 px wide HA still shows two columns and the panels sit side by side.
+   - HA's rules (frontend 20260930): a sections view fits `floor((width − padding + gap) / (320 + gap))` columns, at
+     most `max_columns`. A column is at most 500 px wide. The gap and the side padding are 32 px, or 8 px at 600 px
+     wide and below.
+   - The house should place the card the same way: a Workout view with `max_columns: 2`, and the stats card in a
+     section with `column_span: 2` below the workout card's section.
 4. **The unreachable note:** stop the add-on server alone (`kill "$(cat local/addon-server.pid)"`). The card keeps
    the last numbers, with "HA Fitness kan ikke nås" as a small note above them. Start the fast loop again; the note
    goes away without a reload.
