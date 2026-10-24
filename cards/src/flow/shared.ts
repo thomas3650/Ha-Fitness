@@ -113,7 +113,7 @@ export const sharedStyles = css`
     margin: 0 auto;
     container-type: inline-size;
   }
-  /* Details, get ready and done: one centred column. The timer keeps the wide page. */
+  /* Done: one centred column. The other steps use the wide page. */
   .page.column {
     max-width: 720px;
   }
@@ -121,8 +121,7 @@ export const sharedStyles = css`
   .page.column > .line {
     text-align: center;
   }
-  .page.column .actions,
-  .page.column .chips {
+  .page.column .actions {
     justify-content: center;
   }
   .page.centred {

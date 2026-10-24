@@ -257,8 +257,8 @@ async def ws_session_command(
 ) -> None:
     """Relay a command to the add-on and return the session view.
 
-    `start` needs `program_id` and `participants`, `feeling` needs `feeling`; the add-on checks the rest. A refusal keeps the
-    add-on's code (not_found, conflict, invalid); anything else that fails is unavailable.
+    `start` needs `program_id` and `participants`, `feeling` needs `feeling`; the add-on checks the rest. A refusal
+    keeps the add-on's code (not_found, conflict, invalid); anything else that fails is unavailable.
     """
     command: str = msg["command"]
     if command == "start" and ("program_id" not in msg or "participants" not in msg):
