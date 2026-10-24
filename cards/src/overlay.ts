@@ -133,10 +133,29 @@ function receive(next: SessionState): void {
   for (const listener of [...listeners]) listener(next);
 }
 
+/** The connection whose drop the controller watches. */
+let watched: Connection | undefined;
+
+/**
+ * HA's websocket dropped: the integration can't send `available: false` then, so the controller
+ * does, with the last view, until the integration's first message after `ready` (spec §5.3).
+ */
+function onDisconnected(): void {
+  if (current.available) receive({ available: false, session: current.session });
+}
+
+function watch(connection: Connection | undefined): void {
+  if (!connection || connection === watched) return;
+  watched?.removeEventListener?.("disconnected", onDisconnected);
+  watched = connection;
+  connection.addEventListener?.("disconnected", onDisconnected);
+}
+
 /** Hand the controller the newest `hass`. Every card calls this on each change; the first subscribes. */
 export function setHass(next: OverlayHass): void {
   hass = next;
   if (flow) flow.hass = next;
+  watch(next.connection);
   subscription.connect(next.connection);
 }
 

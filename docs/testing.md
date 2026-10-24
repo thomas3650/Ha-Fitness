@@ -29,8 +29,9 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    - It adds the HA Fitness entry through the user step, with the URL `http://localhost:8765`. The integration checks
      that the server answers there; if it doesn't, the script stops and says so.
    - It creates the **dev dashboard** `ha-fitness-dev` ("HA Fitness dev" in the sidebar, at
-     `http://localhost:8123/ha-fitness-dev`): one sections view holding the card `custom:ha-fitness-today-card`, with
-     no visibility rule and no `language` option. A dashboard that already has a config is kept as it is.
+     `http://localhost:8123/ha-fitness-dev`): two sections views, one holding the card `custom:ha-fitness-today-card`
+     and one (Workout) `custom:ha-fitness-workout-card`, with no visibility rule and no `language` option. A dashboard
+     that already has a config is kept as it is.
 5. Check: `curl -s http://localhost:8765/api/v1/health` gives the health JSON,
    `http://localhost:8123/ha_fitness_frontend/ha-fitness-cards.js` answers 200, and
    `curl -s http://localhost:8765/api/v1/people` has a list in `ha_persons`, not `null`.
@@ -155,7 +156,9 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
    it.
 9. **The today card stays visible during an extra session:** with no day open, start a session from
    `custom:ha-fitness-workout-card` (the dev dashboard's Workout view). Back on the first view, the today card shows
-   "Træning i gang" and Fortsæt while the session runs.
+   "Træning i gang" and Fortsæt while the session runs. `dev_onboard.py` saves the dashboard only while it has none,
+   so a dev HA onboarded before the Workout view existed lacks it: delete the `ha-fitness-dev` dashboard (Settings →
+   Dashboards) and run `dev_onboard.py` again.
 10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at
     5, 4, 3, 2 and 1 s line up with the numbers, and that the change tones and the chime at the end come.
 11. The console is clean throughout.

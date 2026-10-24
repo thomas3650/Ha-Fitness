@@ -25,9 +25,9 @@ export interface Connection {
     message: { type: string },
     options?: { resubscribe?: boolean },
   ): Promise<() => unknown>;
-  /** `ready` fires after the connection has reconnected. */
-  addEventListener?(type: "ready", callback: () => void): void;
-  removeEventListener?(type: "ready", callback: () => void): void;
+  /** `ready` fires after the connection has reconnected; `disconnected` when it drops. */
+  addEventListener?(type: "ready" | "disconnected", callback: () => void): void;
+  removeEventListener?(type: "ready" | "disconnected", callback: () => void): void;
 }
 
 type Subscription = Promise<(() => unknown) | undefined>;

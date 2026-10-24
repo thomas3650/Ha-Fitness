@@ -489,6 +489,12 @@ export class WorkoutFlow extends LitElement {
         gap: 12px 20px;
         font-size: 1.25rem;
       }
+      /* Slut, and its question in its place, get a line of their own, right-aligned, so Nej
+         lands where Slut was. */
+      header.top .end {
+        flex-basis: 100%;
+        justify-content: flex-end;
+      }
       /* Two people: both panels side by side, the ring below them. */
       .duo {
         display: grid;
@@ -581,7 +587,7 @@ export class WorkoutFlow extends LitElement {
     else this.stopTick();
     this.plan(counting);
     if (step !== "timer") this.endAsk(false);
-    if (this.hass && step === "timer") this.loadStationImages(this.hass, this.newest!);
+    if (this.hass && (step === "ready" || step === "timer")) this.loadStationImages(this.hass, this.newest!);
     this.armDone(step);
     if (step === "done" && this.newest && this.annulled.has(this.newest.id)) this.close();
   }
@@ -713,10 +719,15 @@ export class WorkoutFlow extends LitElement {
     });
   }
 
-  /** The GIFs of the stations worked at, and with one person, the next station's thumbnail. */
+  /**
+   * The GIFs of the stations worked at (during get ready, the start stations), and ahead of time
+   * the next stations', so a phase doesn't start with a blank image. With one person, also the next
+   * station's thumbnail.
+   */
   private loadStationImages(hass: Hass, view: SessionView): void {
     const stations = view.stations ?? [];
     for (const station of stations) this.loadImage(hass, station.current.exercise_id, "gif");
+    for (const station of stations) if (station.next) this.loadImage(hass, station.next.exercise_id, "gif");
     const next = stations.length === 1 ? stations[0].next : null;
     if (next) this.loadImage(hass, next.exercise_id, "thumbnail");
   }

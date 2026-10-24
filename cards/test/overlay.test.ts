@@ -324,3 +324,38 @@ test("a dialog removed from the page by someone else is built again", () => {
   expect(queryAllByRole(document.body, "dialog", { hidden: true })).toHaveLength(0);
   expect(document.documentElement.style.overflow).toBe("auto");
 });
+
+test("a dropped HA connection counts as unreachable until it is ready again", async () => {
+  const fake = fakeHass();
+  overlay.setHass(fake.hass);
+  await settle();
+  fake.push({ available: true, session: view(1) });
+  const states: SessionState[] = [];
+  overlay.subscribe((state) => states.push(state));
+  overlay.open({ kind: "resume" });
+
+  // The websocket drops: the integration can't say so, so the controller does, keeping the last
+  // view so the flow can count down (its note shows, and Luk after 10 s).
+  const before = Date.now();
+  fake.fire("disconnected");
+  expect(overlay.state()).toEqual({ available: false, session: view(1) });
+  expect(states).toHaveLength(1);
+  expect(theFlow().state).toEqual({ available: false, session: view(1) });
+  expect(overlay.lostAt(overlay.state())).toBeGreaterThanOrEqual(before);
+
+  // Ready again: the controller subscribes again, and the integration's first message says how it is.
+  fake.fire("ready");
+  await settle();
+  expect(fake.subscribeMessage).toHaveBeenCalledTimes(2);
+  expect(overlay.state().available).toBe(false);
+  fake.push({ available: true, session: view(2) });
+  expect(overlay.state()).toEqual({ available: true, session: view(2) });
+
+  // A new connection: the old one's events count no more.
+  const other = fakeHass();
+  overlay.setHass(other.hass);
+  await settle();
+  other.push({ available: true, session: view(3) });
+  fake.fire("disconnected");
+  expect(overlay.state().available).toBe(true);
+});

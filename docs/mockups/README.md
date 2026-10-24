@@ -12,13 +12,13 @@ Exercise GIFs in `gifs/` are © Gym visual (via hasaneyldrm/exercises-dataset). 
 | Today | `Main` | Lovelace today card |
 | Status card | `StatusCard` | Lovelace status card |
 | Skip today | `SkipDialog` | Dialog in the today card |
-| Circuit details | `WorkoutDetails` | Session flow in the card, step 1 |
-| Get ready (start stations) | `GetReady` | Session flow in the card, step 2 |
-| Timer, 1 participant | `Timer` | Session flow in the card |
-| Switch / rest, paused | `TimerRest` | Session flow in the card |
-| Timer, 2 participants | `TimerDuo` | Session flow in the card |
-| Timer, 3–4 participants | `TimerSquad` | Session flow in the card |
-| Circuit complete | `Complete` | Session flow end |
+| Circuit details | `WorkoutDetails` | Workout overlay (page-level, D45), step 1 |
+| Get ready (start stations) | `GetReady` | Workout overlay (page-level, D45), step 2 |
+| Timer, 1 participant | `Timer` | Workout overlay (page-level, D45) |
+| Switch / rest, paused | `TimerRest` | Workout overlay (page-level, D45) |
+| Timer, 2 participants | `TimerDuo` | Workout overlay (page-level, D45) |
+| Timer, 3–4 participants | `TimerSquad` | Workout overlay (page-level, D45) |
+| Circuit complete | `Complete` | Workout overlay (page-level, D45), the end |
 | Program (read-only + Claude draft) | `Planner` | Add-on website (Ingress) |
 | Exercise library | `Library` | Add-on website (Ingress) |
 | History | `History` | Add-on website (Ingress) |

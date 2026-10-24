@@ -721,3 +721,41 @@ test("Luk counts from when the controller first learned the add-on was gone", as
     deliver({ available: true, session: null });
   }
 });
+
+test("the GIFs coming up are fetched ahead", async () => {
+  // Exercises no other test fetched: the image cache is page-wide.
+  const burpee = { number: 1, exercise_id: "0901", name: "Burpee" };
+  const lunge = { number: 2, exercise_id: "0902", name: "Lunge" };
+  const row = { number: 3, exercise_id: "0903", name: "Row" };
+  const gif = (id: string) => `/api/ha_fitness/media/${id}/gif`;
+  const fake = fakeHass();
+
+  // Get ready: the start stations' GIFs, so the first work phase doesn't start blank.
+  const { flow } = await mount(
+    fake,
+    view({
+      phase: phase({ index: 0, kind: "countdown", round: 1, duration: 10, ends_at: "2026-10-24T08:00:10.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+      stations: [
+        { current: burpee, next: lunge },
+        { current: lunge, next: row },
+      ],
+    }),
+  );
+  const fetched = () => fake.hass.fetchWithAuth.mock.calls.map((call) => (call as unknown[])[0]);
+  expect(fetched()).toEqual(expect.arrayContaining([gif("0901"), gif("0902")]));
+
+  // In a phase: the next stations' GIFs too.
+  flow.state = {
+    available: true,
+    session: view({
+      revision: 11,
+      stations: [
+        { current: burpee, next: lunge },
+        { current: lunge, next: row },
+      ],
+    }),
+  };
+  await settle(flow);
+  expect(fetched()).toContain(gif("0903"));
+});
