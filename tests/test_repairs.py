@@ -29,6 +29,7 @@ from .fake_addon import FakeAddon
 UNSUPPORTED = "unsupported_api_version"
 TOO_OLD = "addon_too_old"
 LOGGER_NAME = "custom_components.ha_fitness"
+NEXT_TRAINING_DAY = "sensor.ha_fitness_next_training_day"
 
 
 def _has_issue(issue_registry: ir.IssueRegistry, issue_id: str) -> Callable[[], bool]:
@@ -293,44 +294,35 @@ async def _settle() -> None:
         await asyncio.sleep(0)
 
 
+def _next_training_day(hass: HomeAssistant) -> str | None:
+    state = hass.states.get(NEXT_TRAINING_DAY)
+    return None if state is None else state.state
+
+
 @pytest.mark.usefixtures("cards_bundle")
-async def test_raising_listener_does_not_stop_reconnect(
+async def test_failing_entity_update_does_not_block_others_or_reconnect(
     hass: HomeAssistant,
     fake_addon: FakeAddon,
     config_entry: MockConfigEntry,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """A listener that raises doesn't end the reconnect loop: the client still reconnects."""
+    """A malformed today makes one entity's state write raise; the others still update, and the client reconnects."""
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: is_open(hass))
 
-    def _raise() -> None:
-        raise RuntimeError("listener failed")
+    # "open" isn't a list, so the today sensor raises while writing its state.
+    malformed = {
+        **fake_addon.today,
+        "open": "x",
+        "next": {"date": "2026-11-04", "programs": []},
+    }
+    await fake_addon.push({"type": "today", "data": malformed})
+    await wait_for(hass, lambda: _next_training_day(hass) == "2026-11-04")
+    assert fake_addon.connects == 1
 
-    config_entry.runtime_data.async_add_listener(_raise)
     await fake_addon.close_ws()
     await wait_for(hass, lambda: fake_addon.connects == 2, freezer, 1)
-    await unload(hass, config_entry)
-
-
-@pytest.mark.usefixtures("cards_bundle")
-async def test_raising_listener_does_not_block_other_listeners(
-    hass: HomeAssistant, fake_addon: FakeAddon, config_entry: MockConfigEntry
-) -> None:
-    """A listener that raises doesn't keep the listeners after it from hearing a change."""
-    await set_up(hass, config_entry)
-    await wait_for(hass, lambda: is_open(hass))
-    calls: list[None] = []
-
-    def _raise() -> None:
-        raise RuntimeError("listener failed")
-
-    config_entry.runtime_data.async_add_listener(_raise)
-    config_entry.runtime_data.async_add_listener(lambda: calls.append(None))
-    await fake_addon.push({"type": "today", "data": {**fake_addon.today, "open": []}})
-
-    await wait_for(hass, lambda: len(calls) == 1)
-    assert fake_addon.connects == 1
+    await wait_for(hass, lambda: _next_training_day(hass) == "2026-10-31")
     await unload(hass, config_entry)
 
 
@@ -430,6 +422,7 @@ async def test_unexpected_error_does_not_stop_reconnect(
             raise RuntimeError("bug")
         return real_parse(raw)
 
+    # White-box fault injection: no public input makes the client's own code raise here.
     monkeypatch.setattr(client, "parse_message", _parse_fails_once)
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: _levels(caplog) == [logging.WARNING])
