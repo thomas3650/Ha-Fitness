@@ -10,6 +10,7 @@ from .schemas import HaPerson
 
 TIMEOUT_SECONDS = 10.0
 PERSON_PREFIX = "person."
+UNEXPECTED_ANSWER = "Can't reach Home Assistant: unexpected answer"
 
 
 class HaClient:
@@ -36,7 +37,7 @@ class HaClient:
         """Return HA's `person.*` entities; raise `Unavailable` when HA isn't configured or can't be reached."""
         states = self._get("/api/states")
         if not isinstance(states, list):
-            raise Unavailable("Can't reach Home Assistant: unexpected answer")
+            raise Unavailable(UNEXPECTED_ANSWER)
         persons = []
         for state in states:
             entity_id = state.get("entity_id") if isinstance(state, dict) else None
@@ -62,7 +63,7 @@ class HaClient:
         )
         body = _json(response)
         if not isinstance(body, dict) or "service_response" not in body:
-            raise Unavailable("Can't reach Home Assistant: unexpected answer")
+            raise Unavailable(UNEXPECTED_ANSWER)
         return body["service_response"]
 
     def _get(self, path: str) -> Any:

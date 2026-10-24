@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from .errors import Unavailable
-from .ha import HaClient
+from .ha import UNEXPECTED_ANSWER, HaClient
 from .schemas import PlaylistOut, SpeakerOut
 
 # Lists Music Assistant's `media_player` entities, unavailable ones included, as JSON (music spec §3).
@@ -18,7 +18,6 @@ SPEAKERS_TEMPLATE = """\
 
 PLAYLIST_LIMIT = 500
 _NOT_AVAILABLE = frozenset({"unavailable", "unknown"})
-_UNEXPECTED = "Can't reach Home Assistant: unexpected answer"
 
 
 class _Player(BaseModel):
@@ -87,7 +86,7 @@ class MusicService:
         try:
             library = _Library.model_validate(answer)
         except ValidationError as error:
-            raise Unavailable(_UNEXPECTED) from error
+            raise Unavailable(UNEXPECTED_ANSWER) from error
         playlists = [
             PlaylistOut(name=item.name, uri=item.uri) for item in library.items
         ]
@@ -99,4 +98,4 @@ class MusicService:
         try:
             return _PLAYERS.validate_json(text)
         except ValidationError as error:
-            raise Unavailable(_UNEXPECTED) from error
+            raise Unavailable(UNEXPECTED_ANSWER) from error

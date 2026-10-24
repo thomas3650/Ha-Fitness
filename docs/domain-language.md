@@ -21,7 +21,7 @@ spec already names.
 | **Rest between rounds** | Seconds of rest after a round, except the last. |
 | **Countdown** | Seconds before the first interval (0, 5 or 10). |
 | **Phase** | A stretch of the timer: countdown, work, switch or rest. Each has a fixed length; the session ends when the last work phase ends. |
-| **Plan** | What a session freezes at its start: the program's name, timing and stations, and the participants with their names. A later edit changes no running session and no history (D40). |
+| **Plan** | What a session freezes at its start: the program's name, timing and stations, the participants with their names, and the music with the start's speaker. A later edit changes no running session and no history (D40). |
 
 ## People and sessions
 

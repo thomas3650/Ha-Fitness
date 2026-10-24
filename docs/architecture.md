@@ -341,9 +341,10 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 `addon/server/src/ha_fitness_server/sessions.py`.
 
 - **The plan.** A start freezes the plan: the program's name and timing, its stations with their names, the
-  participants with their names, and the music with the start's speaker. A later program edit or a removed person changes no running session and no history.
-  The phases follow from the plan: countdown, then per round work and switch per station, then rest. There is no
-  switch after the last interval of the last round (D41), so the session ends with the last work phase.
+  participants with their names, and the music with the start's speaker. A later program edit or a removed person
+  changes no running session and no history. The phases follow from the plan: countdown, then per round work and
+  switch per station, then rest. There is no switch after the last interval of the last round (D41), so the session
+  ends with the last work phase.
 - **Deadlines, not counters.** A session stores its phase and the time that phase started. Each next phase starts at
   the previous one's deadline, so no time drifts, and several phases can pass in one tick.
 - **One at a time.** Only one session can be running or paused. Another start gives a 409.
@@ -371,7 +372,7 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 | Method and path | Does |
 | --- | --- |
 | `GET /api/v1/session` | The running or paused session; else the last finished one for 5 minutes after it finished; else `null`. |
-| `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?, "speaker"?}` → the session view (201). `speaker` (`media_player.<name>`) replaces the program's speaker for this session; a program without music ignores it. |
+| `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?, "speaker"?}` → the session view (201). `speaker` (`media_player.<name>`) replaces the program's speaker for this session; a program without music ignores it. A speaker that doesn't match `^media_player\.[a-z0-9_]+$` gives 422 `invalid`. |
 | `POST /api/v1/session/{command}` | `pause`, `resume`, `next`, `previous` or `end` → the session view. |
 | `POST /api/v1/session/feeling` | `{"feeling": "too_easy" \| "just_right" \| "too_hard"}` on a completed session within its 5-minute finished view → the session view. It is declared before `{command}`. A later call changes the rating. Any other current view gives 409 `conflict`; an unknown value gives 422 `invalid`. |
 | `GET /api/v1/sessions?limit=` | `{"counting_from", "sessions": [finished views, newest first]}`; `limit` 1–100, default 20. |

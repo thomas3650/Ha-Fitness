@@ -216,14 +216,17 @@ async def test_playlists_search_passed_on(make_app: MakeApp) -> None:
         searched = await client.get(PLAYLISTS, params={"search": "work"})
         empty = await client.get(PLAYLISTS, params={"search": ""})
         tool = await call(session, "list_playlists", search="mix")
+        empty_tool = await call(session, "list_playlists", search="")
     assert searched.status_code == 200
     assert empty.status_code == 200
     assert tool == {"result": [{"name": "Workout Mix", "uri": "library://playlist/2"}]}
+    assert empty_tool == tool
     base = {"config_entry_id": "entry-1", "media_type": "playlist", "limit": 500}
     assert ha.library_calls == [
         {**base, "search": "work"},
         base,
         {**base, "search": "mix"},
+        base,
     ]
 
 
