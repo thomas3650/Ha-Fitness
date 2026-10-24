@@ -19,8 +19,9 @@ The cards are built into the integration: one bundle, released and versioned wit
 - **Add-on server** (`addon/server/`, FastAPI, D2) on port 8765 (D15). It keeps its data in the data folder: `/data`
   in the add-on, `HA_FITNESS_DATA_DIR` in the fast loop. The image is built from `addon/Dockerfile` on HA's Python base
   image. The design of what it holds is the
-  [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md) and, for training days, the
-  [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md); the code is the source for the details.
+  [step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md), for training days the
+  [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md), and for sessions the
+  [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md); the code is the source for the details.
   - **Database:** SQLite in `<data folder>/ha_fitness.db`, in WAL mode (D4, D5). Alembic migrations ship in the
     package and run to `head` at start. A database at a revision the code doesn't know stops the start.
   - **Exercise library:** the 721 filtered exercises are built into the package; their GIFs and thumbnails are
@@ -29,13 +30,18 @@ The cards are built into the integration: one bundle, released and versioned wit
   - **People** (at most 2) linked to HA person entities, **programs** (one validated JSON document each, D4) and the
     **change log** of every write.
   - **Training days** and the **scheduler** (step 4 spec §3.3, D34). A training day is one program on one local date,
-    stored as open, missed or skipped (done comes with sessions). Training-day ids are never reused, so a skip by id
+    stored as open, done, missed or skipped; only a counted session closes a day as done. Training-day ids are never reused, so a skip by id
     can't hit a later day. The scheduler reconciles at start, every minute, after every program write and before
-    every read of the days. One lock serialises the scheduler, skips, program writes and the dev routes.
+    every read of the days. One lock serialises the scheduler, skips, program writes, sessions and the dev routes.
+  - **Sessions** ([below](#sessions)): the workout engine, one session at a time (D40), with history and the
+    "counting from" date.
   - **REST** under `/api/v1/` (the routes are step 3 spec §7). `GET /api/v1/health` answers
     `{"status": "ok", "version": "<server version>", "api_version": 1}`. Step 4 adds `GET /api/v1/today`,
-    `GET /api/v1/training-days?from=&to=` and `POST /api/v1/training-days/{id}/skip` (step 4 spec §3.4–§3.5).
-  - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5).
+    `GET /api/v1/training-days?from=&to=` and `POST /api/v1/training-days/{id}/skip` (step 4 spec §3.4–§3.5). Step 5
+    adds the [session routes](#sessions).
+  - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5,
+    and the read-only `get_session` and `list_sessions` from step 5 spec §3.5). No MCP tool starts or steers a
+    workout.
   - **The push channel** `GET /api/v1/ws`, a websocket (D6, D35; [below](#the-push-channel)).
   - **Supervisor discovery:** at every start under the Supervisor the add-on posts the service `ha_fitness` with its
     hostname and port 8765 (D28, step 4 spec §3.7). Outside the Supervisor it does nothing. A failure is logged and
@@ -43,7 +49,8 @@ The cards are built into the integration: one bundle, released and versioned wit
   - **Dev routes** under `/api/v1/dev/` exist only with `HA_FITNESS_DEV=1`, which only `scripts/develop` sets
     ([`testing.md`](testing.md#fast-loop)).
   - **The Ingress page** at `/`: a status page, in English or Danish after the browser's language (D27).
-  - **Hot backups** through a consistent snapshot, `<data folder>/backup/snapshot.db` (D31).
+  - **Hot backups** through a consistent snapshot, `<data folder>/backup/snapshot.db` (D31). The snapshot is also
+    written at every shutdown (D43).
 - **Integration:** a config flow with one entry and nothing to enter. Setting up the entry serves
   `custom_components/ha_fitness/frontend/` at `/ha_fitness_frontend/` and loads
   `/ha_fitness_frontend/ha-fitness-cards.js?v=<integration version>` in the frontend. The version in the URL busts
@@ -52,7 +59,7 @@ The cards are built into the integration: one bundle, released and versioned wit
   Importing a card registers its custom element (`ha-fitness-<name>-card`). The texts come from `cards/src/i18n/`
   (`en.json` is the base, `da.json` Danish) and follow the HA user's language (D11).
 
-Not built yet: sessions, history and stats; the integration's side of the connection (taking the discovery, D28; a
+Not built yet: stats; the integration's side of the connection (taking the discovery, D28; a
 configured URL in the fast loop; the push channel's subscription); entities and services. Each comes with its feature
 spec.
 
@@ -86,8 +93,9 @@ spec.
 - The client sends nothing. Whatever it sends is ignored.
 - On connect the add-on sends `hello` (`version`, `api_version`), then `today`, with the same data as
   `GET /api/v1/today`.
-- After that it sends a new `today` whenever that data changes, and one `event` (`due`, `skipped` or `missed`) per
-  state change of a training day.
+- After that it sends a new `today` whenever that data changes, and one `event` (`due`, `skipped`, `missed` or `done`)
+  per state change of a training day.
+- Step 5 adds `session` ([below](#sessions)): it follows `today` on connect, and comes again after every change.
 - Events are fire-and-forget: a client that isn't connected misses them. The `today` state is what counts.
 
 ```json
@@ -112,3 +120,63 @@ HA's timezone (for midnight), the person entities, and Music Assistant's speaker
   server started works without a restart. `scripts/dev_onboard.py` keeps the dev token in `local/dev-ha-token` (D32).
 - Without a URL or a token, HA is "not configured". A read still answers, with `ha_persons: null` and `ha_error`; a
   write that needs HA fails with 503.
+
+## Sessions
+
+The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §3 (D40–D43); the code is
+`addon/server/src/ha_fitness_server/sessions.py`.
+
+- **The plan.** A start freezes the plan: the program's name and timing, its stations with their names, and the
+  participants with their names. A later program edit or a removed person changes no running session and no history.
+  The phases follow from the plan: countdown, then per round work and switch per station, then rest. There is no
+  switch after the last interval of the last round (D41), so the session ends with the last work phase.
+- **Deadlines, not counters.** A session stores its phase and the time that phase started. Each next phase starts at
+  the previous one's deadline, so no time drifts, and several phases can pass in one tick.
+- **One at a time.** Only one session can be running or paused. Another start gives a 409.
+- **The loop.** The lifespan runs the tick in a worker thread. It wakes at the current phase's deadline, and at least
+  every `session_tick_max` seconds (1 s; a field of `Settings` with no environment variable, which tests change). Every command and every read ticks first, under
+  the scheduler's lock. A tick that moves on publishes one `session` message and one `phase_changed` event, for the
+  phase it ends on. `last_tick_at` is written every 5 s and at every phase change.
+- **Restarts.** At shutdown the lifespan pauses a running session, then writes the snapshot (D43). At start a session
+  still running (after a crash) is paused at its `last_tick_at`, so the time the add-on was down counts as a pause.
+  A restart never skips phases or completes a workout nobody did.
+- **The pause limit.** A session paused for 30 minutes is ended, at `paused_at + 30 min`, with the client `addon`.
+  After a crash that was down longer than that, it is ended at the start. The usual counting rules apply.
+- **Finishing.** The tick passing the last work phase, or `next` on it, completes the session. `end` or the pause
+  limit ends it early; it counts when at least one full round is behind it. A counted session with a training day
+  closes the day as done (done late when the day's date is before the local date of `started_at`). The first counted
+  session sets `counting_from`. Each finished session keeps one row per participant, with the name and no foreign key.
+- **The day under a session** (D42). Reconcile leaves an open day alone while a session for it is running or paused.
+  Skipping that day gives a 409. Switching off or deleting the program of a running or paused session gives a 409 with
+  "A session for this program is running"; this holds for extra sessions too.
+- **Due and late can mix.** Step 4's rule that a new training day closes a late one waits while a session runs for the
+  late day. A session that crosses midnight into another training day keeps its late day open next to the new due day.
+
+### The session routes
+
+| Method and path | Does |
+| --- | --- |
+| `GET /api/v1/session` | The running or paused session; else the last finished one for 5 minutes after it finished; else `null`. |
+| `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?}` → the session view (201). |
+| `POST /api/v1/session/{command}` | `pause`, `resume`, `next`, `previous` or `end` → the session view. |
+| `GET /api/v1/sessions?limit=` | `{"counting_from", "sessions": [finished views, newest first]}`; `limit` 1–100, default 20. |
+
+- **Errors.** These routes answer `{"detail": {"code", "message"}}`. The codes are `not_found` (404), `conflict` (409)
+  and `invalid` (422). An unknown command is a 404 `not_found`; a command not allowed now is a 409 `conflict`. Steps
+  3–4's routes keep their own error shapes, and so do the skip and program 409s above.
+- **The view** (`SessionView` in `schemas.py`) has the phase with `ends_at` (UTC with milliseconds, null while paused)
+  or `remaining` (while paused), the next phase, each participant's current and next station, `totals`
+  (`planned`, `rounds`, `stations`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
+  `server_time`. A finished view has no phase, next phase or stations.
+- **The change log** records `session.started`, `session.completed` and `session.ended`. Pause, resume, next and
+  previous aren't logged.
+
+### Session messages on the push channel
+
+- `{"type": "session", "data": <view or null>}`. It is sent on connect after `today`, and after every change: a phase,
+  a command, a finish or the pause limit. A finished view is sent once. When its 5 minutes are over, the loop sends
+  `null`, unless a new session has started.
+- Events: `{"type": "event", "event": …, "session": {"id", "program_name", "training_day_id", …}}` for
+  `session_started`, `session_completed`, `session_ended` (with `counted`) and `phase_changed` (with `phase`).
+- `{"type": "event", "event": "done", "training_day": {…}}` when a counted session closes its day, then a new
+  `today`.

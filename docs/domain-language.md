@@ -14,12 +14,13 @@ spec already names.
 | **Circuit** | The only workout type in v1: S stations, R rounds, work time, switch time, rest between rounds. |
 | **Station** | One exercise in the circuit (1–15). Each participant is at one station per interval. |
 | **Round** | One pass through all stations: S intervals. |
-| **Interval** | One work period at a station, followed by the switch time. |
+| **Interval** | One work period at a station, followed by the switch time, except after the last interval of the last round (D41). |
 | **Work time** (W) | Seconds of work per interval. |
 | **Switch time** (r) | Seconds to move to the next station after an interval. |
 | **Rest between rounds** | Seconds of rest after a round, except the last. |
 | **Countdown** | Seconds before the first interval (0, 5 or 10). |
-| **Phase** | A stretch of the timer: countdown, work, switch or rest. |
+| **Phase** | A stretch of the timer: countdown, work, switch or rest. Each has a fixed length; the session ends when the last work phase ends. |
+| **Plan** | What a session freezes at its start: the program's name, timing and stations, and the participants with their names. A later edit changes no running session and no history (D40). |
 
 ## People and sessions
 
@@ -29,7 +30,7 @@ spec already names.
 | **Participant** | A person taking part in one session (1 or 2, at most the number of stations). Participant 1 starts at station 1, participant 2 at station 2. |
 | **Session** | One run of a program's workout, from start to done or ended early. |
 | **Extra session** | A session started when nothing is due, or from the workout tab. It counts toward done and time trained, not toward the streak, and closes no training day. |
-| **Ended early** | A session stopped before the last round. It counts as done if at least one full round was completed. |
+| **Ended early** | A session stopped before its last work phase ended: with Slut or Annullér, or after 30 minutes paused. It counts as done if at least one full round was completed. |
 
 ## Training days
 
@@ -40,7 +41,8 @@ spec already names.
 | **Late** | Forfalden | A due day that has passed untouched. It stays visible until the next training day of any program begins. |
 | **Missed** | | A late day closed because the next training day began. |
 | **Skipped** | | A training day closed on purpose with Spring over (one confirmation, no reason). |
-| **Done** | | A training day closed by a session (done late, if it was late). |
+| **Done** | | A training day closed by a counted session. |
+| **Done late** | | A done day whose date is before the local date of the session's first work phase. A session that crosses midnight is not late. |
 | **Open** | | Due or late. |
 | **Closed** | | Done, missed or skipped. |
 
@@ -51,7 +53,7 @@ spec already names.
 | **Streak** | Per person: consecutive closed training days the person did. Missed and skipped break it; open days don't count. |
 | **Done** / **missed** (counts) | Per person, per closed training day: done if they took part, otherwise missed (or skipped). |
 | **Time trained** | Per person: time from a session's start to its end, minus pauses. |
-| **Counting from** | The date of the first session completed in the app. Days closed before it are left out of all stats. |
+| **Counting from** | The local date the first **counted** session ended, set once. Days closed before it are left out of all stats. |
 
 ## The tablet
 

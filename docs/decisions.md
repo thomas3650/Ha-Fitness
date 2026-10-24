@@ -290,3 +290,40 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   sets `HA_FITNESS_TIMEZONE`, so a `TZ` in the Mac's shell doesn't matter.
 - **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.2; Claude, 2026-10-24
   (Thomas's delegation for the night)
+
+### D40: The session engine lives in the add-on
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The add-on runs sessions. A start freezes the plan (the program's timing and stations, the
+  participants and their names). Phases run on deadlines chained from each other, ticked by a loop and before every
+  command and read. Only one session is running or paused at a time. At shutdown a running session is paused; after a
+  crash it is paused at its `last_tick_at`. A session paused for 30 minutes is ended at `paused_at + 30 min`.
+- **Why:** One source of truth that survives a closed tablet or a reload, with no drift. A restart never skips phases
+  or completes a workout nobody did, and a forgotten session can't keep the tablet awake for ever.
+- **Source:** [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §3.1–§3.3; the pause limit's end time:
+  the step 5 build (Task S3); Claude, 2026-10-24 (Thomas's delegation for the night)
+
+### D41: No switch after the last interval
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** A session has no switch phase after the last interval of the last round; it ends when the last work
+  phase ends. The program's `total_seconds` stays the planned length shown before a workout.
+- **Why:** There is no station to move to, so a final switch would only be dead time before Done.
+- **Source:** [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §3.1; Claude, 2026-10-24 (Thomas's
+  delegation for the night)
+
+### D42: A day under a session stays open, and its program is locked
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** Reconcile leaves an open training day alone while a session for it is running or paused, and skipping
+  it gives a 409. Switching off or deleting the program of a running or paused session gives a 409, extra sessions
+  included.
+- **Why:** A session that crosses midnight, or a Claude edit during a workout, must not close the day as missed or
+  pull the program away; no day is ever missed and then done.
+- **Source:** [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §3.4; Claude, 2026-10-24 (Thomas's
+  delegation for the night)
+
+### D43: The snapshot is also written at shutdown
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The lifespan's shutdown pauses a running session, then writes the backup snapshot of D31.
+- **Why:** The Supervisor runs `backup_pre` only in a running add-on, so a backup of a stopped add-on held the
+  snapshot of the last backup. Now it holds the data as of the stop; only a crash leaves an older one (#20).
+- **Source:** [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §3.6; Claude, 2026-10-24 (Thomas's
+  delegation for the night)
