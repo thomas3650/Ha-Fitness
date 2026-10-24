@@ -426,3 +426,19 @@ test("a double tap on Start opens once", async () => {
   expect(programFetches(fake)).toBe(3 + 1 + 1);
   expect(theDialog()?.open).toBe(true);
 });
+
+test("the card's language option carries into the flow, from Start and from Fortsæt", async () => {
+  const fake = fakeHass("en");
+  const card = await mount(fake, "da");
+
+  getByRole(rows(card)[0], "button", { name: "Start" }).click();
+  await settle(card);
+  expect(getByRole(flowRoot(), "button", { name: "Tilbage" })).toBeTruthy();
+  overlay.close();
+
+  fake.pushSession({ available: true, session: sessionView("running") });
+  await card.updateComplete;
+  getByRole(root(card), "button", { name: "Fortsæt" }).click();
+  await settle(card);
+  expect(getByRole(flowRoot(), "button", { name: "Slut" })).toBeTruthy();
+});

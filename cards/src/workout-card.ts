@@ -193,6 +193,11 @@ export class WorkoutCard extends LitElement {
     return localize(cardLanguage(this.config, this.hass), key, vars);
   }
 
+  /** The card's language option, for the flow it opens. */
+  private get flowLanguage(): { language?: string } {
+    return this.config?.language ? { language: this.config.language } : {};
+  }
+
   private receiveSession(session: SessionView | null): void {
     this.session = isActive(session) ? session : undefined;
   }
@@ -236,7 +241,7 @@ export class WorkoutCard extends LitElement {
     try {
       const programs = await this.fetchPrograms();
       if (programs !== null && !programs.some((fresh) => fresh.id === program.id)) return;
-      overlay.open({ kind: "details", programId: program.id });
+      overlay.open({ kind: "details", programId: program.id, ...this.flowLanguage });
     } finally {
       this.starting = false;
     }
@@ -245,7 +250,7 @@ export class WorkoutCard extends LitElement {
   /** Fortsæt: unlock audio in the tap itself, then reopen the overlay at the session. */
   private resume(): void {
     unlockAudio();
-    overlay.open({ kind: "resume" });
+    overlay.open({ kind: "resume", ...this.flowLanguage });
   }
 
   private line(program: Program): string {

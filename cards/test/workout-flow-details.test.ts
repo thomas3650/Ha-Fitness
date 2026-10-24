@@ -459,7 +459,7 @@ test("error texts in English", async () => {
   expect(text(getByRole(root(flow), "alert"))).toBe("The workout can't start now.");
 });
 
-test("get ready shows start stations; Start nu sends next; Annullér sends end and closes without done", async () => {
+test("get ready shows start stations; Start nu sends next; Annullér sends end and closes once it is done", async () => {
   const fake = fakeHass("da");
   const { flow, onClose } = await mount(fake, fromToday);
   await tap(flow, button(flow, "Start"));
@@ -499,14 +499,16 @@ test("get ready shows start stations; Start nu sends next; Annullér sends end a
   expect(sessionCommands(fake).at(-1)).toEqual({ type: "ha_fitness/session/command", command: "next" });
   expect(onClose).not.toHaveBeenCalled();
 
-  // Annullér ends the session and closes at once.
+  // Annullér ends the session, and closes once the end has gone through.
   await tap(flow, button(flow, "Annullér"));
   expect(sessionCommands(fake).at(-1)).toEqual({ type: "ha_fitness/session/command", command: "end" });
-  expect(onClose).toHaveBeenCalledTimes(1);
-
-  // The ended view that follows never shows the done step.
+  expect(onClose).not.toHaveBeenCalled();
   const ended = view({ revision: 5, status: "ended", phase: null, stations: null, next_phase: null });
   fake.commands.at(-1)!.resolve(ended);
+  await settle(flow);
+  expect(onClose).toHaveBeenCalledTimes(1);
+
+  // The ended view never shows the done step.
   await push(flow, ended);
   expect(queryByText(root(flow), "Træningen blev afsluttet")).toBeNull();
 });
@@ -614,11 +616,33 @@ test("Annullér closes once, whatever views follow", async () => {
   const { flow, onClose } = await mount(fake, { kind: "resume" }, { available: true, session: view() });
 
   await tap(flow, button(flow, "Annullér"));
-  expect(onClose).toHaveBeenCalledTimes(1);
+  // A second tap while the end is on its way sends nothing more.
+  await tap(flow, button(flow, "Annullér"));
+  expect(sessionCommands(fake)).toHaveLength(1);
   const ended = view({ revision: 2, status: "ended", phase: null, stations: null, next_phase: null });
   fake.commands.at(-1)!.resolve(ended);
   await push(flow, ended);
   await wait(flow, 120_000);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test("Annullér whose end fails stays on get ready with the error", async () => {
+  const fake = fakeHass("da");
+  const { flow, onClose } = await mount(fake, { kind: "resume" }, { available: true, session: view() });
+
+  await tap(flow, button(flow, "Annullér"));
+  fake.commands.at(-1)!.reject({ code: "unavailable", message: "Add-on down" });
+  await settle(flow);
+
+  // The session still runs, so the flow stays where it can be ended: nothing closes.
+  expect(onClose).not.toHaveBeenCalled();
+  expect(text(getByRole(root(flow), "alert"))).toBe("HA Fitness kan ikke nås. Prøv igen senere.");
+  expect(button(flow, "Start nu")).toBeTruthy();
+
+  // Tried again, it ends and closes.
+  await tap(flow, button(flow, "Annullér"));
+  fake.commands.at(-1)!.resolve(view({ revision: 2, status: "ended", phase: null, stations: null, next_phase: null }));
+  await settle(flow);
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 

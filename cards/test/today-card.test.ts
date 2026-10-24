@@ -918,3 +918,20 @@ test("a card that connects during a session shows Fortsæt at once", async () =>
   expect(second.hidden).toBe(false);
   expect(text(root(second))).toBe("Træning i gang · Onsdag Fortsæt");
 });
+
+test("the card's language option carries into the flow, from Start and from Fortsæt", async () => {
+  const fake = fakeHass("en");
+  const card = await mount(fake, { language: "da" });
+  await push(card, fake, today([wednesday]));
+
+  getByRole(rows(card)[0], "button", { name: "Start" }).click();
+  await wait(card, 0);
+  expect(getByRole(flowRoot(), "button", { name: "Tilbage" })).toBeTruthy();
+  overlay.close();
+
+  fake.pushSession({ available: true, session: sessionView("running") });
+  await card.updateComplete;
+  getByRole(root(card), "button", { name: "Fortsæt" }).click();
+  await wait(card, 0);
+  expect(getByRole(flowRoot(), "button", { name: "Slut" })).toBeTruthy();
+});

@@ -166,6 +166,8 @@ export class WorkoutFlow extends LitElement {
   private loadedFor?: OverlayMode;
   /** Sessions annulled from get ready: their done step never shows. */
   private readonly annulled = new Set<number>();
+  /** Annullér's end is on its way. */
+  private annulling = false;
   private idleTimer?: ReturnType<typeof setTimeout>;
   private tickTimer?: ReturnType<typeof setInterval>;
   /** `server_time − Date.now()` of the newest message, in ms. */
@@ -745,7 +747,8 @@ export class WorkoutFlow extends LitElement {
   }
 
   private t(key: string, vars?: Vars): string {
-    return localize(cardLanguage(undefined, this.hass), key, vars);
+    // The opening card's language option wins, as on the card itself (D38).
+    return localize(cardLanguage({ language: this.mode?.language }, this.hass), key, vars);
   }
 
   private armIdle(): void {
@@ -820,29 +823,42 @@ export class WorkoutFlow extends LitElement {
     return code && KNOWN_ERRORS.has(code) ? `flow.error.${code}` : "flow.error.general";
   }
 
-  /** Send a command to the running session; its result is a view like any push. */
-  private async command(command: Command): Promise<void> {
+  /**
+   * Send a command to the running session; its result is a view like any push. True once it went
+   * through; a failure shows its text.
+   */
+  private async command(command: Command): Promise<boolean> {
     // Fortsæt is a tap, like Start: unlock before anything awaits.
     if (command === "resume") unlockAudio();
     const hass = this.hass;
-    if (!hass) return;
+    if (!hass) return false;
     this.error = undefined;
     try {
       const result = await hass.callWS<SessionView>({ type: "ha_fitness/session/command", command });
       if (this.isConnected) this.result = result;
+      return true;
     } catch (error) {
-      if (!this.isConnected) return;
+      if (!this.isConnected) return false;
       const code = errorCode(error);
       this.error = this.t(code && KNOWN_ERRORS.has(code) ? `flow.error.${code}` : "flow.error.general");
+      return false;
     }
   }
 
-  /** Annullér: end the session, close at once, and never show its done step. */
-  private annul(): void {
+  /**
+   * Annullér: end the session, close once the end has gone through, and never show its done step.
+   * A failed end leaves the session running, so the flow stays on get ready with the error: closed,
+   * the session would run on and count a workout nobody did.
+   */
+  private async annul(): Promise<void> {
     const view = this.newest;
-    if (view) this.annulled.add(view.id);
-    this.close();
-    void this.command("end");
+    if (!view || this.annulling) return;
+    this.annulling = true;
+    this.annulled.add(view.id);
+    const ended = await this.command("end");
+    this.annulling = false;
+    if (ended) this.close();
+    else this.annulled.delete(view.id);
   }
 
   /**
@@ -1155,7 +1171,7 @@ export class WorkoutFlow extends LitElement {
         <button @click=${() => this.command(paused ? "resume" : "pause")}>
           ${this.t(paused ? "flow.resume" : "flow.pause")}
         </button>
-        <button @click=${() => this.annul()}>${this.t("flow.cancel")}</button>
+        <button @click=${() => void this.annul()}>${this.t("flow.cancel")}</button>
       </div>
     `;
   }

@@ -38,7 +38,8 @@ export interface SessionView {
   stations: { current: SessionStation; next: SessionStation | null }[] | null;
   /** `stations` is the intervals per round; older add-ons leave it out. */
   totals: { planned: number; rounds: number; stations?: number };
-  started_at: string;
+  /** The start of the first work phase; null during the countdown, before work began. */
+  started_at: string | null;
   ended_at: string | null;
   rounds_completed: number;
   /** Active seconds, as of `server_time`. */
@@ -58,10 +59,13 @@ export function isActive(session: SessionView | null | undefined): session is Se
   return session?.status === "running" || session?.status === "paused";
 }
 
-/** How the flow opens: the details of a program (from a card's Start), or the running session. */
+/**
+ * How the flow opens: the details of a program (from a card's Start), or the running session.
+ * `language` is the opening card's `language` option, if it has one; the flow then uses it too.
+ */
 export type OverlayMode =
-  | { kind: "details"; programId: number; trainingDayId?: number }
-  | { kind: "resume" };
+  | { kind: "details"; programId: number; trainingDayId?: number; language?: string }
+  | { kind: "resume"; language?: string };
 
 /** The part of Home Assistant's `hass` object the controller uses. */
 export interface OverlayHass {

@@ -260,6 +260,11 @@ export class TodayCard extends LitElement {
     for (const id of [...this.confirming.keys()]) if (!open.has(id)) this.endConfirm(id);
   }
 
+  /** The card's language option, for the flow it opens. */
+  private get flowLanguage(): { language?: string } {
+    return this.config?.language ? { language: this.config.language } : {};
+  }
+
   private receiveSession(session: SessionView | null): void {
     this.session = isActive(session) ? session : undefined;
   }
@@ -267,13 +272,13 @@ export class TodayCard extends LitElement {
   /** Start: unlock audio in the tap itself, before anything awaits, then show the program's details. */
   private start(day: OpenDay): void {
     unlockAudio();
-    overlay.open({ kind: "details", programId: day.program_id, trainingDayId: day.id });
+    overlay.open({ kind: "details", programId: day.program_id, trainingDayId: day.id, ...this.flowLanguage });
   }
 
   /** Fortsæt: unlock audio in the tap itself, then reopen the overlay at the session. */
   private resume(): void {
     unlockAudio();
-    overlay.open({ kind: "resume" });
+    overlay.open({ kind: "resume", ...this.flowLanguage });
   }
 
   /** The first tap: ask, and put the row back after 10 s with no answer. */
