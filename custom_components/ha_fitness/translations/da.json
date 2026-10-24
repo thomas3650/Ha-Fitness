@@ -56,6 +56,46 @@
             "name": "Programmer"
           }
         }
+      },
+      "streak": {
+        "name": "{person} i træk",
+        "unit_of_measurement": "dage"
+      },
+      "done": {
+        "name": "{person} gennemført",
+        "state_attributes": {
+          "this_month": {
+            "name": "Denne måned"
+          },
+          "extra": {
+            "name": "Ekstra træninger"
+          },
+          "extra_this_month": {
+            "name": "Ekstra træninger denne måned"
+          }
+        }
+      },
+      "missed": {
+        "name": "{person} missede",
+        "state_attributes": {
+          "this_month": {
+            "name": "Denne måned"
+          },
+          "skipped": {
+            "name": "Sprunget over"
+          },
+          "skipped_this_month": {
+            "name": "Sprunget over denne måned"
+          }
+        }
+      },
+      "time_trained": {
+        "name": "{person} træningstid",
+        "state_attributes": {
+          "this_month": {
+            "name": "Denne måned"
+          }
+        }
       }
     },
     "binary_sensor": {

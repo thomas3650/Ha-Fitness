@@ -56,6 +56,46 @@
             "name": "Programs"
           }
         }
+      },
+      "streak": {
+        "name": "{person} streak",
+        "unit_of_measurement": "days"
+      },
+      "done": {
+        "name": "{person} done",
+        "state_attributes": {
+          "this_month": {
+            "name": "This month"
+          },
+          "extra": {
+            "name": "Extra sessions"
+          },
+          "extra_this_month": {
+            "name": "Extra sessions this month"
+          }
+        }
+      },
+      "missed": {
+        "name": "{person} missed",
+        "state_attributes": {
+          "this_month": {
+            "name": "This month"
+          },
+          "skipped": {
+            "name": "Skipped"
+          },
+          "skipped_this_month": {
+            "name": "Skipped this month"
+          }
+        }
+      },
+      "time_trained": {
+        "name": "{person} time trained",
+        "state_attributes": {
+          "this_month": {
+            "name": "This month"
+          }
+        }
       }
     },
     "binary_sensor": {
