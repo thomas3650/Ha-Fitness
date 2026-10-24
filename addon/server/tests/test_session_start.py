@@ -268,7 +268,7 @@ async def test_start_validation_codes(make_app: MakeApp) -> None:
                 "conflict",
             ),
             ("no participants", onsdag, [], None, 422, "invalid"),
-            ("more than two", onsdag, [thomas, elin, elin], None, 422, "invalid"),
+            ("more than two", onsdag, [thomas, elin, 999], None, 422, "invalid"),
             ("duplicates", onsdag, [thomas, thomas], None, 422, "invalid"),
             (
                 "more than the station count",
