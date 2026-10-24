@@ -12,7 +12,7 @@ export interface IconButtonOptions {
   disabled?: boolean;
   /** A toggle's state; left out, the button is no toggle. */
   pressed?: boolean;
-  /** A visible text after the icon, which then names the button. */
+  /** A visible text after the icon, which then names the button; empty, the label does. */
   text?: string;
 }
 
@@ -21,7 +21,7 @@ export function iconButton(options: IconButtonOptions): TemplateResult {
   const { icon, label, onClick, className, disabled, pressed, text } = options;
   return html`<button
     class=${ifDefined(className)}
-    aria-label=${ifDefined(text === undefined ? label : undefined)}
+    aria-label=${ifDefined(text ? undefined : label)}
     aria-pressed=${ifDefined(pressed === undefined ? undefined : String(pressed))}
     ?disabled=${disabled ?? false}
     @click=${() => onClick()}

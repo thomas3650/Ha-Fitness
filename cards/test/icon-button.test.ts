@@ -33,6 +33,13 @@ test("a disabled button can't be tapped", () => {
   render(iconButton({ icon: "mdi:skip-next", label: "Næste", disabled: true, onClick }), container);
   const button = getByRole(container, "button", { name: "Næste" }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
+  button.click();
+  expect(onClick).not.toHaveBeenCalled();
+});
+
+test("an empty text still leaves the button named by its label", () => {
+  render(iconButton({ icon: "mdi:arrow-left", label: "Tilbage", text: "", onClick: () => undefined }), container);
+  expect(getByRole(container, "button", { name: "Tilbage" })).toBeTruthy();
 });
 
 test("the pressed state shows only when given", () => {

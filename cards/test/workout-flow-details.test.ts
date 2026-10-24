@@ -31,6 +31,8 @@ interface Program {
   round_rest_seconds: number;
   countdown_seconds: number;
   total_minutes: number;
+  total_seconds?: number;
+  equipment?: string[];
   stations: { exercise_id: string; name: string }[];
 }
 
@@ -43,6 +45,8 @@ const onsdag: Program = {
   round_rest_seconds: 60,
   countdown_seconds: 10,
   total_minutes: 29,
+  total_seconds: 2640,
+  equipment: ["Dumbbell", "kettlebell", "Yoga mat"],
   stations: [
     { exercise_id: "0001", name: "Push-up" },
     { exercise_id: "0002", name: "Squat" },
@@ -50,11 +54,15 @@ const onsdag: Program = {
   ],
 };
 
+// From an add-on older than the UI refresh: no total_seconds and no equipment (spec §4).
 const solo: Program = {
-  ...onsdag,
   id: 4,
   name: "Styrke",
   rounds: 3,
+  work_seconds: 40,
+  switch_seconds: 20,
+  round_rest_seconds: 0,
+  countdown_seconds: 10,
   total_minutes: 12,
   stations: [{ exercise_id: "0001", name: "Push-up" }],
 };
@@ -75,7 +83,7 @@ interface Pending {
  * A fake `hass` with `callWS` for §4's commands: `ha_fitness/programs`, `ha_fitness/people` and
  * `ha_fitness/session/command`. Each session command waits until the test answers it.
  */
-function fakeHass(language = "da", people = [thomas, maria], programs = [onsdag, solo]) {
+function fakeHass(language = "da", people = [thomas, maria], programs: Program[] = [onsdag, solo]) {
   const commands: Pending[] = [];
   const callWS = vi.fn((message: Message): Promise<unknown> => {
     if (message.type === "ha_fitness/programs") return Promise.resolve(programs);
@@ -196,6 +204,18 @@ function pressed(flow: FlowElement): string[] {
   return queryAllByRole(root(flow), "button", { pressed: true }).map(text);
 }
 
+/** The facts beside the pictures, term by term: "Runder" → "5". */
+function facts(flow: FlowElement): [string, string][] {
+  const terms = getAllByRole(root(flow), "term").map(text);
+  const definitions = getAllByRole(root(flow), "definition").map(text);
+  return terms.map((term, index) => [term, definitions[index]]);
+}
+
+function equipment(flow: FlowElement, name: string): string[] | null {
+  const list = queryByRole(root(flow), "list", { name });
+  return list ? getAllByRole(list, "listitem").map(text) : null;
+}
+
 function chipColour(element: HTMLElement): string {
   return element.style.getPropertyValue("--person-color").trim().toUpperCase();
 }
@@ -217,25 +237,65 @@ afterEach(() => {
 const details: OverlayMode = { kind: "details", programId: 3 };
 const fromToday: OverlayMode = { kind: "details", programId: 3, trainingDayId: 12 };
 
-test("details shows program, stations with thumbnails, rounds and seconds", async () => {
+test("details shows the program, a grid of numbered pictures and the facts", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, details);
 
   expect(fake.callWS).toHaveBeenCalledWith({ type: "ha_fitness/programs" });
   expect(fake.callWS).toHaveBeenCalledWith({ type: "ha_fitness/people" });
   expect(text(getByRole(root(flow), "heading", { name: "Onsdag" }))).toBe("Onsdag");
-  expect(queryByText(root(flow), "ca. 29 min · 5 runder")).not.toBeNull();
-  expect(queryByText(root(flow), "Arbejde 45 s · Skift 15 s · Pause 60 s")).not.toBeNull();
+  expect(queryByText(root(flow), "3 øvelser · alle skifter én station hvert interval")).not.toBeNull();
 
   const stations = getAllByRole(getByRole(root(flow), "list", { name: "Øvelser" }), "listitem");
-  expect(stations.map(text)).toEqual(["1 Push-up", "2 Squat", "3 Planke"]);
-  // Push-up's thumbnail comes from the media proxy; the others show a neutral placeholder.
+  expect(stations.map(text)).toEqual(["1 · Push-up", "2 · Squat", "3 · Planke"]);
+  // The still thumbnails, not the GIFs: Push-up's comes from the media proxy; the others show a placeholder.
   expect(getByRole(stations[0], "img", { name: "Push-up" }).getAttribute("src")).toMatch(/^blob:image-/);
   expect(getByRole(stations[1], "img", { name: "Squat" }).getAttribute("src")).toBeNull();
   expect(fake.hass.fetchWithAuth).toHaveBeenCalledWith("/api/ha_fitness/media/0001/thumbnail");
 
+  expect(facts(flow)).toEqual([
+    ["Runder", "5"],
+    ["Arbejde / skift", "45 s / 15 s"],
+    ["Pause mellem runder", "60 s"],
+    ["Du skal bruge", "håndvægt kettlebell Yoga mat"],
+    ["Samlet tid", "44:00"],
+  ]);
+  // Known equipment is translated, matched ignoring case; any other value shows as stored.
+  expect(equipment(flow, "Du skal bruge")).toEqual(["håndvægt", "kettlebell", "Yoga mat"]);
+  expect(queryByText(root(flow), "Ret programmet ved at spørge Claude")).not.toBeNull();
+
   expect(button(flow, "Start").disabled).toBe(false);
   expect(button(flow, "Tilbage")).toBeTruthy();
+});
+
+test("from an older add-on: no equipment, the total from the minutes, no round rest at 0", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, { kind: "details", programId: 4 });
+
+  expect(queryByText(root(flow), "1 øvelse · alle skifter én station hvert interval")).not.toBeNull();
+  expect(facts(flow)).toEqual([
+    ["Runder", "3"],
+    ["Arbejde / skift", "40 s / 20 s"],
+    ["Samlet tid", "12:00"],
+  ]);
+  expect(equipment(flow, "Du skal bruge")).toBeNull();
+});
+
+test("an empty equipment list shows no chips", async () => {
+  const bare: Program = { ...onsdag, equipment: [] };
+  const fake = fakeHass("da", [thomas, maria], [bare]);
+  const { flow } = await mount(fake, details);
+
+  expect(facts(flow).map(([term]) => term)).toEqual(["Runder", "Arbejde / skift", "Pause mellem runder", "Samlet tid"]);
+  expect(equipment(flow, "Du skal bruge")).toBeNull();
+});
+
+test("each known equipment value has its Danish name", async () => {
+  const all: Program = { ...onsdag, equipment: ["dumbbell", "Band", "KETTLEBELL", "resistance band"] };
+  const fake = fakeHass("da", [thomas, maria], [all]);
+  const { flow } = await mount(fake, details);
+
+  expect(equipment(flow, "Du skal bruge")).toEqual(["håndvægt", "elastik", "kettlebell", "modstandselastik"]);
 });
 
 test("details fetches once per open, whatever hass hand-overs come", async () => {
@@ -534,8 +594,15 @@ test("a running session past the countdown shows the timer, not details", async 
 test("renders in Danish and English", async () => {
   const english = fakeHass("en");
   const { flow } = await mount(english, details);
-  expect(queryByText(root(flow), "about 29 min · 5 rounds")).not.toBeNull();
-  expect(queryByText(root(flow), "Work 45 s · Switch 15 s · Rest 60 s")).not.toBeNull();
+  expect(queryByText(root(flow), "3 exercises · everyone moves one station each interval")).not.toBeNull();
+  expect(facts(flow)).toEqual([
+    ["Rounds", "5"],
+    ["Work / switch", "45 s / 15 s"],
+    ["Rest between rounds", "60 s"],
+    ["You'll need", "dumbbell kettlebell Yoga mat"],
+    ["Total time", "44:00"],
+  ]);
+  expect(queryByText(root(flow), "Change the program by asking Claude")).not.toBeNull();
   expect(getByRole(root(flow), "group", { name: "Who's training?" })).toBeTruthy();
   expect(button(flow, "Back")).toBeTruthy();
   await tap(flow, button(flow, "Start"));

@@ -736,10 +736,10 @@ export class WorkoutFlow extends LitElement {
   }
 
   protected override render() {
-    // The timer uses the wide page; the other steps one centred column, get ready and done centred
-    // text too.
+    // The timer and details use the wide page; get ready and done one centred column with centred
+    // text.
     const step = this.step();
-    const layout = step === "timer" ? "" : step === "details" ? "column" : "column centred";
+    const layout = step === "timer" || step === "details" ? "" : "column centred";
     return html`<div class="page ${layout}">${this.renderStep()}</div>`;
   }
 

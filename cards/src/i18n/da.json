@@ -73,9 +73,15 @@
     "general": "Noget gik galt. Prøv igen."
   },
   "flow": {
-    "summary": "{minutes} · {rounds}",
-    "seconds": "Arbejde {work} s · Skift {switch} s · Pause {rest} s",
     "stations": "Øvelser",
+    "stations_line": "{stations} · alle skifter én station hvert interval",
+    "rounds": "Runder",
+    "work_switch": "Arbejde / skift",
+    "round_rest": "Pause mellem runder",
+    "seconds": "{seconds} s",
+    "need": "Du skal bruge",
+    "total": "Samlet tid",
+    "ask_claude": "Ret programmet ved at spørge Claude",
     "who": "Hvem træner?",
     "no_people": "Ingen personer – bed Claude oprette dem",
     "start": "Start",
@@ -129,5 +135,11 @@
       "unavailable": "HA Fitness kan ikke nås. Prøv igen senere.",
       "general": "Noget gik galt. Prøv igen."
     }
+  },
+  "equipment": {
+    "dumbbell": "håndvægt",
+    "band": "elastik",
+    "kettlebell": "kettlebell",
+    "resistance_band": "modstandselastik"
   }
 }

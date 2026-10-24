@@ -73,9 +73,15 @@
     "general": "Something went wrong. Try again."
   },
   "flow": {
-    "summary": "{minutes} · {rounds}",
-    "seconds": "Work {work} s · Switch {switch} s · Rest {rest} s",
     "stations": "Exercises",
+    "stations_line": "{stations} · everyone moves one station each interval",
+    "rounds": "Rounds",
+    "work_switch": "Work / switch",
+    "round_rest": "Rest between rounds",
+    "seconds": "{seconds} s",
+    "need": "You'll need",
+    "total": "Total time",
+    "ask_claude": "Change the program by asking Claude",
     "who": "Who's training?",
     "no_people": "No people – ask Claude to add them",
     "start": "Start",
@@ -129,5 +135,11 @@
       "unavailable": "HA Fitness can't be reached. Try again later.",
       "general": "Something went wrong. Try again."
     }
+  },
+  "equipment": {
+    "dumbbell": "dumbbell",
+    "band": "band",
+    "kettlebell": "kettlebell",
+    "resistance_band": "resistance band"
   }
 }
