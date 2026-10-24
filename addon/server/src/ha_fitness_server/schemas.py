@@ -221,6 +221,7 @@ class ProgramOut(BaseModel):
     id: int
     program: ProgramDocument
     station_names: list[str]
+    equipment: list[str]
     total_seconds: int
     created_at: datetime
     updated_at: datetime

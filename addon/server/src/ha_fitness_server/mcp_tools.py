@@ -159,7 +159,9 @@ def build_mcp(holder: ServicesHolder) -> FastMCP:
 
     @mcp.tool(annotations=_READ)
     def get_program(program_id: int) -> ProgramOut:
-        """Return one program: its document (station exercise ids), the station names and its length in seconds.
+        """Return one program: its document (station exercise ids), the station names, the equipment it needs and its length in seconds.
+
+        `equipment` lists each kind of equipment once, in station order; body weight is left out.
 
         The `program` field is a valid document as it stands: change it and pass it to update_program.
         """
