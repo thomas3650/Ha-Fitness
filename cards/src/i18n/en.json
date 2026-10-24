@@ -32,5 +32,40 @@
     "not_open": "This training day is already finished.",
     "unavailable": "HA Fitness can't be reached. Try again later.",
     "general": "Something went wrong. Try again."
+  },
+  "flow": {
+    "summary": "{minutes} · {rounds}",
+    "seconds": "Work {work} s · Switch {switch} s · Rest {rest} s",
+    "stations": "Exercises",
+    "who": "Who's training?",
+    "no_people": "No people – ask Claude to add them",
+    "start": "Start",
+    "back": "Back",
+    "get_ready": "Get ready",
+    "starts_at": "{name} · station {number} · {exercise}",
+    "start_now": "Start now",
+    "cancel": "Cancel",
+    "pause": "Pause",
+    "resume": "Resume",
+    "close": "Close",
+    "phase": {
+      "countdown": "GET READY",
+      "work": "WORK",
+      "switch": "SWITCH",
+      "rest": "REST",
+      "paused": "PAUSED"
+    },
+    "done": {
+      "counted": "Well done!",
+      "ended": "The workout was ended"
+    },
+    "error": {
+      "already_running": "A workout is already running.",
+      "cant_start": "The workout can't start now.",
+      "not_found": "The program or a person no longer exists.",
+      "invalid": "Choose 1–2 people, at most one per exercise.",
+      "unavailable": "HA Fitness can't be reached. Try again later.",
+      "general": "Something went wrong. Try again."
+    }
   }
 }
