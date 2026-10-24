@@ -27,7 +27,8 @@ Set up and run (not gates):
 scripts/setup                         # once per clone, and after a dependency change: uv, npm and the git hooks
 scripts/develop                       # fast loop: dev HA on :8123, add-on server on :8765, cards watch
 scripts/develop stop                  # stop the fast loop (from another shell)
-uv run python scripts/dev_onboard.py  # onboard the dev HA (user dev / dev, Danish) and add the HA Fitness entry
+uv run python scripts/dev_onboard.py  # onboard the dev HA (user dev / dev, Danish), add the HA Fitness entry, write local/dev-ha-token
+scripts/seed                          # dev data: HA persons Thomas and Elin, the people, a Sample program (localhost only)
 scripts/smoke                         # start the dev HA once and fail on integration errors
 scripts/full-loop up|install|check|down   # full loop: the add-on under a real Supervisor on :7123
 ```
