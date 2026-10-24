@@ -69,6 +69,12 @@ The cards are built into the integration: one bundle, released and versioned wit
     `_skipped` and `_missed`, with the training day as data.
   - **The card's subscription** `ha_fitness/today/subscribe`, a websocket command: the add-on's `today` data at once
     and after each change, `null` while the add-on can't be used.
+  - **Sessions** (the [workout spec](superpowers/specs/2026-10-24-the-workout-design.md) §4): the entity
+    `binary_sensor.ha_fitness_session_running`, the services `ha_fitness.start_session` and `ha_fitness.end_session`,
+    the session events, the session relay for the cards and the websocket commands
+    ([below](#sessions-in-the-integration)).
+  - **The media proxy** `GET /api/ha_fitness/media/{exercise_id}/{kind}`, an exercise's GIF or thumbnail behind HA's
+    login (D44; [below](#the-media-proxy)).
   - **The cards bundle:** setting up the entry serves `custom_components/ha_fitness/frontend/` at
     `/ha_fitness_frontend/` and loads `/ha_fitness_frontend/ha-fitness-cards.js?v=<integration version>` in the
     frontend. The version in the URL busts browser caches after an update.
@@ -80,8 +86,7 @@ The cards are built into the integration: one bundle, released and versioned wit
     over. It hides itself when nothing is open, except in edit mode, and shows one line while the add-on can't be
     reached (step 4 spec §6).
 
-Not built yet: the integration's side of sessions and the workout flow (step 5, parts E and F), and stats. Each
-comes with its feature spec.
+Not built yet: the workout flow in the cards (step 5, part F) and stats. Each comes with its feature spec.
 
 ### Routing in the add-on server
 
@@ -129,16 +134,81 @@ comes with its feature spec.
   1, 2, 5 and 10 s, then every 30 s. The first failed connect of an outage logs one warning.
 - **On `hello`** it checks `api_version`. It speaks version 1. On another version it raises a repair issue, and the
   entities stay unavailable.
-- **REST calls** (the skip) send `User-Agent: ha_fitness/<integration version>`, so the add-on's change log names
+- **REST calls** (the skip and the session commands) send `User-Agent: ha_fitness/<integration version>`, so the add-on's change log names
   the integration.
-- **While disconnected, or on an unsupported version,** every entity is unavailable and the card's subscription sends
-  `null`.
+- **While disconnected, or on an unsupported version,** every entity is unavailable and the today subscription sends
+  `null`. The session subscription sends `available: false` with the last view instead
+  ([below](#sessions-in-the-integration)).
 - **The repair issues**, both errors that the user fixes by updating a part. Each is deleted once a supported add-on
   connects.
   - `unsupported_api_version`: the add-on speaks another API version. It says to update the integration.
   - `addon_too_old`: the ws handshake is refused with an HTTP status, `GET /api/v1/health` answers and
     `GET /api/v1/today` gives 404. That is an add-on from before step 4 (D37). It says to update the add-on, and the
     client keeps retrying.
+    - It is also raised for an add-on from before sessions. After each supported `hello`, a background probe gets
+      `GET /api/v1/session`. A 404 while `/health` answers raises the issue. The connection stays up, so `today` still
+      works. Each `hello` deletes the issue first, and the probe raises it again on such an add-on.
+
+### Sessions in the integration
+
+The add-on's side (the session view, the `session` message, the events and the error codes) is workout spec §3.5. The
+integration relays it.
+
+- **The last view.** The coordinator keeps the last `session` message's view. A disconnect keeps it, so a card can go
+  on counting down. "Seen" is reset on each `hello` and each disconnect. The session is available while the add-on is
+  connected and has sent a `session` message since.
+- **`binary_sensor.ha_fitness_session_running`** is on while the view's status is `running` or `paused`, and off for
+  `null` or a finished view. It is unavailable unless the session is available, so it is also unavailable between a
+  connect and the first `session` message. Its attributes `program` (the program's name) and `participants`
+  (`[{id, name}]`) are set only while it is on, and they aren't recorded.
+- **The events** `ha_fitness_session_started`, `_session_completed`, `_session_ended` and `_phase_changed` carry the
+  add-on's event `session` as data. The add-on's `done` fires `ha_fitness_training_day_done`, with the training day.
+- **The services.**
+  - `ha_fitness.start_session` takes `program_id`, `participants` (person ids) and an optional `training_day_id`.
+  - `ha_fitness.end_session` takes no fields.
+  - The schema only checks the types. The add-on checks the rest, so its refusal is the one shown.
+  - A refusal (`not_found`, `conflict` or `invalid` in the add-on's `detail.code`) raises a translated validation
+    error with the key `session_<code>`. Anything else that fails is `unavailable`.
+- **The websocket commands.** None needs an admin, because the wallpanel user isn't one.
+  - `ha_fitness/session/subscribe` sends `{available, session}` at once and after each change. The relay is described
+    below.
+  - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous` or `end`), and for
+    `start` also `program_id`, `participants` and an optional `training_day_id`. It returns the add-on's view. Its
+    error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
+    `invalid` before any relay. A field of the wrong type fails HA's own schema, as `invalid_format`.
+  - `ha_fitness/programs` gives the active programs, in the add-on's order, in the shape of workout spec §4. It is
+    built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up.
+  - `ha_fitness/people` gives `[{id, name}]` from `GET /api/v1/people`.
+  - The lists answer `unavailable` when the add-on can't be used, or sends an item they can't read.
+
+#### The session relay
+
+- **What counts as a change** is the pair (available, the add-on's view without `server_time`). A message from the
+  add-on that changes only `server_time` sends nothing.
+- **Every send** copies the view and sets `server_time` to HA's current time (UTC ISO with milliseconds).
+- **`time_trained` moves on** by HA's now minus the add-on's `server_time`, in whole seconds. That happens only while
+  the status is `running` and the phase isn't the countdown. So a card that subscribes in the middle of a phase gets
+  the right elapsed time. HA and the add-on share the host's clock.
+- **While the add-on can't be used** it sends `available: false` with the last view, not `null`. With no loaded entry
+  it sends `{available: false, session: null}`.
+- It follows the dispatcher, not one coordinator, so it survives an entry reload.
+
+### The media proxy
+
+`GET /api/ha_fitness/media/{exercise_id}/{kind}` relays the add-on's
+`GET /api/v1/exercises/{exercise_id}/{kind}` (D44).
+
+- **Auth:** it is an HA view with `requires_auth`. A request without a valid token gets 401. The cards fetch through
+  `hass.fetchWithAuth` ([why](ha-notes.md#the-frontend)).
+- **Patterns:** `exercise_id` must be a library id (four digits) or a custom id (`custom-<n>`, n from 1), and `kind`
+  must be `gif` or `thumbnail`. The match is whole and ASCII only. Anything else gives 404 before any relay, so the
+  proxy never reaches another add-on path. HA's own request filter answers 400 for some paths before the view runs
+  ([`ha-notes.md`](ha-notes.md#the-integration)).
+- **The add-on** is found through any loaded entry, even while the push channel is down. With no loaded entry the
+  answer is 503.
+- **Answers:** a 404 from the add-on stays 404. A connection error, a timeout (30 s) or any other status gives 503. A
+  file comes back with the add-on's `Content-Type` and `Cache-Control: private, max-age=86400`.
+- The view is registered once per HA run, in the integration's `async_setup`.
 
 ## Data the add-on reads from HA
 
