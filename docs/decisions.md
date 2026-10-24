@@ -413,3 +413,11 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   translated unit from the English file only, so a streak in "days" would show in English on a Danish HA
   ([`ha-notes.md`](ha-notes.md#the-integration)).
 - **Source:** [stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.1 and §7; the unit, Claude, 2026-10-24
+
+### D51: The screens follow the mockups' layout, with HA's light theme and HA's icons
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The built screens follow the mockups' layout and hierarchy, in HA's light theme and with its colour
+  variables. Icons are `<ha-icon icon="mdi:…">`; no icon package is added.
+- **Why:** The kitchen tablet runs HA's light theme, so the dark mockups are a reference for layout only. `ha-icon`
+  needs no extra bundle.
+- **Source:** [UI refresh spec](superpowers/specs/2026-10-24-ui-refresh-design.md) §6; Thomas, 2026-10-24
