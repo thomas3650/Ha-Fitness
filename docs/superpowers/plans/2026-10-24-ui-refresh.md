@@ -266,8 +266,9 @@ task waits for Part A's merge; only the controller's fast-loop check does.
   over's place.
 - The keys (spec §2.1's "5 øvelser · 29 min": no rounds, no "ca."):
   - `today.due`: "I dag" / "Today"; `today.late`: "Forfalden · {weekday}" / "Late · {weekday}" (no summary now);
-  - `today.summary`: "{stations} · {minutes}"; `today.minutes`: "{count} min" in both languages;
-  - `today.rounds_*` go if nothing else uses them after B4 (details uses its own keys from B4).
+  - new `today.short_summary`: "{stations} · {minutes}", with new `today.short_minutes`: "{count} min" in both
+    languages. `today.summary`, `today.minutes`, `today.stations` and `today.rounds_*` stay as they are: the workout
+    card and details use them.
 - The card's size: `getGridOptions` gives `rows: 1 + 2 × rowCount` (the top line and ring take one row), and
   `getCardSize` the same; the numbers are checked in the Chrome check and may change there.
 - The test fake: `fakeConnection` in `today-card.test.ts` sends every subscription but the session one to the today
@@ -366,7 +367,9 @@ task waits for Part A's merge; only the controller's fast-loop check does.
     paused ring now sends `resume`;
   - "one-person and two-person layouts": two progressbars, the new region texts;
   - "the header shows the intervals out of the stations": one person now reads "Station 1/3" (two people keep
-    "Interval 1/3", B7).
+    "Interval 1/3", B7);
+  - the ring's "then" line becomes "seconds left" in "timer text and ring from a view with a clock offset", "local zero
+    shows next phase word" and "the timer in English".
 
 **Interfaces:**
 - The top row: pills "Round 3/5" and "Station 4/8" (`phase.interval` / `totals.stations`; "Station 4" without
