@@ -16,8 +16,10 @@ Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry] [--token-f
   `--token-file PATH` uses another file (a relative path is relative to the current folder). The fast loop's add-on
   server reads this file at each call (`HA_FITNESS_HA_TOKEN_FILE`).
 - Creates the dev dashboard `ha-fitness-dev` (websocket `lovelace/dashboards/create`): two sections views, one holding
-  `custom:ha-fitness-today-card` and one `custom:ha-fitness-workout-card` with `custom:ha-fitness-stats-card` below it
-  (`lovelace/config/save`). Its config is saved only while it has none, so a dashboard edited by hand is kept. This step also runs with `--no-entry`: the card works once an entry exists.
+  `custom:ha-fitness-today-card`, and one with a section for `custom:ha-fitness-workout-card` and a second section,
+  two columns wide (`column_span`), for `custom:ha-fitness-stats-card` (`lovelace/config/save`). Its config is saved
+  only while it has none, so a dashboard edited by hand is kept. This step also runs with `--no-entry`: the cards
+  work once an entry exists.
 - Unless `--no-entry`, creates the HA Fitness config entry through the user step, with the add-on server's URL
   `http://localhost:8765` (the fast loop's). The integration checks that the server answers there, so it must run
   (`scripts/develop` starts it). An entry that exists (`already_configured`) counts as done.
@@ -61,13 +63,13 @@ DASHBOARD_CONFIG = {
             "title": "Workout",
             "type": "sections",
             "sections": [
+                {"type": "grid", "cards": [{"type": "custom:ha-fitness-workout-card"}]},
+                # A column is at most 500 px wide, and the stats card stacks its panels below 600 px.
                 {
                     "type": "grid",
-                    "cards": [
-                        {"type": "custom:ha-fitness-workout-card"},
-                        {"type": "custom:ha-fitness-stats-card"},
-                    ],
-                }
+                    "column_span": 2,
+                    "cards": [{"type": "custom:ha-fitness-stats-card"}],
+                },
             ],
         },
     ]

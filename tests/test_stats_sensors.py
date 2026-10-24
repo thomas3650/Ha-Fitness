@@ -483,3 +483,29 @@ async def test_disabled_sensor_of_a_removed_person(
     assert _all_gone(hass, "bo")
     assert _no_errors(caplog)
     await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_stats_without_people_list_change_nothing(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Stats with no people list, or a person with no id, remove no sensors and add none."""
+    fake_addon.stats = _stats(PERSON_STATS)
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: _all_available(hass, "anna"))
+    anna = _expected_entries(config_entry, (1, "anna"))
+
+    no_list = {key: value for key, value in _stats().items() if key != "people"}
+    no_id = {k: v for k, v in BO_STATS.items() if k != "id"}
+    for stats in (no_list, {**_stats(), "people": None}, _stats(PERSON_STATS, no_id)):
+        await fake_addon.push({"type": "stats", "data": stats})
+        for _ in range(SETTLE_ROUNDS):
+            await asyncio.sleep(0)
+        assert _person_entries(entity_registry, config_entry) == anna
+        assert all(state is not None for state in _states(hass, "anna"))
+    assert _no_errors(caplog)
+    await unload(hass, config_entry)

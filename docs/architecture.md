@@ -104,17 +104,16 @@ The cards are built into the integration: one bundle, released and versioned wit
     people, get ready, the timer, paused and done. It follows the session through `ha_fitness/session/subscribe`,
     starts and steers it through `ha_fitness/session/command`, shows the media through the proxy (D44), and plays the
     beeps with Web Audio (step 5 spec §5).
-  - **The stats card** (`custom:ha-fitness-stats-card`, stats spec §5.2) goes on the workout tab, below the workout
-    card. It follows `ha_fitness/stats/subscribe`. It has one panel per person, side by side, in the people's order and
-    colours (purple `#B18CFF`, teal `#3DD6C6`, then the primary colour). Below about 600 px of card width the panels
-    stack (a container query). A panel has the name with a colour dot, the streak ("7 i træk"), and a table of
-    Gennemført, Missede and Tid for "Denne måned" and "I alt". Missede is missed plus skipped. "· 2 ekstra" and
-    "· 1 sprunget over" show only when the count is above 0. Tid is "4 t 35 min", or minutes only under an hour.
-    - Which line shows, the first that applies: no stats yet and unreachable, "HA Fitness kan ikke nås"; no people,
-      "Ingen personer"; `counting_from` null, "Statistikken starter ved første træning"; else the panels.
-    - While the add-on is unreachable, the card keeps the last stats, with "HA Fitness kan ikke nås" as a small note
-      above whichever line shows.
+  - **The stats card** (`custom:ha-fitness-stats-card`) goes on the workout tab, below the workout card. It follows
+    `ha_fitness/stats/subscribe`. It has one panel per person, in the people's order and colours. The panels sit side
+    by side, and stack below about 600 px of card width (a container query). A panel has the name, the streak and a
+    table of this month and all time.
+    - One line shows instead of the panels when there is nothing to show: unreachable before any stats, no people,
+      or no counted session yet.
+    - While the add-on is unreachable, the card keeps the last stats, with a small unreachable note above.
     - It shows nothing before the first message.
+    - The exact texts and their order are in the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.2
+      and the language files in [`cards/src/i18n/`](../cards/src/i18n/).
 
 ### Routing in the add-on server
 
@@ -258,7 +257,7 @@ makes sensors of it.
   - State class `total`, not `total_increasing`, because the dev routes can lower a count.
   - The attribute names are keys; the UI's names for them come from the translation files. The attributes aren't
     recorded.
-  - A sensor is unavailable unless the stats are available and still hold its person.
+  - A sensor is unavailable unless the stats are available.
 - **Added and removed with the people.** On each update while the stats are available, the entry's person sensors in
   the registry are compared with the people in the stats. A person added in the add-on gets four sensors. A removed
   person's sensors are removed from the registry and the state machine. The removals come before any add, so a person

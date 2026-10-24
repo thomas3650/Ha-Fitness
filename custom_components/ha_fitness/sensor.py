@@ -100,6 +100,18 @@ class NextTrainingDaySensor(FitnessEntity, SensorEntity):
         return {"programs": self._next().get("programs", [])}
 
 
+def _people(stats: dict[str, Any] | None) -> list[dict[str, Any]] | None:
+    """Return the stats' people that have an id, or None when the stats hold no people list."""
+    people = (stats or {}).get("people")
+    if not isinstance(people, list):
+        return None
+    return [
+        person
+        for person in people
+        if isinstance(person, dict) and person.get("id") is not None
+    ]
+
+
 class PeopleSensors:
     """Keep four stats sensors per person in step with the add-on's people.
 
@@ -136,10 +148,12 @@ class PeopleSensors:
                 self.hass, self._async_sync(), f"{DOMAIN} stats sensors"
             )
 
-    def _wanted(self) -> dict[str, PersonStatsSensor | None]:
-        """Return the unique ids the current people need, with a sensor for those not made yet."""
+    def _wanted(
+        self, people: list[dict[str, Any]]
+    ) -> dict[str, PersonStatsSensor | None]:
+        """Return the unique ids the people need, with a sensor for those not made yet."""
         wanted: dict[str, PersonStatsSensor | None] = {}
-        for person in (self.coordinator.stats or {}).get("people", []):
+        for person in people:
             entity_id = person.get("person_entity_id")
             if not isinstance(entity_id, str) or not valid_entity_id(entity_id):
                 continue
@@ -161,13 +175,15 @@ class PeopleSensors:
         async with self.lock:
             if not self.coordinator.stats_available:
                 return
-            people = [
-                (person.get("id"), person.get("person_entity_id"))
-                for person in (self.coordinator.stats or {}).get("people", [])
-            ]
-            if people == self.synced:
+            # No people list is no news about the people, not "no people".
+            if (people := _people(self.coordinator.stats)) is None:
                 return
-            wanted = self._wanted()
+            signature = [
+                (person["id"], person.get("person_entity_id")) for person in people
+            ]
+            if signature == self.synced:
+                return
+            wanted = self._wanted(people)
             registry = er.async_get(self.hass)
             stale = {
                 registry_entry.unique_id: registry_entry.entity_id
@@ -195,7 +211,7 @@ class PeopleSensors:
             if new:
                 self.entities.update(new)
                 await self.platform.async_add_entities(list(new.values()))
-            self.synced = people
+            self.synced = signature
 
 
 class PersonStatsSensor(FitnessEntity, SensorEntity):
@@ -225,8 +241,8 @@ class PersonStatsSensor(FitnessEntity, SensorEntity):
         self._attr_translation_placeholders = {"person": name}
 
     def _person(self) -> dict[str, Any] | None:
-        for person in (self.coordinator.stats or {}).get("people", []):
-            if person.get("id") == self.person_id:
+        for person in _people(self.coordinator.stats) or []:
+            if person["id"] == self.person_id:
                 found: dict[str, Any] = person
                 return found
         return None

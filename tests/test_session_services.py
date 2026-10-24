@@ -277,7 +277,7 @@ async def test_non_admin_can_use_commands(
     fake_addon: FakeAddon,
     config_entry: MockConfigEntry,
 ) -> None:
-    """A plain user, as the wallpanel's is, can steer the session and read the lists."""
+    """A plain user, as the wallpanel's is, can steer the session, read the lists and subscribe."""
     await _connected(hass, config_entry)
     user = await hass.auth.async_create_user("Tablet", group_ids=[GROUP_ID_USER])
     assert not user.is_admin
@@ -294,6 +294,15 @@ async def test_non_admin_can_use_commands(
     ):
         await client.send_json_auto_id(message)
         assert (await client.receive_json())["success"]
+
+    # The subscriptions answer with their result, then their first event.
+    for subscribe in ("ha_fitness/session/subscribe", "ha_fitness/stats/subscribe"):
+        await client.send_json_auto_id({"type": subscribe})
+        result = await client.receive_json()
+        assert result["success"]
+        first = await client.receive_json()
+        assert first["id"] == result["id"]
+        assert "available" in first["event"]
     await unload(hass, config_entry)
 
 
