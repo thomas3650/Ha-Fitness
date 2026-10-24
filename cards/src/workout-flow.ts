@@ -1,6 +1,6 @@
 import { LitElement, type PropertyValues, type TemplateResult, css, html, nothing } from "lit";
 
-import { unlockAudio } from "./audio";
+import { type ToneKind, audioLocked, onAudioStateChange, scheduleTone, unlockAudio } from "./audio";
 import { type Vars, localize } from "./i18n";
 import { type ImageHass, type ImageKind, imageUrl } from "./images";
 import { type LanguageHass, cardLanguage } from "./language";
@@ -61,6 +61,10 @@ const ARM_MS = 500;
 const CONFIRM_MS = 10_000;
 /** The done step closes by itself after this long. */
 const DONE_MS = 60_000;
+/** The beeps before a phase ends, in seconds left (spec §5.4). */
+const BEEP_SECONDS = 5;
+/** No beep falls this soon after a phase starts, where it would clash with the change tone. */
+const QUIET_MS = 300;
 /** The ring's colours: orange for work, blue for the rest (design §3.4). Never used for text. */
 const RING_COLORS: Record<PhaseKind, string> = {
   countdown: "#4DA8FF",
@@ -168,6 +172,11 @@ export class WorkoutFlow extends LitElement {
   private doneTimer?: ReturnType<typeof setTimeout>;
   /** Set once this flow has asked to close; it never asks twice. */
   private closed = false;
+  /** The tones scheduled and not yet due: when each plays (the add-on's epoch ms), and its cancel. */
+  private tones: { at: number; cancel: () => void }[] = [];
+  /** What the pending tones were planned from; a change plans them again. */
+  private plannedFrom?: { view?: SessionView; offset: number; reachable: boolean; locked: boolean; counting: boolean };
+  private stopAudioWatch?: () => void;
   private readonly onActivity = (): void => this.armIdle();
 
   constructor() {
@@ -421,12 +430,17 @@ export class WorkoutFlow extends LitElement {
     super.connectedCallback();
     this.addEventListener("pointerdown", this.onActivity);
     this.addEventListener("click", this.onActivity);
+    this.stopAudioWatch = onAudioStateChange(() => this.requestUpdate());
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.removeEventListener("pointerdown", this.onActivity);
     this.removeEventListener("click", this.onActivity);
+    this.stopAudioWatch?.();
+    this.stopAudioWatch = undefined;
+    this.silence();
+    this.plannedFrom = undefined;
     this.stopIdle();
     this.stopTick();
     this.endAsk(false);
@@ -456,6 +470,7 @@ export class WorkoutFlow extends LitElement {
     const counting = step === "ready" || step === "timer";
     if (counting && this.newest?.status === "running") this.startTick();
     else this.stopTick();
+    this.plan(counting);
     if (step !== "timer") this.endAsk(false);
     if (this.hass && step === "timer") this.loadStationImages(this.hass, this.newest!);
     this.armDone(step);
@@ -521,6 +536,11 @@ export class WorkoutFlow extends LitElement {
     if (newest && newest.id === view.id && newest.revision >= view.revision) return;
     // An alert belongs to the session it came from.
     if (newest?.id !== view.id) this.error = undefined;
+    // The chime plays when this flow sees its session complete, not for a done step shown later.
+    if (view.status === "completed" && newest?.id === view.id && isActive(newest) && !audioLocked()) {
+      const now = this.now();
+      scheduleTone("chime", now, now);
+    }
     this.newest = view;
     if (isActive(view)) this.leftDetails = true;
   }
@@ -694,6 +714,8 @@ export class WorkoutFlow extends LitElement {
 
   /** Send a command to the running session; its result is a view like any push. */
   private async command(command: Command): Promise<void> {
+    // Fortsæt is a tap, like Start: unlock before anything awaits.
+    if (command === "resume") unlockAudio();
     const hass = this.hass;
     if (!hass) return;
     this.error = undefined;
@@ -753,6 +775,78 @@ export class WorkoutFlow extends LitElement {
         ? Math.max(0, (this.now() - Date.parse(view.server_time)) / 1000)
         : 0;
     return view.time_trained + since;
+  }
+
+  /**
+   * Plan the tones again when what they depend on changed: the view applied, the clock offset,
+   * the reach, the audio lock, or whether a running step shows. The redraws in between leave them.
+   */
+  private plan(counting: boolean): void {
+    const from = {
+      view: this.newest,
+      offset: this.offset,
+      reachable: this.reachable(),
+      locked: audioLocked(),
+      counting,
+    };
+    const last = this.plannedFrom;
+    if (
+      last &&
+      last.view === from.view &&
+      last.offset === from.offset &&
+      last.reachable === from.reachable &&
+      last.locked === from.locked &&
+      last.counting === from.counting
+    ) {
+      return;
+    }
+    this.plannedFrom = from;
+    this.silence();
+    const view = from.view;
+    if (!counting || from.locked || view?.status !== "running") return;
+    const now = this.now();
+    for (const [kind, at] of this.tonesOf(view)) {
+      if (at > now) this.tones.push({ at, cancel: scheduleTone(kind, at, now) });
+    }
+  }
+
+  /**
+   * The current phase's tones (spec §5.4): a beep at 5 to 1 s left, none in the phase's first
+   * 0.3 s, and the next phase's change tone at local zero. While unreachable the ring holds at
+   * zero, so no change tone.
+   */
+  private tonesOf(view: SessionView): [ToneKind, number][] {
+    const phase = view.phase;
+    if (!phase?.ends_at) return [];
+    const end = Date.parse(phase.ends_at);
+    const start = end - phase.duration * 1000;
+    const tones: [ToneKind, number][] = [];
+    for (let left = BEEP_SECONDS; left >= 1; left--) {
+      const at = end - left * 1000;
+      if (at >= start + QUIET_MS) tones.push(["beep", at]);
+    }
+    const next = view.next_phase;
+    if (next && this.reachable()) tones.push([next.kind === "work" ? "work" : "rest", end]);
+    return tones;
+  }
+
+  /** Cancel the tones still ahead; one already playing finishes. */
+  private silence(): void {
+    const now = this.now();
+    for (const tone of this.tones) if (tone.at > now) tone.cancel();
+    this.tones = [];
+  }
+
+  /** "Tryk for lyd": unlock in the tap, then plan the tones with sound. */
+  private tapForSound(): void {
+    unlockAudio();
+    this.requestUpdate();
+  }
+
+  /** The "Tryk for lyd" button, while no sound can play. */
+  private renderSound() {
+    if (!audioLocked()) return nothing;
+    return html`<button class="sound" @click=${() => this.tapForSound()}>${this.t("flow.tap_for_sound")}</button>`;
   }
 
   /** Slut's first tap asks; Ja counts only after 0.5 s, and the question goes after 10 s. */
@@ -893,7 +987,7 @@ export class WorkoutFlow extends LitElement {
     const paused = view.status === "paused";
     return html`
       <h2>${view.program_name}</h2>
-      ${this.renderReach()}
+      ${this.renderReach()} ${this.renderSound()}
       <div class="count">${this.renderReadyCount(view)}</div>
       <ul class="starts" aria-label=${this.t("flow.get_ready")}>
         ${view.participants.map((person, index) => {
@@ -949,7 +1043,8 @@ export class WorkoutFlow extends LitElement {
     });
     const stations = view.stations ?? [];
     return html`
-      ${this.renderHeader(view, phase.round, phase.interval)} ${this.renderReach()} ${this.renderError()}
+      ${this.renderHeader(view, phase.round, phase.interval)} ${this.renderReach()} ${this.renderSound()}
+      ${this.renderError()}
       ${stations.length === 1
         ? this.renderSolo(view, theRing)
         : html`<div class="duo">${this.renderPanel(view, 0)} ${theRing} ${this.renderPanel(view, 1)}</div>`}
