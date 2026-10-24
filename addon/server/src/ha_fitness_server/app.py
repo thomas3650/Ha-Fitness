@@ -14,6 +14,7 @@ import httpx
 
 from . import __version__
 from .api import add_error_handlers, router as api_router
+from .api.dev import router as dev_router
 from .clock import Clock, SystemClock
 from .db import open_database
 from .ha import HaClient
@@ -126,6 +127,8 @@ def create_app(
         return {"status": "ok", "version": __version__, "api_version": API_VERSION}
 
     app.include_router(api_router)
+    if settings.dev:
+        app.include_router(dev_router)
     add_error_handlers(app)
 
     @app.api_route("/api/{path:path}", methods=_ALL_METHODS, include_in_schema=False)

@@ -26,6 +26,8 @@ from .schemas import (
     ProgramOut,
     ProgramSummary,
     SearchLimit,
+    TodayView,
+    TrainingDayOut,
 )
 from .services import ServicesHolder
 
@@ -228,5 +230,25 @@ old values.
         """
         with _tool_errors():
             return changes.recent(holder.get().engine, limit)
+
+    @mcp.tool(annotations=_READ)
+    def get_today() -> TodayView:
+        """Return today's open training days, due (today) or late (an earlier date), and the next date a program trains.
+
+        Each open day has its id, program, date, state, station count, rounds and length in whole minutes. `next` is
+        null when no program is active.
+        """
+        with _tool_errors():
+            return holder.get().training_days.today_view()
+
+    @mcp.tool(annotations=_DESTRUCTIVE)
+    def skip_training_day(ctx: Context, training_day_id: int) -> TrainingDayOut:
+        """Skip an open training day on purpose: it closes as skipped and never asks again.
+
+        Take the id from get_today; only an open day can be skipped. Ask the user first: show the day and
+        get a yes before calling.
+        """
+        with _tool_errors():
+            return holder.get().training_days.skip(training_day_id, _client(ctx))
 
     return mcp

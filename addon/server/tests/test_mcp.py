@@ -12,8 +12,9 @@ from fastmcp.exceptions import ToolError
 from mcp.types import LATEST_PROTOCOL_VERSION, Implementation
 import pytest
 
-from tests.conftest import MakeApp, running
+from tests.conftest import FrozenClock, MakeApp, running
 from tests.test_people import ELIN, HA_PERSONS, HA_URL, THOMAS, TOKEN, FakeHa
+from tests.test_scheduler import ZONE, local
 
 type McpClient = fastmcp.Client[FastMCPTransport]
 
@@ -24,8 +25,14 @@ READ_TOOLS = {
     "get_program",
     "list_people",
     "get_change_log",
+    "get_today",
 }
-DESTRUCTIVE_TOOLS = {"update_program", "delete_program", "set_people"}
+DESTRUCTIVE_TOOLS = {
+    "update_program",
+    "delete_program",
+    "set_people",
+    "skip_training_day",
+}
 ADDING_TOOLS = {"create_program", "add_custom_exercise", "set_program_active"}
 # Five library exercises, by id.
 FIVE = ["0001", "0002", "0003", "0006", "0020"]
@@ -62,15 +69,15 @@ def _program(name: str = "Onsdag", **fields: Any) -> dict[str, Any]:
 
 
 async def test_tool_names_are_exactly_the_spec_list(make_app: MakeApp) -> None:
-    """The server has the twelve tools of spec §8 and no others."""
+    """The server has the twelve tools of spec §8, step 4's two, and no others."""
     async with mcp_client(make_app()) as session:
         names = {tool.name for tool in await session.list_tools()}
     assert names == READ_TOOLS | DESTRUCTIVE_TOOLS | ADDING_TOOLS
-    assert len(names) == 12
+    assert len(names) == 14
 
 
 async def test_annotations(make_app: MakeApp) -> None:
-    """Reads are read-only; replacing and deleting are destructive; adding and switching are neither."""
+    """Reads are read-only; replacing, deleting and skipping are destructive; adding and switching are neither."""
     async with mcp_client(make_app()) as session:
         tools = {tool.name: tool for tool in await session.list_tools()}
     for name in READ_TOOLS:
@@ -82,6 +89,7 @@ async def test_annotations(make_app: MakeApp) -> None:
         assert annotations is not None
         assert annotations.read_only_hint is False, name
         assert annotations.destructive_hint is True, name
+    assert "Ask the user first" in (tools["skip_training_day"].description or "")
     for name in ADDING_TOOLS:
         annotations = tools[name].annotations
         assert annotations is not None
@@ -393,3 +401,42 @@ async def test_unknown_api_path_is_fastapis_json_404(
     assert response.json() == {"detail": "Not Found"}
     assert nested.status_code == 404
     assert nested.json() == {"detail": "Not Found"}
+
+
+async def test_get_today_tool_equals_rest(make_app: MakeApp) -> None:
+    """`get_today` answers what `GET /today` does: here one due day and the next date."""
+    clock = FrozenClock(local(2026, 10, 28, 9))  # a Wednesday
+    app = make_app(settings_overrides={"timezone": ZONE}, clock=clock)
+    async with (
+        running(app) as http_client,
+        fastmcp.Client(
+            app.state.mcp, client_info=Implementation(name="claude-code", version="1")
+        ) as session,
+    ):
+        await call(session, "create_program", program=_program(weekdays=["wed", "sat"]))
+        today = await call(session, "get_today")
+        rest = (await http_client.get("/api/v1/today")).json()
+    assert today == rest
+    assert [day["program_name"] for day in today["open"]] == ["Onsdag"]
+    assert today["next"] == {"date": "2026-10-31", "programs": ["Onsdag"]}
+
+
+async def test_skip_tool_logs_mcp_client(make_app: MakeApp) -> None:
+    """`skip_training_day` closes the day and logs `mcp:claude-code`; a second skip is a tool error."""
+    clock = FrozenClock(local(2026, 10, 28, 9))
+    app = make_app(settings_overrides={"timezone": ZONE}, clock=clock)
+    async with mcp_client(app) as session:
+        await call(session, "create_program", program=_program())
+        [day] = (await call(session, "get_today"))["open"]
+        skipped = await call(session, "skip_training_day", training_day_id=day["id"])
+        assert (skipped["id"], skipped["status"]) == (day["id"], "skipped")
+        assert (await call(session, "get_today"))["open"] == []
+        [newest] = (await call(session, "get_change_log", limit=1))["result"]
+        with pytest.raises(ToolError):
+            await call(session, "skip_training_day", training_day_id=day["id"])
+        with pytest.raises(ToolError):
+            await call(session, "skip_training_day", training_day_id=999)
+    assert newest["client"] == "mcp:claude-code"
+    assert newest["action"] == "training_day.skipped"
+    assert newest["target"] == f"training_day:{day['id']}"
+    assert newest["summary"] == "Skipped Onsdag (2026-10-28)"

@@ -9,8 +9,10 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Engine, delete, exists, select, update
 from sqlalchemy.orm import Session
 
+from . import changes
 from .clock import Clock
 from .db import session
+from .errors import Conflict, NotFound
 from .models import (
     Program as ProgramRow,
     SchedulerState,
@@ -68,7 +70,8 @@ def _out(day: TrainingDay) -> TrainingDayOut:
 class TrainingDays:
     """Makes and closes training days, and builds what `/today` returns.
 
-    One re-entrant lock serialises every public method and every program write, which calls in here too.
+    One re-entrant lock serialises every public method and every program write, which calls in here too. The writes
+    here (a skip and the dev routes) reconcile first, so they act on the date now, and publish `today` after.
     """
 
     def __init__(
@@ -231,6 +234,70 @@ class TrainingDays:
                 )
         days.sort(key=lambda day: (day.date, day.program_name.casefold(), day.id))
         return [_out(day) for day in days]
+
+    def skip(self, day_id: int, client: str) -> TrainingDayOut:
+        """Close an open day as skipped and log it (spec §3.4); raise `NotFound`, or `Conflict` for a closed day."""
+        with self.lock:
+            self.reconcile_now()
+            with session(self._engine) as db_session:
+                day = db_session.get(TrainingDay, day_id)
+                if day is None:
+                    raise NotFound(f"Training day {day_id} not found")
+                if day.status != TrainingDayStatus.OPEN:
+                    raise Conflict(
+                        f"Training day {day_id} is {day.status.value}, not open"
+                    )
+                day.status = TrainingDayStatus.SKIPPED
+                day.closed_at = self._clock.now()
+                changes.record(
+                    db_session,
+                    client=client,
+                    action="training_day.skipped",
+                    target=f"training_day:{day_id}",
+                    summary=f"Skipped {day.program_name} ({day.date.isoformat()})",
+                )
+                db_session.flush()
+                event = _event("skipped", day)
+                out = _out(day)
+            self._publish(event)
+            self._publish_today()
+            return out
+
+    def upsert_open(self, program_id: int, day: date) -> TrainingDayOut:
+        """Dev only: make an open day for a program on any date, or reopen the one there is; raise `NotFound`."""
+        with self.lock:
+            self.reconcile_now()
+            with session(self._engine) as db_session:
+                program = db_session.get(ProgramRow, program_id)
+                if program is None:
+                    raise NotFound(f"Program {program_id} not found")
+                row = db_session.scalar(
+                    select(TrainingDay).where(
+                        TrainingDay.program_id == program_id, TrainingDay.date == day
+                    )
+                )
+                if row is None:
+                    row = TrainingDay(
+                        program_id=program_id,
+                        program_name=program.name,
+                        date=day,
+                        created_at=self._clock.now(),
+                    )
+                    db_session.add(row)
+                row.status = TrainingDayStatus.OPEN
+                row.closed_at = None
+                db_session.flush()
+                out = _out(row)
+            self._publish_today()
+            return out
+
+    def delete_date(self, day: date) -> None:
+        """Dev only: remove every training day of `day`, open or closed."""
+        with self.lock:
+            self.reconcile_now()
+            with session(self._engine) as db_session:
+                db_session.execute(delete(TrainingDay).where(TrainingDay.date == day))
+            self._publish_today()
 
     def on_program_written(
         self, db_session: Session, before: ProgramRow | None, after: ProgramRow | None

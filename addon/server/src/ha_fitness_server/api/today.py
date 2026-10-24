@@ -8,11 +8,12 @@ from fastapi import APIRouter, Depends, Query
 from ha_fitness_server.schemas import TodayView, TrainingDayOut
 from ha_fitness_server.services import Services
 
-from .deps import get_services
+from .deps import client_from_request, get_services
 
 router = APIRouter(tags=["training days"])
 
 ServicesDep = Annotated[Services, Depends(get_services)]
+ClientDep = Annotated[str, Depends(client_from_request)]
 
 
 @router.get("/today")
@@ -29,3 +30,11 @@ def list_training_days(
 ) -> list[TrainingDayOut]:
     """Return the training days from `from` to `to`, both included, by date."""
     return services.training_days.in_range(start, end)
+
+
+@router.post("/training-days/{training_day_id}/skip")
+def skip_training_day(
+    services: ServicesDep, client: ClientDep, training_day_id: int
+) -> TrainingDayOut:
+    """Close an open training day as skipped; 404 for an unknown id, 409 for a closed day."""
+    return services.training_days.skip(training_day_id, client)
