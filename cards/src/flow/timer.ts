@@ -542,13 +542,17 @@ export const timerStyles = css`
   /* A portrait tablet (about 800 px wide): nothing scrolls sideways. */
   @container (max-width: 1000px) {
     /* The top row stays on one line: the pills shrink and wrap their text, the elapsed time and
-       Slut keep their room on the right. */
+       Slut keep their room on the right. A pill wraps between its label and its numbers, never
+       inside the numbers. */
     .timer-top {
       flex-wrap: nowrap;
     }
     .timer-top > .timer-pill {
       white-space: normal;
       min-width: 0;
+    }
+    .timer-pill strong {
+      white-space: nowrap;
     }
     .timer-top > .elapsed {
       flex: none;
