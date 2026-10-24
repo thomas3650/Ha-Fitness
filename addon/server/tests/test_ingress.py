@@ -98,8 +98,7 @@ async def test_page_lists_programs_people_and_media_state(make_app: MakeApp) -> 
     """The page shows the library, the people and each program's state, weekdays and minutes."""
     texts = _texts("da")
     app = make_app(
-        ha_url=HA_URL,
-        ha_token="test-token",
+        {"ha_url": HA_URL, "ha_token": "test-token"},
         ha_transport=httpx.MockTransport(_ha),
         media_transport=httpx.MockTransport(_failing_media),
     )
@@ -155,8 +154,7 @@ async def test_page_never_asks_ha(make_app: MakeApp) -> None:
         return _ha(request)
 
     app = make_app(
-        ha_url=HA_URL,
-        ha_token="test-token",
+        {"ha_url": HA_URL, "ha_token": "test-token"},
         ha_transport=httpx.MockTransport(counting_ha),
     )
     async with running(app) as client:

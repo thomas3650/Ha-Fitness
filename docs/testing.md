@@ -16,22 +16,33 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    the cards, then starts:
    - the cards watch build (log `local/cards-watch.log`);
    - the add-on server on `http://localhost:8765`, data in `local/addon-data/` (log `local/addon-server.log`). It
-     reaches the dev HA with the token in `local/dev-ha-token` (D32), which it reads at each call;
+     reaches the dev HA with the token in `local/dev-ha-token` (D32), which it reads at each call. It runs with
+     `HA_FITNESS_DEV=1` (the dev routes, below) and `HA_FITNESS_TIMEZONE=Europe/Copenhagen` (D36);
    - dev Home Assistant on `http://localhost:8123`, config in `config/` (git-ignored), with
      `config/custom_components/ha_fitness` linked to the repo.
 3. Wait for HA: `curl -sf -o /dev/null --retry 60 --retry-delay 2 --retry-connrefused --retry-all-errors
    http://localhost:8123/manifest.json`.
 4. On a fresh `config/`: `uv run python scripts/dev_onboard.py`. It onboards HA with the user `dev` / `dev`, sets that
-   user's language to Danish and adds the HA Fitness entry. It also writes a long-lived token for the dev user to
-   `local/dev-ha-token` (mode 600), or keeps the one there when HA still accepts it. It is safe to run again, and the
-   server needs no restart after it.
+   user's language to Danish, sets the dev HA's timezone to Europe/Copenhagen (the server's zone) and adds the HA
+   Fitness entry. It also writes a long-lived token for the dev user to `local/dev-ha-token` (mode 600), or keeps the
+   one there when HA still accepts it. It is safe to run again, and the server needs no restart after it.
 5. Check: `curl -s http://localhost:8765/api/v1/health` gives the health JSON,
    `http://localhost:8123/ha_fitness_frontend/ha-fitness-cards.js` answers 200, and
    `curl -s http://localhost:8765/api/v1/people` has a list in `ha_persons`, not `null`.
 6. For dev data: `scripts/seed`. It creates the HA persons "Thomas" and "Elin", sets them as the people, and creates
    the program "Sample" (Wednesday, 5 body-weight stations). A second run changes nothing. It refuses any host but
    `localhost` or `127.0.0.1`, so it never touches a real HA or add-on. Use the wrapper: run directly,
-   `scripts/seed.py` fails on its import.
+   `scripts/seed.py` fails on its import. Two flags make a training day on purpose, through the dev routes; "today" is
+   the date in Europe/Copenhagen. Both refuse, before any change, when the server has no dev routes.
+   - `scripts/seed --today` makes Sample due today: it adds today's weekday to Sample, switches Sample on when it is
+     off, and opens (or reopens, after a skip) its day for today.
+   - `scripts/seed --late` makes Sample late, with yesterday's day open. It refuses, before it changes anything, when
+     another active program trains today: that program's day would close the late one.
+
+   The dev routes exist only with `HA_FITNESS_DEV=1`. Without it they answer 404 and aren't in OpenAPI, so the add-on
+   never has them. `POST /api/v1/dev/training-days` with `{"program_id", "date"}` opens a day on today or an earlier
+   date, or reopens the one there is. `DELETE /api/v1/dev/training-days?date=` removes every training day of that date,
+   open or closed.
 7. `scripts/develop stop` stops all three.
 
 `scripts/smoke` starts the dev HA once in the foreground (150 s, `SMOKE_SECONDS` to change), and fails if HA doesn't
@@ -92,7 +103,8 @@ For every UI change, in the fast loop (and in the full loop before a release):
 ## MCP check from Claude Code
 
 From step 3 on the add-on serves MCP at `/mcp`; the tools are spec §8
-([step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md)). The dev entry is named
+([step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md)), plus `get_today` and `skip_training_day`
+([step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.5). The dev entry is named
 `ha-fitness-dev`. The real add-on's entry is another one, kept outside this repo ([`addon/DOCS.md`](../addon/DOCS.md)).
 
 1. Add the endpoint: `claude mcp add --transport http ha-fitness-dev http://localhost:8765/mcp` (local scope: it goes

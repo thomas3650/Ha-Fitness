@@ -10,6 +10,9 @@ arch:
 image: ghcr.io/thomas3650/ha-fitness-addon
 init: false
 homeassistant_api: true
+# Tells HA where the API is, so it offers to set up the integration (step 4 spec §3.7).
+discovery:
+  - ha_fitness
 ports:
   8765/tcp: 8765
 ports_description:

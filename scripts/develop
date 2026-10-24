@@ -73,6 +73,9 @@ trap 'exit 143' TERM
 echo $! > "$watch_pidfile"
 (
   export HA_FITNESS_PORT=8765 HA_FITNESS_DATA_DIR="$root/local/addon-data"
+  # The dev routes (POST/DELETE /api/v1/dev/training-days, for scripts/seed --today and --late), and the same
+  # zone as the dev HA (dev_onboard.py sets it there).
+  export HA_FITNESS_DEV=1 HA_FITNESS_TIMEZONE=Europe/Copenhagen
   # The server reads the token file at each call, so a token that dev_onboard.py writes later needs no restart.
   export HA_FITNESS_HA_URL=http://localhost:8123 HA_FITNESS_HA_TOKEN_FILE="$root/local/dev-ha-token"
   exec addon/server/.venv/bin/python -m ha_fitness_server

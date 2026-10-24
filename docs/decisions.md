@@ -258,3 +258,35 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Decision:** The `people` table uses `AUTOINCREMENT`, so a removed person's id is never given out again.
 - **Why:** Step 5's history is keyed on the person id. A reused id would hand a removed person's history to someone new.
 - **Source:** the step 3 build (Task 5 review); Claude, 2026-10-24
+
+### D34: The scheduler's rules
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The scheduler handles each local date from the day after the last handled one up to and including
+  today, and today again on every run. The first run starts at today and makes up no past days. Program writes
+  reconcile first, then act: switching off or deleting removes the program's open days (closed days stay), a rename
+  renames its open days, and a weekday change leaves existing days alone. So a pause on a day the program doesn't
+  train removes its late day, which then never counts as missed. `training_days` uses `AUTOINCREMENT`, so an id
+  removed by a switch-off, a delete or the dev DELETE is never given out again; the card and the service skip by id.
+- **Why:** A program made or switched on in the morning reminds the same day. Counting starts when the app is live.
+  Reconciling first means a write right after midnight never changes a day that should already be closed.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.3; reconcile-first: the step 4
+  build (Task A2 review); Claude, 2026-10-24 (Thomas's delegation for the night)
+
+### D35: The push channel's protocol
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** `GET /api/v1/ws` sends `hello` (with `api_version`), then `today`. After that it sends a new `today`
+  whenever `/today` changes, and one `event` (`due`, `skipped`, `missed`) per state change of a training day. The
+  client sends nothing, unknown message types are ignored on both sides, and events are fire-and-forget.
+- **Why:** The `today` state alone is enough to draw the card after any reconnect, and ignoring unknown types keeps
+  the protocol forward compatible. This makes D6 concrete.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.6; Claude, 2026-10-24
+  (Thomas's delegation for the night)
+
+### D36: The add-on's timezone comes from the environment
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The add-on's local time comes from `HA_FITNESS_TIMEZONE`, else `TZ`, else UTC with a log line. A
+  change takes effect at the add-on's next start. The `tzdata` package ships the zone data.
+- **Why:** The Supervisor passes HA's timezone as `TZ`, so the add-on needs no call to HA for midnight. The fast loop
+  sets `HA_FITNESS_TIMEZONE`, so a `TZ` in the Mac's shell doesn't matter.
+- **Source:** [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.2; Claude, 2026-10-24
+  (Thomas's delegation for the night)

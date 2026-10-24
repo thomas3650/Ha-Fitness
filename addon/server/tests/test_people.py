@@ -59,9 +59,7 @@ async def ha_app(
     settings.setdefault("ha_url", HA_URL)
     if "ha_token_file" not in settings:
         settings.setdefault("ha_token", TOKEN)
-    async with running(
-        make_app(ha_transport=ha.transport(), **settings)
-    ) as http_client:
+    async with running(make_app(settings, ha_transport=ha.transport())) as http_client:
         yield http_client
 
 
@@ -194,7 +192,7 @@ async def test_ha_error_status_is_503(make_app: MakeApp) -> None:
         return httpx.Response(401)
 
     app = make_app(
-        ha_url=HA_URL, ha_token=TOKEN, ha_transport=httpx.MockTransport(handle)
+        {"ha_url": HA_URL, "ha_token": TOKEN}, ha_transport=httpx.MockTransport(handle)
     )
     async with running(app) as client:
         write = await _put(client, THOMAS)
@@ -213,9 +211,7 @@ async def test_set_people_without_ha_config_is_503(
     make_app: MakeApp, settings: dict[str, str]
 ) -> None:
     """Without a URL or a token HA isn't configured: a write is a 503 and a read says why."""
-    async with running(
-        make_app(ha_transport=FakeHa().transport(), **settings)
-    ) as client:
+    async with running(make_app(settings, ha_transport=FakeHa().transport())) as client:
         write = await _put(client, THOMAS)
         read = (await client.get(PEOPLE)).json()
     assert write.status_code == 503
@@ -271,7 +267,7 @@ async def test_ha_unexpected_answer_is_503(
 ) -> None:
     """An answer that isn't a list of states counts as unreachable."""
     transport = httpx.MockTransport(lambda _request: answer)
-    app = make_app(ha_url=HA_URL, ha_token=TOKEN, ha_transport=transport)
+    app = make_app({"ha_url": HA_URL, "ha_token": TOKEN}, ha_transport=transport)
     async with running(app) as client:
         write = await _put(client, THOMAS)
         read = (await client.get(PEOPLE)).json()
@@ -286,7 +282,7 @@ async def test_ha_person_without_friendly_name_uses_entity_id(
     """A person without a friendly name is listed under its entity id."""
     states = [{"entity_id": "person.guest", "attributes": {}}]
     transport = httpx.MockTransport(lambda _request: httpx.Response(200, json=states))
-    app = make_app(ha_url=HA_URL, ha_token=TOKEN, ha_transport=transport)
+    app = make_app({"ha_url": HA_URL, "ha_token": TOKEN}, ha_transport=transport)
     async with running(app) as client:
         read = (await client.get(PEOPLE)).json()
     assert read["ha_persons"] == [
@@ -325,7 +321,7 @@ async def test_connection_error_text_is_not_shown(make_app: MakeApp) -> None:
         raise httpx.ConnectError(f"refused {TOKEN}", request=request)
 
     app = make_app(
-        ha_url=HA_URL, ha_token=TOKEN, ha_transport=httpx.MockTransport(handle)
+        {"ha_url": HA_URL, "ha_token": TOKEN}, ha_transport=httpx.MockTransport(handle)
     )
     async with running(app) as client:
         read = await client.get(PEOPLE)
@@ -348,7 +344,7 @@ async def test_odd_state_shapes_are_tolerated(make_app: MakeApp) -> None:
         "person.e",
     ]
     transport = httpx.MockTransport(lambda _request: httpx.Response(200, json=states))
-    app = make_app(ha_url=HA_URL, ha_token=TOKEN, ha_transport=transport)
+    app = make_app({"ha_url": HA_URL, "ha_token": TOKEN}, ha_transport=transport)
     async with running(app) as client:
         read = await client.get(PEOPLE)
     assert read.status_code == 200

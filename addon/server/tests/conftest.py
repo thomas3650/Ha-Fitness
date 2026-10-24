@@ -3,6 +3,8 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import replace
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,26 @@ import pytest
 type MakeApp = Callable[..., FastAPI]
 
 _DATASET_FOLDERS = ("videos/", "images/")
+
+
+class FrozenClock:
+    """A clock that stands still until a test sets or advances it; times are aware UTC."""
+
+    def __init__(self, start: datetime) -> None:
+        """Start at `start`."""
+        self._now = start
+
+    def now(self) -> datetime:
+        """Return the frozen time."""
+        return self._now
+
+    def set(self, moment: datetime) -> None:
+        """Jump to `moment`."""
+        self._now = moment
+
+    def advance(self, delta: timedelta) -> None:
+        """Move the time on by `delta`."""
+        self._now += delta
 
 
 def dataset_path(request: httpx.Request) -> str:
@@ -56,20 +78,19 @@ async def running(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
 def make_app(tmp_path: Path) -> MakeApp:
     """Return a factory that builds a fresh app per call on the test's data folder.
 
-    The media source is a fake unless a test passes its own `media_transport`, so no test touches the network. HA is
-    not configured unless a test passes `ha_url` with `ha_token` or `ha_token_file` (and an `ha_transport` fake).
+    `settings_overrides` replaces `Settings` fields; the other keywords go to `create_app`. The media source is a
+    fake unless a test passes its own `media_transport`, so no test touches the network. HA is not configured unless
+    a test overrides `ha_url` with `ha_token` or `ha_token_file` (and passes an `ha_transport` fake).
     """
 
-    def _make_app(**overrides: Any) -> FastAPI:
-        settings = Settings(
-            port=0,
-            data_dir=overrides.pop("data_dir", tmp_path),
-            ha_url=overrides.pop("ha_url", None),
-            ha_token=overrides.pop("ha_token", None),
-            ha_token_file=overrides.pop("ha_token_file", None),
+    def _make_app(
+        settings_overrides: dict[str, Any] | None = None, **create_app_kwargs: Any
+    ) -> FastAPI:
+        settings = replace(
+            Settings(port=0, data_dir=tmp_path), **(settings_overrides or {})
         )
-        overrides.setdefault("media_transport", fake_media_transport())
-        return create_app(settings, **overrides)
+        create_app_kwargs.setdefault("media_transport", fake_media_transport())
+        return create_app(settings, **create_app_kwargs)
 
     return _make_app
 

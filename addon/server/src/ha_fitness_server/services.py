@@ -8,6 +8,7 @@ from .library.media import MediaStore
 from .library.service import Library
 from .people import People
 from .programs import Programs
+from .training_days import TrainingDays
 
 
 @dataclass
@@ -19,6 +20,7 @@ class Services:
     media: MediaStore
     people: People
     programs: Programs
+    training_days: TrainingDays
 
 
 class ServicesHolder:
