@@ -135,6 +135,32 @@ and late days never show together, so they are separate steps.
    Start the fast loop again afterwards.
 6. The console is clean throughout.
 
+### The workout flow
+
+On the dev dashboard, as the Danish user, with the header showing (a sections view), and with a screenshot of each
+step. The flow is the overlay that Start and Fortsæt open; the design is in the
+[step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §5.
+
+1. `scripts/seed --today`, then Start on the today card. The overlay covers the whole page, **above HA's header**.
+2. **Details:** the program, "ca. N min", the rounds, the work, switch and rest seconds, the stations, and a chip per
+   person. Both people are preselected. Tilbage closes the overlay.
+3. **Get ready:** Start again, and the countdown says who starts where. Annullér closes the overlay without counting.
+4. **The timer for 1 person,** in work (orange ring, "ARBEJD") and in switch (blue ring, "SKIFT"): one station big,
+   with "Næste" beside it.
+5. **The timer for 2 people,** in work and in switch: a panel per person, with the person's colour, and the ring in
+   the middle.
+6. **Paused:** tap the ring. It stops and shows "PAUSE"; the play button resumes.
+7. **Fortsæt after a reload:** reload while a session runs. Nothing opens by itself. The today card shows "Træning i
+   gang" and Fortsæt, which opens the overlay at the timer.
+8. **Done:** Slut, then Ja. After a full round "Godt gået!" shows; before one, "Træningen blev afsluttet". Luk closes
+   it.
+9. **The today card stays visible during an extra session:** with no day open, start a session from
+   `custom:ha-fitness-workout-card` (add it to a panel view by hand; the dev dashboard doesn't have it). The today card
+   shows "Træning i gang" and Fortsæt while the session runs.
+10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at
+    5, 4, 3, 2 and 1 s line up with the numbers, and that the change tones and the chime at the end come.
+11. The console is clean throughout.
+
 ## MCP check from Claude Code
 
 From step 3 on the add-on serves MCP at `/mcp`; the tools are spec §8

@@ -368,3 +368,21 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** The add-on's port has no auth of its own and must stay off the internet, while HA's port is reachable from
   outside. The proxy keeps the media behind HA's login, and the patterns stop it from reaching any other add-on path.
 - **Source:** [workout spec](superpowers/specs/2026-10-24-the-workout-design.md) §4 and §5.2; Claude, 2026-10-24
+
+### D45: One page-level overlay for the workout flow
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The workout flow lives in one `<dialog>` per page, opened with `showModal()` and appended to
+  `document.body`. A module-level controller owns it, with its own session subscription; the today card and
+  `ha-fitness-workout-card` only ask it to open or close.
+- **Why:** The top layer puts the flow above HA's header and every card, whatever stacking contexts the cards sit in
+  ([`ha-notes.md`](ha-notes.md#the-frontend)). The flow outlives the card that opened it, so a card that hides or a
+  view change can't tear down a running session's screen.
+- **Source:** [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §5.1; Claude, 2026-10-24
+
+### D46: The `complete` service is dropped
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** The integration has no `complete` service. A training day is done only through a counted session in
+  the app.
+- **Why:** The [design spec](superpowers/specs/2026-10-23-ha-fitness-design.md) §3.3 and §3.9 rule out a manual
+  "done" for workouts done elsewhere, and a session already closes its day.
+- **Source:** [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §2; Claude, 2026-10-24
