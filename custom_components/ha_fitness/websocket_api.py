@@ -273,12 +273,12 @@ async def ws_programs(
         return
     try:
         stored = await async_programs(coordinator.http_session, coordinator.url)
-    except AddonConnectionError:
+        # A malformed item (a missing key, stations and names that don't pair) is unavailable too.
+        programs = [_program(item) for item in stored if item["program"]["active"]]
+    except AddonConnectionError, KeyError, TypeError, ValueError:
         _send_error(connection, msg["id"], "unavailable")
         return
-    connection.send_result(
-        msg["id"], [_program(item) for item in stored if item["program"]["active"]]
-    )
+    connection.send_result(msg["id"], programs)
 
 
 @websocket_command({probatio.Required("type"): "ha_fitness/people"})
@@ -293,9 +293,9 @@ async def ws_people(
         return
     try:
         stored = await async_people(coordinator.http_session, coordinator.url)
-    except AddonConnectionError:
+        # A malformed item (a missing key) is unavailable too.
+        people = [{"id": person["id"], "name": person["name"]} for person in stored]
+    except AddonConnectionError, KeyError, TypeError:
         _send_error(connection, msg["id"], "unavailable")
         return
-    connection.send_result(
-        msg["id"], [{"id": person["id"], "name": person["name"]} for person in stored]
-    )
+    connection.send_result(msg["id"], people)

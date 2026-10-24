@@ -16,7 +16,7 @@ from pytest_homeassistant_custom_component.typing import (
 from custom_components.ha_fitness.const import DOMAIN
 
 from .common import is_open, set_up, unload, wait_for
-from .fake_addon import SESSION_RUNNING, FakeAddon
+from .fake_addon import PROGRAMS, SESSION_RUNNING, FakeAddon
 
 COMMAND = "ha_fitness/session/command"
 
@@ -303,6 +303,12 @@ async def test_non_admin_can_use_commands(
     [
         pytest.param(None, None, 500, id="server_error"),
         pytest.param({"programs": []}, [], 200, id="malformed"),
+        pytest.param(
+            [{**PROGRAMS[1], "station_names": ["Squat"]}],
+            {"people": [{"id": 1}]},
+            200,
+            id="malformed_item",
+        ),
     ],
 )
 async def test_ws_lists_unavailable_when_the_addon_fails(
