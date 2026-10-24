@@ -199,14 +199,24 @@ export class WorkoutFlow extends LitElement {
   }
 
   static override styles = css`
+    /* The flow fills the overlay's dialog; each step is centred, and on a large screen kept to a
+       readable width, on a landscape (1368×912) and a portrait (800×1280) tablet alike. */
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
       box-sizing: border-box;
       min-height: 100%;
       padding: 32px;
       color: var(--primary-text-color);
-      background: var(--card-background-color, var(--primary-background-color));
+      background: var(--primary-background-color);
       font-size: 1.25rem;
+    }
+    .page {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
     }
     h2 {
       margin: 0 0 8px;
@@ -1218,6 +1228,10 @@ export class WorkoutFlow extends LitElement {
   }
 
   protected override render() {
+    return html`<div class="page">${this.renderStep()}</div>`;
+  }
+
+  private renderStep() {
     const view = this.newest;
     switch (this.step()) {
       case "details":

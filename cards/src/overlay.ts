@@ -78,6 +78,28 @@ interface FlowElement extends HTMLElement {
 
 const FLOW_TAG = "ha-fitness-workout-flow";
 
+/**
+ * The dialog sits in the page's light DOM, where no card's styles reach, so it carries its own:
+ * the whole viewport, with none of the browser's dialog defaults (size, border, padding). The
+ * second `height` wins where `dvh` is known, so a tablet's browser bars don't cut it off.
+ */
+const DIALOG_STYLE = [
+  "position: fixed",
+  "inset: 0",
+  "width: 100%",
+  "height: 100%",
+  "height: 100dvh",
+  "max-width: none",
+  "max-height: none",
+  "margin: 0",
+  "padding: 0",
+  "border: none",
+  "box-sizing: border-box",
+  "background: var(--primary-background-color, #fafafa)",
+  "color: var(--primary-text-color, #212121)",
+  "overflow: auto",
+].join("; ");
+
 // The page-wide controller (spec §5.1). Cards hand it `hass` and ask it to open or close; the
 // overlay outlives the card that opened it.
 let hass: OverlayHass | undefined;
@@ -149,6 +171,7 @@ export function open(mode: OverlayMode): void {
   }
   if (!dialog) {
     dialog = document.createElement("dialog");
+    dialog.style.cssText = DIALOG_STYLE;
     // Escape and the Android back gesture must not close it; Chrome honours `closedby`.
     dialog.setAttribute("closedby", "none");
     dialog.addEventListener("cancel", (event) => event.preventDefault());
