@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from . import changes, exercises, library, people, programs, session, today, ws
+from . import changes, exercises, library, people, programs, session, stats, today, ws
 from .errors import add_error_handlers
 
 router = APIRouter(prefix="/api/v1")
@@ -13,6 +13,7 @@ router.include_router(people.router)
 router.include_router(changes.router)
 router.include_router(today.router)
 router.include_router(session.router)
+router.include_router(stats.router)
 router.include_router(ws.router)
 
 __all__ = ["add_error_handlers", "router"]

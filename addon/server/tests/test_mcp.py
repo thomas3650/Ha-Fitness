@@ -38,6 +38,7 @@ READ_TOOLS = {
     "get_today",
     "get_session",
     "list_sessions",
+    "get_stats",
 }
 DESTRUCTIVE_TOOLS = {
     "update_program",
@@ -81,11 +82,11 @@ def _program(name: str = "Onsdag", **fields: Any) -> dict[str, Any]:
 
 
 async def test_tool_names_are_exactly_the_spec_list(make_app: MakeApp) -> None:
-    """The server has the twelve tools of spec §8, step 4's two, step 5's two, and no others."""
+    """The server has the twelve tools of spec §8, step 4's two, step 5's two, step 6's one, and no others."""
     async with mcp_client(make_app()) as session:
         names = {tool.name for tool in await session.list_tools()}
     assert names == READ_TOOLS | DESTRUCTIVE_TOOLS | ADDING_TOOLS
-    assert len(names) == 16
+    assert len(names) == 17
 
 
 async def test_annotations(make_app: MakeApp) -> None:
@@ -486,3 +487,21 @@ async def test_mcp_get_session_and_list_sessions(make_app: MakeApp) -> None:
     detail = json.loads(str(refused.value))
     assert detail["code"] == "invalid"
     assert "limit" in detail["message"]
+
+
+async def test_get_stats_tool_equals_rest(make_app: MakeApp) -> None:
+    """`get_stats` answers what `GET /stats` does: here Thomas's done day and Elin's missed one."""
+    clock = FrozenClock(local(2026, 10, 28, 9))
+    async with started_with_mcp(clock, make_app) as (client, session):
+        thomas, elin = await set_people(client, THOMAS, ELIN)
+        program = await create_small(client, "Lille")
+        [day] = (await client.get("/api/v1/today")).json()["open"]
+        await start(client, program["id"], [thomas], day["id"])
+        clock.advance(timedelta(minutes=2))
+        await client.get(SESSION)
+        stats = await call(session, "get_stats")
+        rest = (await client.get("/api/v1/stats")).json()
+    assert stats == rest
+    assert [person["id"] for person in stats["people"]] == [thomas, elin]
+    assert [person["all_time"]["done"] for person in stats["people"]] == [1, 0]
+    assert [person["all_time"]["missed"] for person in stats["people"]] == [0, 1]

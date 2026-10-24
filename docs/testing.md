@@ -57,7 +57,20 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    it run to the end, about 25 s. When it completes, the today card no longer shows Kort. Without a browser, the same
    path through REST: `POST /api/v1/session` with `{"program_id", "participants": [person ids from
    GET /api/v1/people], "training_day_id"}` (Kort's day from `GET /api/v1/today`), then `GET /api/v1/session`.
-8. `scripts/develop stop` stops all three.
+8. **A stats check**, through REST, after `scripts/seed`. The numbers below hold on fresh data
+   (`local/addon-data/` empty before `scripts/develop`); on old data, compare with the numbers before each step.
+   Reopening a done day through the dev routes gives numbers no real day can, so start fresh for this check.
+   - `scripts/seed --short`, then finish Kort with both people (step 7). `GET /api/v1/stats` gives each person
+     `done` 1, `extra` 0, `missed` 0, `skipped` 0, `streak` 1, a `time_trained` above 0, the same in `this_month`, and
+     `counting_from` today.
+   - `scripts/seed --today`, then skip Sample's day: `POST /api/v1/training-days/{id}/skip`, with the id from
+     `GET /api/v1/today`. Each person now has `skipped` 1 and `streak` 0: Kort is done but Sample is skipped on the
+     same date, so the date breaks the streak ([why](domain-language.md#stats)).
+   - An extra session: `POST /api/v1/session` with Kort and both people and no `training_day_id`, run to the end. Each
+     person gets `done` +1, `extra` +1 and more `time_trained`; the streak stays.
+   - The push channel sends a `stats` message after each of these, and `get_stats` over MCP
+     ([below](#mcp-check-from-claude-code)) gives the same body as REST.
+9. `scripts/develop stop` stops all three.
 
 `scripts/smoke` starts the dev HA once in the foreground (150 s, `SMOKE_SECONDS` to change), and fails if HA doesn't
 start, if `ha_fitness` isn't set up, or on an error from the integration. The full log is `local/smoke.log`. It needs
@@ -165,9 +178,7 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
 
 ## MCP check from Claude Code
 
-From step 3 on the add-on serves MCP at `/mcp`; the tools are spec §8
-([step 3 spec](superpowers/specs/2026-10-24-programs-through-chat-design.md)), plus `get_today` and `skip_training_day`
-([step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §3.5). The dev entry is named
+From step 3 on the add-on serves MCP at `/mcp`; [`architecture.md`](architecture.md) lists the tools. The dev entry is named
 `ha-fitness-dev`. The real add-on's entry is another one, kept outside this repo ([`addon/DOCS.md`](../addon/DOCS.md)).
 
 1. Add the endpoint: `claude mcp add --transport http ha-fitness-dev http://localhost:8765/mcp` (local scope: it goes

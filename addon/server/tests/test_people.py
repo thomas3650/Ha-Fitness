@@ -4,8 +4,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+import threading
 from typing import Any
 
+import anyio
 import httpx
 import pytest
 
@@ -362,3 +364,42 @@ async def test_person_ids_are_never_reused(make_app: MakeApp) -> None:
         again = (await _put(client, THOMAS, ELIN)).json()
     assert again[0]["id"] == first[0]["id"]
     assert again[1]["id"] > first[1]["id"]
+
+
+class BlockingHa(FakeHa):
+    """A fake HA whose states call blocks until `release` is set, or for at most 5 s."""
+
+    def __init__(self) -> None:
+        """Start up, reachable and blocking."""
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        """Say the call has started, wait for the release, then answer."""
+        self.entered.set()
+        self.release.wait(5)
+        return super().handle(request)
+
+
+async def test_people_set_checks_ha_outside_the_lock(make_app: MakeApp) -> None:
+    """While setting the people waits for HA, a read that takes the scheduler's lock still answers."""
+    ha = BlockingHa()
+    statuses: list[int] = []
+
+    async def put_people(client: httpx.AsyncClient) -> None:
+        statuses.append((await _put(client, THOMAS)).status_code)
+
+    async with (
+        ha_app(make_app, ha) as client,
+        anyio.create_task_group() as task_group,
+    ):
+        task_group.start_soon(put_people, client)
+        try:
+            assert await anyio.to_thread.run_sync(ha.entered.wait, 2)
+            with anyio.fail_after(2):
+                today = await client.get("/api/v1/today")
+            assert today.status_code == 200
+        finally:
+            ha.release.set()
+    assert statuses == [200]

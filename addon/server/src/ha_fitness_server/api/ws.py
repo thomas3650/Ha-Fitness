@@ -16,14 +16,16 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def push_channel(websocket: WebSocket) -> None:
-    """Send `hello`, `today` and `session`, then every message the hub broadcasts; the client sends nothing.
+    """Send `hello`, `today`, `session` and `stats`, then every message the hub broadcasts; the client sends nothing.
 
     It subscribes before it builds the snapshots, so nothing published meanwhile is lost. Every publish runs under the
     training days' lock, so the queue holds them in lock order. A `today` can be queued after the snapshot was built
     (a skip, a write or a tick in the gap before the drain), and `_publish_today` won't send that view again. So when
     the drain holds a `today`, the last one is the newest view and is sent instead of the snapshot. Otherwise the
     snapshot is the newest: a later change would have queued a `today`. `session` works the same way: every change of
-    the session publishes one, and reading the snapshot can tick. The queued events follow, in queue order.
+    the session publishes one, and reading the snapshot can tick. So does `stats`: every change that can move them
+    checks them and publishes them if they changed, and reading the snapshot ticks and reconciles. The queued events
+    follow, in queue order.
     """
     hub: Hub = websocket.app.state.hub
     holder: ServicesHolder = websocket.app.state.services
@@ -37,12 +39,16 @@ async def push_channel(websocket: WebSocket) -> None:
             "type": "session",
             "data": None if current is None else current.model_dump(mode="json"),
         }
+        numbers = await anyio.to_thread.run_sync(services.stats.view)
+        stats: Message = {"type": "stats", "data": numbers.model_dump(mode="json")}
         events: list[Message] = []
         for message in _drain(queue):
             if message.get("type") == "today":
                 today = message
             elif message.get("type") == "session":
                 session = message
+            elif message.get("type") == "stats":
+                stats = message
             else:
                 events.append(message)
         await websocket.send_json(
@@ -50,6 +56,7 @@ async def push_channel(websocket: WebSocket) -> None:
         )
         await websocket.send_json(today)
         await websocket.send_json(session)
+        await websocket.send_json(stats)
         for message in events:
             await websocket.send_json(message)
         await _serve(websocket, queue)

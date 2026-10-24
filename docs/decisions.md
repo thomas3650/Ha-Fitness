@@ -386,3 +386,20 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** The [design spec](superpowers/specs/2026-10-23-ha-fitness-design.md) §3.3 and §3.9 rule out a manual
   "done" for workouts done elsewhere, and a session already closes its day.
 - **Source:** [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.md) §2; Claude, 2026-10-24
+
+### D47: Which days the stats count
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** Stats count every done day, and missed and skipped days from `counting_from`. For a person, a day
+  before they were added counts only when they did it, and a day belongs to its own date. This refines design §3.3's
+  "days closed before the counting date are left out".
+- **Why:** The first workout counts even when it was done late or crossed midnight, and someone added later doesn't
+  start with a pile of misses.
+- **Source:** [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3.1 and §7; Claude, 2026-10-24
+
+### D48: What adds done and time, and how the streak counts
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** Only counted sessions add done and time. The streak counts dates, and a date adds one only when every
+  counted day on it is done.
+- **Why:** A session ended before one round is no workout. Counting dates keeps the streak independent of the order the
+  days were created in.
+- **Source:** [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3.1, §3.2 and §7; Claude, 2026-10-24

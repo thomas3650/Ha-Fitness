@@ -6,11 +6,13 @@ from collections import Counter
 from sqlalchemy import Engine, select
 
 from . import changes
+from .clock import Clock
 from .db import session
 from .errors import Invalid, Unavailable
 from .ha import HaClient
 from .models import Person as PersonRow
 from .schemas import NewPerson, PeopleView, Person
+from .training_days import TrainingDays
 
 MAX_PEOPLE = 2
 
@@ -21,12 +23,20 @@ def _person(row: PersonRow) -> Person:
 
 
 class People:
-    """Lists and sets the people; HA is asked for its persons."""
+    """Lists and sets the people; HA is asked for its persons.
 
-    def __init__(self, engine: Engine, ha: HaClient) -> None:
-        """Use `engine` for the people and `ha` for the HA persons."""
+    A write checks the persons against HA first, outside the lock (that call can take 10 s), then writes under
+    `training_days.lock` and reconciles after the commit, so `today` (and the stats) are published (stats spec §4).
+    """
+
+    def __init__(
+        self, engine: Engine, ha: HaClient, training_days: TrainingDays, clock: Clock
+    ) -> None:
+        """Use `engine` for the people, `ha` for the HA persons, `training_days` for the lock and `clock`'s time."""
         self._engine = engine
         self._ha = ha
+        self._training_days = training_days
+        self._clock = clock
 
     def stored(self) -> builtins.list[Person]:
         """Return the stored people in colour order, without asking HA."""
@@ -70,6 +80,19 @@ class People:
                         ],
                     }
                 )
+        with self._training_days.lock:
+            stored = self._write(people, counts, client)
+            self._training_days.reconcile_now()
+        return stored
+
+    def _write(
+        self,
+        people: builtins.list[NewPerson],
+        counts: Counter[str],
+        client: str,
+    ) -> builtins.list[Person]:
+        """Write the checked people and commit; a new person gets `added_at` now, a kept one keeps theirs."""
+        now = self._clock.now()
         with session(self._engine) as db_session:
             rows = {
                 row.person_entity_id: row
@@ -82,7 +105,7 @@ class People:
             kept: list[PersonRow] = []
             for position, person in enumerate(people):
                 row = rows.get(person.person_entity_id) or PersonRow(
-                    person_entity_id=person.person_entity_id
+                    person_entity_id=person.person_entity_id, added_at=now
                 )
                 row.name = person.name
                 row.position = position

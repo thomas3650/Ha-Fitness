@@ -64,7 +64,7 @@ def _event(message: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def _connect_expect(ws: Any, date: str) -> dict[str, Any]:
-    """Read `hello`, the first `today` and `session` (none) of a new connection; check the date and return `today`."""
+    """Read `hello`, the first `today`, `session` (none) and `stats` of a new connection; check the date, return `today`."""
     assert ws.receive_json() == {
         "type": "hello",
         "version": __version__,
@@ -73,6 +73,7 @@ def _connect_expect(ws: Any, date: str) -> dict[str, Any]:
     today: dict[str, Any] = ws.receive_json()
     assert _today(today)[0] == date
     assert ws.receive_json() == {"type": "session", "data": None}
+    assert ws.receive_json()["type"] == "stats"
     return today
 
 

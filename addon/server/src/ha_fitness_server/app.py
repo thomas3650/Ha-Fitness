@@ -28,6 +28,7 @@ from .push import Hub, Message
 from .services import Services, ServicesHolder
 from .sessions import Sessions
 from .settings import Settings
+from .stats import StatsService
 from .training_days import TrainingDays
 
 _LOGGER = logging.getLogger(__name__)
@@ -131,9 +132,10 @@ def create_app(
         )
         publish = _publisher(hub, asyncio.get_running_loop())
         training_days = TrainingDays(engine, the_clock, settings.timezone, publish)
-        people = People(engine, ha)
+        people = People(engine, ha, training_days, the_clock)
         programs = Programs(engine, library, training_days)
         sessions = Sessions(engine, the_clock, training_days, programs, people, publish)
+        stats = StatsService(engine, training_days, sessions, publish)
         holder.set(
             Services(
                 engine=engine,
@@ -142,9 +144,12 @@ def create_app(
                 people=people,
                 programs=programs,
                 sessions=sessions,
+                stats=stats,
                 training_days=training_days,
             )
         )
+        # Before recover and the reconcile, so the stats' memory of what was published starts filled.
+        training_days.on_change = stats.publish_if_changed
         # Before reconcile: a session ended by the pause limit leaves its day to reconcile like any other.
         sessions.recover()
         training_days.reconcile_now()
