@@ -1,4 +1,4 @@
-import { LitElement, type PropertyValues, css, html, nothing, svg } from "lit";
+import { LitElement, type PropertyValues, type TemplateResult, css, html, nothing, svg } from "lit";
 
 import { unlockAudio } from "./audio";
 import { type Vars, WEEKDAYS, localize } from "./i18n";
@@ -57,8 +57,8 @@ const ARM_MS = 500;
 const CONFIRM_MS = 10_000;
 const ERROR_MS = 5_000;
 /** The week ring's size and stroke, in px. */
-const WEEK_SIZE = 88;
-const WEEK_STROKE = 8;
+const WEEK_SIZE = 96;
+const WEEK_STROKE = 10;
 const WEEK_RADIUS = (WEEK_SIZE - WEEK_STROKE) / 2;
 const WEEK_CIRCUMFERENCE = 2 * Math.PI * WEEK_RADIUS;
 /** The service errors with a text of their own; any other error gets the general text. */
@@ -77,10 +77,11 @@ function errorKey(error: unknown): string {
 }
 
 /**
- * "Træning i dag" (UI refresh spec §2.1): a top line with the title and the people's streaks, the
- * week ring, and the open training days, each with Start and a two-step Spring over (step 4 spec
- * §6). While a session is active the days give way to the session row: the program, the state line
- * and the people line, with Fortsæt (UI polish spec §2).
+ * "Træning i dag" (UI refresh spec §2.1): a top line with the title and the people's streaks, then
+ * the open training days, each with Start and a two-step Spring over (step 4 spec §6). While a
+ * session is active the days give way to the session row: the program, the state line and the
+ * people line, with Fortsæt (UI polish spec §2). The week ring sits beside the first row's text,
+ * and each row's buttons sit under the ring and the text (UI polish spec §2.6).
  */
 export class TodayCard extends LitElement {
   static override properties = {
@@ -128,7 +129,7 @@ export class TodayCard extends LitElement {
       align-items: center;
       justify-content: space-between;
       gap: 16px;
-      padding: 12px 16px 0;
+      padding: 16px 20px 0;
     }
     .title {
       font-size: 0.875em;
@@ -157,18 +158,27 @@ export class TodayCard extends LitElement {
       height: 10px;
       border-radius: 50%;
     }
-    .middle {
+    .body {
+      padding: 8px 20px 20px;
+    }
+    /* The ring (first row only) beside the text, centred against it. */
+    .head {
       display: flex;
-      align-items: flex-start;
-      gap: 16px;
-      padding: 4px 16px 4px;
+      align-items: center;
+      gap: 20px;
+    }
+    .text {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 0;
     }
     .week {
       position: relative;
       flex: none;
       width: ${WEEK_SIZE}px;
       height: ${WEEK_SIZE}px;
-      margin: 8px 0;
     }
     .week svg {
       display: block;
@@ -190,7 +200,7 @@ export class TodayCard extends LitElement {
       justify-content: center;
     }
     .week .count {
-      font-size: 1.375em;
+      font-size: 1.5em;
       font-weight: 700;
       color: var(--primary-text-color);
     }
@@ -198,25 +208,24 @@ export class TodayCard extends LitElement {
       font-size: 0.75em;
       color: var(--secondary-text-color);
     }
-    .days {
-      flex: 1;
-      min-width: 0;
-    }
     ul {
       list-style: none;
       margin: 0;
       padding: 0;
     }
-    li {
-      padding: 8px 0 12px;
-    }
     li + li {
+      margin-top: 16px;
+      padding-top: 16px;
       border-top: 1px solid var(--divider-color);
     }
     .name {
       font-size: 1.5em;
-      font-weight: 500;
+      font-weight: 600;
+      line-height: 1.2;
       color: var(--primary-text-color);
+    }
+    .line {
+      font-size: 1.0625em;
     }
     .line,
     .muted {
@@ -225,11 +234,13 @@ export class TodayCard extends LitElement {
     .muted {
       padding: 16px 0;
     }
+    /* Under the ring and the text, from the row's left edge. */
     .actions {
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-top: 8px;
+      justify-content: flex-start;
+      gap: 12px;
+      margin-top: 16px;
     }
     /* Start, Ja or Fortsæt: the first place, at the left. */
     .lead {
@@ -259,17 +270,19 @@ export class TodayCard extends LitElement {
     button ha-icon {
       --mdc-icon-size: 20px;
     }
-    /* Spring over and Nej share the last place and its width, wide enough for either text in both languages. */
-    button.slot {
-      flex: none;
-      width: 9em;
-      padding: 0 12px;
-    }
-    /* Start, Ja and Fortsæt share the first place and its width, so Ja lands where Start was. */
+    /*
+     * Start, Spring over, Ja, Nej and Fortsæt share one fixed width, wide enough for each text in both
+     * languages, so Ja lands where Start was and Nej where Spring over was.
+     */
+    button.slot,
     button.yes {
       flex: none;
-      width: 9em;
+      width: 10em;
       padding: 0 12px;
+      font-size: 1.0625em;
+      font-weight: 600;
+    }
+    button.yes {
       background: var(--primary-color);
       color: var(--text-primary-color);
     }
@@ -287,13 +300,13 @@ export class TodayCard extends LitElement {
     this.config = config;
   }
 
-  /** One row of HA's grid for the top line and the ring, then two per open day (or for the session row). */
+  /** One row of HA's grid for the top line, then three per open day (or for the session row). */
   getGridOptions(): { columns: "full"; rows: number } {
-    return { columns: "full", rows: 1 + 2 * this.rowCount };
+    return { columns: "full", rows: 1 + 3 * this.rowCount };
   }
 
   getCardSize(): number {
-    return 1 + 2 * this.rowCount;
+    return 1 + 3 * this.rowCount;
   }
 
   override connectedCallback(): void {
@@ -580,13 +593,23 @@ export class TodayCard extends LitElement {
     });
   }
 
+  /** A row's head: the week ring in the first row only, beside the text. */
+  private renderHead(first: boolean, text: TemplateResult) {
+    return html`<div class="head">${first ? this.renderWeek() : nothing}<div class="text">${text}</div></div>`;
+  }
+
   private renderSession(session: SessionView) {
     return html`
       <ul>
         <li>
-          <div class="name">${session.program_name}</div>
-          <div class="line">${this.sessionStateLine(session)}</div>
-          <div class="line">${this.sessionPeopleLine(session)}</div>
+          ${this.renderHead(
+            true,
+            html`
+              <div class="name">${session.program_name}</div>
+              <div class="line">${this.sessionStateLine(session)}</div>
+              <div class="line">${this.sessionPeopleLine(session)}</div>
+            `,
+          )}
           <div class="actions">
             <div class="lead">
               ${iconButton({
@@ -606,18 +629,26 @@ export class TodayCard extends LitElement {
   private renderDays() {
     if (this.session) return this.renderSession(this.session);
     const today = this.today;
-    if (today === null) return html`<div class="muted">${this.t("today.unreachable")}</div>`;
-    if (!today?.open.length) return html`<div class="muted">${this.t("today.nothing_open")}</div>`;
+    // Without rows, the ring and the text sit side by side.
+    if (today === null) return this.renderHead(true, html`<div class="muted">${this.t("today.unreachable")}</div>`);
+    if (!today?.open.length) {
+      return this.renderHead(true, html`<div class="muted">${this.t("today.nothing_open")}</div>`);
+    }
     return html`
       <ul>
         ${today.open.map(
-          (day) => html`
+          (day, index) => html`
             <li>
-              <div class="name">${day.program_name}</div>
-              ${this.confirming.has(day.id)
-                ? html`<div class="line question">${this.t("today.skip_confirm")}</div>`
-                : html`<div class="line">${this.stateLine(day)}</div>`}
-              <div class="line">${this.summaryLine(day)}</div>
+              ${this.renderHead(
+                index === 0,
+                html`
+                  <div class="name">${day.program_name}</div>
+                  ${this.confirming.has(day.id)
+                    ? html`<div class="line question">${this.t("today.skip_confirm")}</div>`
+                    : html`<div class="line">${this.stateLine(day)}</div>`}
+                  <div class="line">${this.summaryLine(day)}</div>
+                `,
+              )}
               <div class="actions">${this.renderActions(day)}</div>
             </li>
           `,
@@ -639,10 +670,7 @@ export class TodayCard extends LitElement {
           <span class="title">${this.t("today.title")}</span>
           ${this.renderStreak()}
         </div>
-        <div class="middle">
-          ${this.renderWeek()}
-          <div class="days">${this.renderDays()}</div>
-        </div>
+        <div class="body">${this.renderDays()}</div>
       </ha-card>
     `;
   }
