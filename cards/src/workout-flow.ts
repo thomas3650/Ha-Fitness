@@ -104,6 +104,8 @@ export class WorkoutFlow extends LitElement {
   private tickTimer?: ReturnType<typeof setInterval>;
   /** `server_time − Date.now()` of the newest view, in ms. */
   private offset = 0;
+  /** Set once this flow has asked to close; it never asks twice. */
+  private closed = false;
   private readonly onActivity = (): void => this.armIdle();
 
   constructor() {
@@ -260,7 +262,14 @@ export class WorkoutFlow extends LitElement {
     }
     if (step === "ready" && this.newest?.status === "running") this.startTick();
     else this.stopTick();
-    if (step === "done" && this.newest && this.annulled.has(this.newest.id)) this.onClose?.();
+    if (step === "done" && this.newest && this.annulled.has(this.newest.id)) this.close();
+  }
+
+  /** Ask the controller to close the overlay: once, and only while this flow is on the page. */
+  private close(): void {
+    if (this.closed || !this.isConnected) return;
+    this.closed = true;
+    this.onClose?.();
   }
 
   /** Keep the newer of the flow's view and `view`: a higher revision, or another session. */
@@ -268,17 +277,31 @@ export class WorkoutFlow extends LitElement {
     if (!view) return;
     const newest = this.newest;
     if (newest && newest.id === view.id && newest.revision >= view.revision) return;
+    // An alert belongs to the session it came from.
+    if (newest && newest.id !== view.id) this.error = undefined;
     this.newest = view;
     this.offset = Date.parse(view.server_time) - Date.now();
     if (isActive(view)) this.leftDetails = true;
   }
 
-  /** Fetch the programs and the people for a details mode, and start the choice over. */
+  /**
+   * Fetch the programs and the people for a details mode, and start the choice over. Any other
+   * mode fetches the people only, for the colours of the session's participants.
+   */
   private load(): void {
     const mode = this.mode;
     const hass = this.hass;
-    if (mode?.kind !== "details" || !hass) return;
+    if (!mode || !hass) return;
     this.loadedFor = mode;
+    if (mode.kind !== "details") {
+      void hass.callWS<Person[]>({ type: "ha_fitness/people" }).then(
+        (people) => {
+          if (this.mode === mode) this.people = people;
+        },
+        () => undefined,
+      );
+      return;
+    }
     this.error = undefined;
     this.selected = new Set();
     this.programs = undefined;
@@ -312,6 +335,16 @@ export class WorkoutFlow extends LitElement {
     });
   }
 
+  /**
+   * A participant's colour, by the person's place in people order (design §3.4). Beyond the
+   * second person, or before the people have loaded for someone not among them, the theme's.
+   */
+  private personColor(id: number, participantIndex: number): string {
+    const people = this.people;
+    const index = people ? people.findIndex((person) => person.id === id) : participantIndex;
+    return PERSON_COLORS[index] ?? "var(--primary-color)";
+  }
+
   private program(): Program | undefined {
     const mode = this.mode;
     if (mode?.kind !== "details") return undefined;
@@ -337,7 +370,7 @@ export class WorkoutFlow extends LitElement {
     if (this.mode?.kind !== "details" || this.busy) return;
     this.idleTimer = setTimeout(() => {
       this.idleTimer = undefined;
-      if (this.step() === "details" && !this.busy) this.onClose?.();
+      if (this.step() === "details" && !this.busy) this.close();
     }, IDLE_MS);
   }
 
@@ -380,15 +413,16 @@ export class WorkoutFlow extends LitElement {
     // Participants go in people order, whatever order they were tapped in.
     const participants = (this.people ?? []).filter((person) => this.selected.has(person.id)).map((p) => p.id);
     try {
-      this.result = await hass.callWS<SessionView>({
+      const result = await hass.callWS<SessionView>({
         type: "ha_fitness/session/command",
         command: "start",
         program_id: program.id,
         participants,
         ...(mode.trainingDayId === undefined ? {} : { training_day_id: mode.trainingDayId }),
       });
+      if (this.isConnected) this.result = result;
     } catch (error) {
-      this.error = this.t(this.startErrorKey(error));
+      if (this.isConnected) this.error = this.t(this.startErrorKey(error));
     } finally {
       this.busy = false;
     }
@@ -406,9 +440,12 @@ export class WorkoutFlow extends LitElement {
   private async command(command: Command): Promise<void> {
     const hass = this.hass;
     if (!hass) return;
+    this.error = undefined;
     try {
-      this.result = await hass.callWS<SessionView>({ type: "ha_fitness/session/command", command });
+      const result = await hass.callWS<SessionView>({ type: "ha_fitness/session/command", command });
+      if (this.isConnected) this.result = result;
     } catch (error) {
+      if (!this.isConnected) return;
       const code = errorCode(error);
       this.error = this.t(code && KNOWN_ERRORS.has(code) ? `flow.error.${code}` : "flow.error.general");
     }
@@ -418,7 +455,7 @@ export class WorkoutFlow extends LitElement {
   private annul(): void {
     const view = this.newest;
     if (view) this.annulled.add(view.id);
-    this.onClose?.();
+    this.close();
     void this.command("end");
   }
 
@@ -515,7 +552,7 @@ export class WorkoutFlow extends LitElement {
   }
 
   private renderBack() {
-    return html`<button @click=${() => this.onClose?.()}>${this.t("flow.back")}</button>`;
+    return html`<button @click=${() => this.close()}>${this.t("flow.back")}</button>`;
   }
 
   private renderReady(view: SessionView) {
@@ -527,8 +564,8 @@ export class WorkoutFlow extends LitElement {
         ${view.participants.map((person, index) => {
           const station = view.stations?.[index]?.current;
           return html`
-            <li>
-              <span class="badge" style="--person-color: ${PERSON_COLORS[index]}"></span>
+            <li style="--person-color: ${this.personColor(person.id, index)}">
+              <span class="badge"></span>
               ${this.t("flow.starts_at", {
                 name: person.name,
                 number: station?.number ?? "",
@@ -559,7 +596,7 @@ export class WorkoutFlow extends LitElement {
     return html`
       <h2>${this.t(view.counted ? "flow.done.counted" : "flow.done.ended")}</h2>
       <div class="actions">
-        <button class="main" @click=${() => this.onClose?.()}>${this.t("flow.close")}</button>
+        <button class="main" @click=${() => this.close()}>${this.t("flow.close")}</button>
       </div>
     `;
   }

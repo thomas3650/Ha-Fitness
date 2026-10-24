@@ -551,3 +551,98 @@ test("renders in Danish and English", async () => {
   const nobody = await mount(fakeHass("en", []), details);
   expect(queryByText(root(nobody.flow), "No people – ask Claude to add them")).not.toBeNull();
 });
+
+test("a failed command's alert goes once the next command succeeds", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, { kind: "resume" }, { available: true, session: view() });
+
+  await tap(flow, button(flow, "Pause"));
+  fake.commands.at(-1)!.reject({ code: "unavailable", message: "Add-on down" });
+  await settle(flow);
+  expect(text(getByRole(root(flow), "alert"))).toBe("HA Fitness kan ikke nås. Prøv igen senere.");
+
+  await tap(flow, button(flow, "Pause"));
+  // The alert goes as the command is sent, not only when it answers.
+  expect(queryByRole(root(flow), "alert")).toBeNull();
+  fake.commands.at(-1)!.resolve(
+    view({ revision: 2, status: "paused", phase: { ...view().phase!, ends_at: null, remaining: 9 } }),
+  );
+  await settle(flow);
+  expect(queryByRole(root(flow), "alert")).toBeNull();
+});
+
+test("a new session's view clears an alert from the last one", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, { kind: "resume" }, { available: true, session: view() });
+  await tap(flow, button(flow, "Pause"));
+  fake.commands.at(-1)!.reject({ code: "unknown_error", message: "Boom" });
+  await settle(flow);
+  expect(queryByRole(root(flow), "alert")).not.toBeNull();
+
+  await push(flow, view({ id: 8 }));
+  expect(queryByRole(root(flow), "alert")).toBeNull();
+});
+
+test("get ready colours follow people order, not participant order", async () => {
+  const ida = { id: 3, name: "Ida" };
+  const fake = fakeHass("da", [thomas, maria, ida]);
+  const session = view({
+    participants: [thomas, ida],
+    stations: [view().stations![0], { current: { number: 2, exercise_id: "0002", name: "Squat" }, next: null }],
+  });
+  const { flow } = await mount(fake, { kind: "resume" }, { available: true, session });
+
+  const starts = getAllByRole(getByRole(root(flow), "list", { name: "Gør klar" }), "listitem");
+  expect(starts.map(text)).toEqual(["Thomas · station 1 · Push-up", "Ida · station 2 · Squat"]);
+  // Thomas is first in people order; Ida, third, gets the theme's colour.
+  expect(starts.map(chipColour)).toEqual(["#B18CFF", "VAR(--PRIMARY-COLOR)"]);
+});
+
+test("a detached flow never closes the overlay", async () => {
+  const fake = fakeHass("da");
+  const { flow, onClose } = await mount(fake, details);
+  await tap(flow, button(flow, "Start"));
+  flow.remove();
+
+  fake.commands[0].resolve(view({ status: "ended", phase: null, stations: null, next_phase: null }));
+  await wait(flow, 120_000);
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+test("Annullér closes once, whatever views follow", async () => {
+  const fake = fakeHass("da");
+  const { flow, onClose } = await mount(fake, { kind: "resume" }, { available: true, session: view() });
+
+  await tap(flow, button(flow, "Annullér"));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  const ended = view({ revision: 2, status: "ended", phase: null, stations: null, next_phase: null });
+  fake.commands.at(-1)!.resolve(ended);
+  await push(flow, ended);
+  await wait(flow, 120_000);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test("a failed fetch of programs or people shows the unavailable text with Tilbage", async () => {
+  const fake = fakeHass("da");
+  fake.callWS.mockImplementation((message: Message) =>
+    message.type === "ha_fitness/people"
+      ? Promise.reject({ code: "unavailable", message: "Add-on down" })
+      : Promise.resolve([onsdag]),
+  );
+  const { flow, onClose } = await mount(fake, details);
+
+  expect(text(getByRole(root(flow), "alert"))).toBe("HA Fitness kan ikke nås. Prøv igen senere.");
+  expect(queryByRole(root(flow), "button", { name: "Start" })).toBeNull();
+  await tap(flow, button(flow, "Tilbage"));
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test("a program no longer in the active list shows the not-found text with Tilbage", async () => {
+  const fake = fakeHass("da", [thomas, maria], [solo]);
+  const { flow, onClose } = await mount(fake, details);
+
+  expect(text(getByRole(root(flow), "alert"))).toBe("Programmet eller en person findes ikke længere.");
+  expect(queryByRole(root(flow), "button", { name: "Start" })).toBeNull();
+  await tap(flow, button(flow, "Tilbage"));
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
