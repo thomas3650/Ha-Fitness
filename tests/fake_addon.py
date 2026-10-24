@@ -1,7 +1,8 @@
 """A fake HA Fitness add-on: the REST routes and the push channel of spec §3.5 to §3.7 and §4.2.
 
 Step 5 adds the session routes, the session message (the workout spec §3.5), and the programs,
-people and exercise media routes the integration relays (the workout spec §4).
+people and exercise media routes the integration relays (the workout spec §4). Step 6 adds
+`GET /stats` and the stats message (the stats spec §3.4 and §4).
 """
 
 import asyncio
@@ -145,6 +146,36 @@ PEOPLE: dict[str, Any] = {
 }
 
 
+# The stats of the stats spec §3.4 with no people, as the fake sends them by default.
+STATS_EMPTY: dict[str, Any] = {
+    "counting_from": None,
+    "month": "2026-10",
+    "people": [],
+}
+
+# One person's stats (PersonStats of the stats spec §3.4); tests put it in the people list.
+PERSON_STATS: dict[str, Any] = {
+    "id": 1,
+    "name": "Anna",
+    "person_entity_id": "person.anna",
+    "streak": 3,
+    "all_time": {
+        "done": 12,
+        "extra": 2,
+        "missed": 1,
+        "skipped": 1,
+        "time_trained": 21600,
+    },
+    "this_month": {
+        "done": 4,
+        "extra": 1,
+        "missed": 0,
+        "skipped": 1,
+        "time_trained": 7230,
+    },
+}
+
+
 class FakeAddon:
     """An aiohttp app that speaks the add-on's API; tests set its fields and drive the ws."""
 
@@ -163,6 +194,15 @@ class FakeAddon:
         self.no_sessions = False
         # False: leave the session message out on connect, so a test can send it later.
         self.send_session = True
+        # The stats of the stats spec §3.4: what GET /stats answers and the ws sends on connect.
+        # No people by default; tests that want people set them.
+        self.stats: dict[str, Any] = copy.deepcopy(STATS_EMPTY)
+        # True: an add-on from before stats; /stats gives 404 and the ws sends no stats.
+        self.no_stats = False
+        # False: leave the stats message out on connect, so a test can send it later.
+        self.send_stats = True
+        # How many times GET /stats was asked.
+        self.stats_requests = 0
         # False: accept the ws but send nothing (no hello, no today).
         self.send_hello = True
         # False: never answer the client's pings, as a half-open connection wouldn't.
@@ -194,6 +234,7 @@ class FakeAddon:
         self.app.router.add_get("/api/v1/session", self._session)
         self.app.router.add_post("/api/v1/session", self._start_session)
         self.app.router.add_post("/api/v1/session/{command}", self._session_command)
+        self.app.router.add_get("/api/v1/stats", self._stats)
         self.app.router.add_get("/api/v1/programs", self._programs)
         self.app.router.add_get("/api/v1/people", self._people)
         self.app.router.add_get("/api/v1/exercises/{id}/{kind}", self._media)
@@ -214,6 +255,12 @@ class FakeAddon:
         if self.no_sessions:
             return web.json_response({"detail": "Not Found"}, status=404)
         return web.json_response(self.session)
+
+    async def _stats(self, request: web.Request) -> web.Response:
+        self.stats_requests += 1
+        if self.no_stats:
+            return web.json_response({"detail": "Not Found"}, status=404)
+        return web.json_response(self.stats)
 
     async def _start_session(self, request: web.Request) -> web.Response:
         body = await request.json()
@@ -297,6 +344,8 @@ class FakeAddon:
                 await ws.send_json({"type": "today", "data": self.today})
                 if self.send_session and not self.no_sessions:
                     await ws.send_json({"type": "session", "data": self.session})
+                if self.send_stats and not self.no_stats:
+                    await ws.send_json({"type": "stats", "data": self.stats})
             async for _ in ws:  # the client sends nothing; wait for the close
                 pass
         finally:

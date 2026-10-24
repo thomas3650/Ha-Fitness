@@ -1,7 +1,7 @@
 """The cards' websocket commands (the workout spec §4).
 
-The subscriptions to today (step 4 spec §4.5) and to the session; the session command; the
-programs and people lists. None needs an admin: the wallpanel user isn't one.
+The subscriptions to today (step 4 spec §4.5), to the session and to the stats (the stats spec
+§5.1); the session command; the programs and people lists. None needs an admin: the wallpanel user isn't one.
 """
 
 from datetime import datetime
@@ -40,6 +40,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     """Register the websocket commands."""
     websocket_api.async_register_command(hass, ws_subscribe_today)
     websocket_api.async_register_command(hass, ws_subscribe_session)
+    websocket_api.async_register_command(hass, ws_subscribe_stats)
     websocket_api.async_register_command(hass, ws_session_command)
     websocket_api.async_register_command(hass, ws_programs)
     websocket_api.async_register_command(hass, ws_people)
@@ -158,6 +159,46 @@ def ws_subscribe_session(
                 event_message(
                     msg["id"], {"available": available, "session": _fresh(session)}
                 )
+            )
+
+    connection.subscriptions[msg["id"]] = async_dispatcher_connect(
+        hass, SIGNAL_UPDATE, send
+    )
+    connection.send_result(msg["id"])
+    send()
+
+
+def _current_stats(hass: HomeAssistant) -> tuple[bool, dict[str, Any] | None]:
+    """Return whether the stats can be used, and the add-on's last stats (kept while unreachable)."""
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        coordinator = entry.runtime_data
+        stats: dict[str, Any] | None = coordinator.stats
+        return coordinator.stats_available, stats
+    return False, None
+
+
+@websocket_command({probatio.Required("type"): "ha_fitness/stats/subscribe"})
+@callback
+def ws_subscribe_stats(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Send `{available, stats}` at once and after each change of either.
+
+    It follows the dispatcher, not one coordinator, so it survives an entry reload.
+    """
+    last: object = _MISSING
+
+    @callback
+    def send() -> None:
+        nonlocal last
+        available, stats = _current_stats(hass)
+        key = (available, stats)
+        if key != last:
+            last = key
+            connection.send_message(
+                event_message(msg["id"], {"available": available, "stats": stats})
             )
 
     connection.subscriptions[msg["id"]] = async_dispatcher_connect(

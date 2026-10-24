@@ -99,7 +99,14 @@ class SessionEvent:
     session: dict[str, Any]
 
 
-type Message = Hello | Today | TrainingDayEvent | Session | SessionEvent
+@dataclass(frozen=True, slots=True)
+class StatsMessage:
+    """The add-on's stats (the stats spec §3.4), kept raw."""
+
+    data: dict[str, Any]
+
+
+type Message = Hello | Today | TrainingDayEvent | Session | SessionEvent | StatsMessage
 
 
 async def async_health(session: aiohttp.ClientSession, url: str) -> dict[str, Any]:
@@ -131,6 +138,11 @@ async def async_today_missing(session: aiohttp.ClientSession, url: str) -> bool:
 async def async_session_missing(session: aiohttp.ClientSession, url: str) -> bool:
     """Return whether `GET <url>/api/v1/session` gives 404, as on an add-on from before sessions."""
     return await _async_missing(session, url, "/api/v1/session")
+
+
+async def async_stats_missing(session: aiohttp.ClientSession, url: str) -> bool:
+    """Return whether `GET <url>/api/v1/stats` gives 404, as on an add-on from before stats."""
+    return await _async_missing(session, url, "/api/v1/stats")
 
 
 async def async_skip(
@@ -297,6 +309,9 @@ def parse_message(raw: Any) -> Message | None:
             # The key must be there: null means no session, a missing key is malformed.
             if "data" in raw and (raw["data"] is None or isinstance(raw["data"], dict)):
                 return Session(data=raw["data"])
+        case "stats":
+            if isinstance(data := raw.get("data"), dict):
+                return StatsMessage(data=data)
         case "event":
             event = raw.get("event")
             if not isinstance(event, str):
