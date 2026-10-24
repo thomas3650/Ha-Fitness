@@ -30,9 +30,6 @@
     "no": "No",
     "nothing_open": "No training today",
     "unreachable": "HA Fitness can't be reached",
-    "round_label": "Round",
-    "station_label": "Station",
-    "interval_label": "Interval",
     "week": "This week",
     "streak_label": "Streak: {list}"
   },

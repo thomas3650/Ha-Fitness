@@ -30,9 +30,6 @@
     "no": "Nej",
     "nothing_open": "Ingen træning i dag",
     "unreachable": "HA Fitness kan ikke nås",
-    "round_label": "Runde",
-    "station_label": "Station",
-    "interval_label": "Interval",
     "week": "Denne uge",
     "streak_label": "I træk: {list}"
   },
