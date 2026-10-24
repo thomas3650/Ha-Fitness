@@ -468,6 +468,15 @@ test("THEN during a switch and a rest, with the move above the picture", async (
   expect(text(getByRole(root(en.flow), "region", { name: "THEN" }))).toBe("THEN Planke after 45 s work");
 });
 
+test("the whole-workout bar's value stays within its maximum; the elapsed text doesn't", async () => {
+  // Paused moments and Forrige can take a workout past its planned time.
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo({ time_trained: 1800 }));
+  expect(whole(flow).getAttribute("aria-valuemax")).toBe("1740");
+  expect(whole(flow).getAttribute("aria-valuenow")).toBe("1740");
+  expect(hasText(flow, "30:00 / 29:00")).toBe(true);
+});
+
 test("the whole-workout bar moves with the clock", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo());

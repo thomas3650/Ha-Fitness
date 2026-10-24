@@ -2,6 +2,7 @@ import { type TemplateResult, css, html, nothing } from "lit";
 
 import { iconButton } from "../icon-button";
 import type { SessionView } from "../overlay";
+import { personTextColor } from "../people";
 import { ring } from "../ring";
 import {
   type Countdown,
@@ -99,7 +100,10 @@ function renderStarts(ctx: ReadyContext): TemplateResult {
         ${view.participants.map((person, index) => {
           const station = view.stations?.[index]?.current;
           return html`
-            <li class="ready-card" style="--person-color: ${ctx.colors[index]}">
+            <li
+              class="ready-card"
+              style="--person-color: ${ctx.colors[index]}; --person-text: ${personTextColor(ctx.colors[index])}"
+            >
               <span class="number">${index + 1}</span>
               ${station ? renderThumbnail(ctx.imageOf, station) : nothing}
               <span class="where">
@@ -187,7 +191,7 @@ export const readyStyles = css`
     height: 44px;
     border-radius: 50%;
     background: var(--person-color);
-    color: var(--primary-text-color);
+    color: var(--person-text);
     font-size: 1.5rem;
     font-weight: 700;
   }

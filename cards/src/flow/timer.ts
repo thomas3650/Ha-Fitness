@@ -2,6 +2,7 @@ import { type TemplateResult, css, html, nothing } from "lit";
 
 import { iconButton } from "../icon-button";
 import type { PhaseKind, SessionStation, SessionView } from "../overlay";
+import { personTextColor } from "../people";
 import { ring } from "../ring";
 import {
   type Countdown,
@@ -110,7 +111,7 @@ function renderWhole(ctx: TimerContext) {
       aria-label=${ctx.t("flow.whole_workout")}
       aria-valuemin="0"
       aria-valuemax=${planned}
-      aria-valuenow=${now}
+      aria-valuenow=${Math.min(now, planned)}
       style="--ring-color: ${RING_COLORS[ctx.countdown.kind]}"
     >
       <span class="timer-whole-done" style="width: ${share * 100}%"></span>
@@ -209,7 +210,11 @@ function renderCard(ctx: TimerContext, index: number) {
   const station = view.stations?.[index];
   if (!person || !station) return nothing;
   return html`
-    <section class="duo-card" aria-label=${person.name} style="--person-color: ${ctx.colors[index]}">
+    <section
+      class="duo-card"
+      aria-label=${person.name}
+      style="--person-color: ${ctx.colors[index]}; --person-text: ${personTextColor(ctx.colors[index])}"
+    >
       <div class="duo-who">
         <span class="duo-number">${index + 1}</span>
         <span class="duo-name">${person.name}</span>
@@ -377,7 +382,7 @@ export const timerStyles = css`
     height: 40px;
     border-radius: 50%;
     background: var(--person-color);
-    color: var(--primary-text-color);
+    color: var(--person-text);
     font-size: 1.375rem;
     font-weight: 700;
   }

@@ -7,6 +7,14 @@ export function personColor(index: number): string {
 }
 
 /**
+ * The colour of a number drawn on a person's colour: dark on the two fixed colours, which are
+ * light in both themes, and the theme's text-on-primary on the primary colour.
+ */
+export function personTextColor(color: string): string {
+  return PERSON_COLORS.includes(color) ? "#1c1c1c" : "var(--text-primary-color)";
+}
+
+/**
  * Each name's initials: its first letter, upper-cased. A name whose first letter another name shares
  * gets two letters; if those still clash, the shortest prefix no other name shares, up to the whole
  * name ("Thomas", "Thea" → "Tho", "The").
