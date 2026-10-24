@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 from datetime import timedelta
 import logging
+from typing import Any
 from unittest.mock import patch
 
 from aiohttp import web
@@ -19,17 +20,20 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
+from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
 from custom_components.ha_fitness import client
 from custom_components.ha_fitness.const import DOMAIN
 
 from .common import is_open, is_unavailable, set_up, unload, wait_for
-from .fake_addon import FakeAddon
+from .fake_addon import PROGRAMS, FakeAddon
 
 UNSUPPORTED = "unsupported_api_version"
 TOO_OLD = "addon_too_old"
 LOGGER_NAME = "custom_components.ha_fitness"
 NEXT_TRAINING_DAY = "sensor.ha_fitness_next_training_day"
+# Event-loop rounds to let a background probe finish before checking that nothing changed.
+SETTLE_ROUNDS = 1000
 
 
 def _has_issue(issue_registry: ir.IssueRegistry, issue_id: str) -> Callable[[], bool]:
@@ -462,3 +466,71 @@ async def test_failed_unload_keeps_the_connection(
     await fake_addon.close_ws()
     await wait_for(hass, lambda: not fake_addon.connected.is_set())
     await hass.async_block_till_done()
+
+
+async def _programs(hass_ws_client: WebSocketGenerator, hass: HomeAssistant) -> Any:
+    """Return the result of ha_fitness/programs."""
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "ha_fitness/programs"})
+    reply = await client.receive_json()
+    assert reply["success"]
+    return reply["result"]
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_probe_sets_music_supported(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Each probe sets music_supported from /music's answer; a disconnect keeps it."""
+    fake_addon.no_music = True
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: fake_addon.music_requests == 1)
+    coordinator = config_entry.runtime_data
+    for _ in range(SETTLE_ROUNDS):
+        await asyncio.sleep(0)
+    assert not coordinator.music_supported
+    assert all(
+        program["music"] is None for program in await _programs(hass_ws_client, hass)
+    )
+
+    # The add-on is updated: the probe after its hello finds /music.
+    fake_addon.no_music = False
+    await fake_addon.push({"type": "hello", "version": "0.3.0", "api_version": 1})
+    await wait_for(hass, lambda: coordinator.music_supported)
+    programs = await _programs(hass_ws_client, hass)
+    assert programs[0]["music"] == PROGRAMS[1]["program"]["music"]
+
+    # A disconnect keeps the flag, so a reconnect leaves no gap.
+    await fake_addon.close_ws()
+    await wait_for(hass, lambda: is_unavailable(hass))
+    assert coordinator.music_supported
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_probe_404_on_music_raises_addon_too_old(
+    hass: HomeAssistant,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    """/music answering 404 while health answers raises addon_too_old; a new add-on's hello deletes it."""
+    fake_addon.no_music = True
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: is_open(hass))
+    await wait_for(hass, _has_issue(issue_registry, TOO_OLD))
+    issue = issue_registry.async_get_issue(DOMAIN, TOO_OLD)
+    assert issue is not None
+    assert issue.translation_key == TOO_OLD
+
+    fake_addon.no_music = False
+    requests = fake_addon.music_requests
+    await fake_addon.push({"type": "hello", "version": "0.3.0", "api_version": 1})
+    await wait_for(hass, lambda: fake_addon.music_requests > requests)
+    for _ in range(SETTLE_ROUNDS):
+        await asyncio.sleep(0)
+    assert issue_registry.async_get_issue(DOMAIN, TOO_OLD) is None
+    await unload(hass, config_entry)

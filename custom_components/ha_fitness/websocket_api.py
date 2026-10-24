@@ -1,10 +1,10 @@
 """The cards' websocket commands (the workout spec §4).
 
 The subscriptions to today (step 4 spec §4.5), to the session and to the stats (the stats spec
-§5.1); the session command; the programs and people lists. None needs an admin: the tablet's user isn't one.
+§5.1); the session command; the programs, people and speakers lists. None needs an admin: the tablet's user isn't one.
 """
 
-from datetime import datetime
+import re
 from typing import Any
 
 from homeassistant.components import websocket_api
@@ -30,8 +30,12 @@ from .client import (
 )
 from .const import DOMAIN, SIGNAL_UPDATE
 from .coordinator import FitnessCoordinator, usable_coordinator
+from .music import _parse_time, music_speakers
 
 _MISSING = object()
+
+# The add-on's pattern for `Music.speaker` (the music spec §5.5).
+SPEAKER_PATTERN = re.compile(r"media_player\.[a-z0-9_]+")
 
 SESSION_COMMANDS = (
     "start",
@@ -53,6 +57,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_session_command)
     websocket_api.async_register_command(hass, ws_programs)
     websocket_api.async_register_command(hass, ws_people)
+    websocket_api.async_register_command(hass, ws_speakers)
 
 
 def _current_today(hass: HomeAssistant) -> dict[str, Any] | None:
@@ -132,15 +137,6 @@ def _fresh(view: dict[str, Any] | None) -> dict[str, Any] | None:
     ):
         fresh["time_trained"] = round(trained + (now - sent_at).total_seconds())
     return fresh
-
-
-def _parse_time(value: object) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
 
 
 @websocket_command({probatio.Required("type"): "ha_fitness/session/subscribe"})
@@ -246,6 +242,7 @@ def _usable(
         probatio.Optional("program_id"): int,
         probatio.Optional("participants"): [int],
         probatio.Optional("training_day_id"): int,
+        probatio.Optional("speaker"): str,
         probatio.Optional("feeling"): str,
     }
 )
@@ -257,11 +254,17 @@ async def ws_session_command(
 ) -> None:
     """Relay a command to the add-on and return the session view.
 
-    `start` needs `program_id` and `participants`, `feeling` needs `feeling`; the add-on checks the rest. A refusal
-    keeps the add-on's code (not_found, conflict, invalid); anything else that fails is unavailable.
+    `start` needs `program_id` and `participants`, and its optional `speaker` must match the add-on's pattern;
+    `feeling` needs `feeling`; the add-on checks the rest. The speaker is passed on only while the add-on supports
+    music (the music spec §5.6). A refusal keeps the add-on's code (not_found, conflict, invalid); anything else
+    that fails is unavailable.
     """
     command: str = msg["command"]
-    if command == "start" and ("program_id" not in msg or "participants" not in msg):
+    if command == "start" and (
+        "program_id" not in msg
+        or "participants" not in msg
+        or ("speaker" in msg and not SPEAKER_PATTERN.fullmatch(msg["speaker"]))
+    ):
         _send_error(connection, msg["id"], "invalid")
         return
     if command == "feeling" and "feeling" not in msg:
@@ -285,6 +288,7 @@ async def ws_session_command(
                 msg["participants"],
                 msg.get("training_day_id"),
                 coordinator.integration_version,
+                msg.get("speaker") if coordinator.music_supported else None,
             )
         else:
             view = await async_session_command(
@@ -302,8 +306,11 @@ async def ws_session_command(
     connection.send_result(msg["id"], view)
 
 
-def _program(stored: dict[str, Any]) -> dict[str, Any]:
-    """Return one stored program (step 3's ProgramOut) in the shape of the workout spec §4."""
+def _program(stored: dict[str, Any], music_supported: bool) -> dict[str, Any]:
+    """Return one stored program (step 3's ProgramOut) in the shape of the workout spec §4.
+
+    `music` is the add-on's, or null while the add-on doesn't support music (the music spec §5.5 and §5.6).
+    """
     program = stored["program"]
     result: dict[str, Any] = {
         "id": stored["id"],
@@ -322,6 +329,7 @@ def _program(stored: dict[str, Any]) -> dict[str, Any]:
                 program["stations"], stored["station_names"], strict=True
             )
         ],
+        "music": program.get("music") if music_supported else None,
     }
     # An add-on from before equipment sends no list; the key stays out, so the cards hide "Du skal bruge".
     if "equipment" in stored:
@@ -342,7 +350,11 @@ async def ws_programs(
     try:
         stored = await async_programs(coordinator.http_session, coordinator.url)
         # A malformed item (a missing key, stations and names that don't pair) is unavailable too.
-        programs = [_program(item) for item in stored if item["program"]["active"]]
+        programs = [
+            _program(item, coordinator.music_supported)
+            for item in stored
+            if item["program"]["active"]
+        ]
     except AddonConnectionError, KeyError, TypeError, ValueError:
         _send_error(connection, msg["id"], "unavailable")
         return
@@ -367,3 +379,17 @@ async def ws_people(
         _send_error(connection, msg["id"], "unavailable")
         return
     connection.send_result(msg["id"], people)
+
+
+@websocket_command({probatio.Required("type"): "ha_fitness/speakers"})
+@callback
+def ws_speakers(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return Music Assistant's speakers, `{speakers: [{entity_id, name, available}]}`, sorted by name.
+
+    It reads Home Assistant only, so it needs no add-on; without Music Assistant the list is empty.
+    """
+    connection.send_result(msg["id"], {"speakers": music_speakers(hass)})

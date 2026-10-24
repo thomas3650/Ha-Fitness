@@ -23,6 +23,7 @@ from .client import (
     Today,
     async_health,
     async_listen,
+    async_music_missing,
     async_session_missing,
     async_stats_missing,
     async_today_missing,
@@ -55,8 +56,10 @@ class FitnessCoordinator:
     `today` message, and None while not connected. `session` is the add-on's last session view;
     it is kept across a disconnect, so the card can go on counting down. `session_seen` is true
     once a session message has come since the last connect. `stats` and `stats_seen` work the
-    same way for the add-on's stats (the stats spec §5.1). Each change is also sent on the
-    dispatcher (`SIGNAL_UPDATE`), which the cards' subscriptions follow across entry reloads.
+    same way for the add-on's stats (the stats spec §5.1). `music_supported` is set from each
+    probe's answer for the music route (the music spec §5.6); it is kept across a disconnect, so a
+    reconnect leaves no gap. Each change is also sent on the dispatcher (`SIGNAL_UPDATE`), which
+    the cards' subscriptions follow across entry reloads.
     """
 
     def __init__(
@@ -79,6 +82,7 @@ class FitnessCoordinator:
         self.session_seen = False
         self.stats: dict[str, Any] | None = None
         self.stats_seen = False
+        self.music_supported = False
         self.addon_version: str | None = None
         self._listeners: list[CALLBACK_TYPE] = []
         self._attempt = 0
@@ -170,14 +174,18 @@ class FitnessCoordinator:
         return too_old
 
     async def _async_probe_routes(self) -> None:
-        """Raise addon_too_old when `/session` or `/stats` gives 404 while health answers.
+        """Set `music_supported`, and raise addon_too_old when a route gives 404 while health answers.
 
-        An add-on from before sessions (the workout spec §4) or before stats (the stats spec §5.1)
-        connects, but lacks the route.
+        An add-on from before sessions (the workout spec §4), before stats (the stats spec §5.1) or
+        before music (the music spec §5.6) connects, but lacks the route. `/music` is asked every
+        time, so each probe that gets an answer sets the flag.
         """
         try:
+            music_missing = await async_music_missing(self.http_session, self.url)
+            self._set_music_supported(not music_missing)
             if not (
-                await async_session_missing(self.http_session, self.url)
+                music_missing
+                or await async_session_missing(self.http_session, self.url)
                 or await async_stats_missing(self.http_session, self.url)
             ):
                 return
@@ -194,6 +202,12 @@ class FitnessCoordinator:
             severity=ir.IssueSeverity.ERROR,
             translation_key=ISSUE_ADDON_TOO_OLD,
         )
+
+    @callback
+    def _set_music_supported(self, supported: bool) -> None:
+        if supported != self.music_supported:
+            self.music_supported = supported
+            self._notify()
 
     @callback
     def _handle_connect(self) -> None:
