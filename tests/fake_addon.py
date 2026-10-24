@@ -36,7 +36,7 @@ SESSION_RUNNING: dict[str, Any] = {
     "counted": False,
     "program_name": "Onsdag",
     "training_day_id": 12,
-    "participants": [{"id": 1, "name": "Thomas"}, {"id": 2, "name": "Mette"}],
+    "participants": [{"id": 1, "name": "Anna"}, {"id": 2, "name": "Bo"}],
     "phase": {
         "index": 3,
         "kind": "work",
