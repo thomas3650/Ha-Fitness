@@ -22,10 +22,15 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
      `config/custom_components/ha_fitness` linked to the repo.
 3. Wait for HA: `curl -sf -o /dev/null --retry 60 --retry-delay 2 --retry-connrefused --retry-all-errors
    http://localhost:8123/manifest.json`.
-4. On a fresh `config/`: `uv run python scripts/dev_onboard.py`. It onboards HA with the user `dev` / `dev`, sets that
-   user's language to Danish, sets the dev HA's timezone to Europe/Copenhagen (the server's zone) and adds the HA
-   Fitness entry. It also writes a long-lived token for the dev user to `local/dev-ha-token` (mode 600), or keeps the
+4. On a fresh `config/`: `uv run python scripts/dev_onboard.py`, while the add-on server runs. It onboards HA with the
+   user `dev` / `dev`, sets that user's language to Danish and sets the dev HA's timezone to Europe/Copenhagen (the
+   server's zone). It also writes a long-lived token for the dev user to `local/dev-ha-token` (mode 600), or keeps the
    one there when HA still accepts it. It is safe to run again, and the server needs no restart after it.
+   - It adds the HA Fitness entry through the user step, with the URL `http://localhost:8765`. The integration checks
+     that the server answers there; if it doesn't, the script stops and says so.
+   - It creates the **dev dashboard** `ha-fitness-dev` ("HA Fitness dev" in the sidebar, at
+     `http://localhost:8123/ha-fitness-dev`): one sections view holding the card `custom:ha-fitness-today-card`, with
+     no visibility rule and no `language` option. A dashboard that already has a config is kept as it is.
 5. Check: `curl -s http://localhost:8765/api/v1/health` gives the health JSON,
    `http://localhost:8123/ha_fitness_frontend/ha-fitness-cards.js` answers 200, and
    `curl -s http://localhost:8765/api/v1/people` has a list in `ha_persons`, not `null`.
@@ -60,7 +65,7 @@ container (`.devcontainer/supervisor/devcontainer.json`), driven by `scripts/ful
 Desktop must run.
 
 1. `scripts/full-loop up` starts the container and the Supervisor, waits for HA on `http://localhost:7123`, and
-   onboards it (user `dev` / `dev`, Danish, no entry). The first start takes several minutes.
+   onboards it (user `dev` / `dev`, Danish, the dev dashboard, no entry). The first start takes several minutes.
 2. `scripts/full-loop install` copies `addon/` to `local/full-loop/ha_fitness/` without its `image:` line, then
    installs and starts the add-on as the local app `local_ha_fitness`, or rebuilds it when it is installed
    ([why the copy](ha-notes.md#the-supervisor)). Run it again after each add-on change.
@@ -70,7 +75,12 @@ Desktop must run.
    `curl -s http://localhost:8765/api/v1/people` lists them: the add-on reaches its HA through the Supervisor.
    `GET /api/v1/library` reaches media state `done`.
 5. Check Ingress in Chrome (below): the add-on's page at `http://localhost:7123/app/local_ha_fitness`, in Danish for
-   the Danish user. Check discovery and the cards there too, once those exist.
+   the Danish user. Then the integration:
+   - install it ([how](ha-notes.md#the-supervisor): copy `custom_components/ha_fitness`, with the built cards, and
+     restart HA);
+   - the Discovered card reads "HA Fitness", and setting it up from there creates the entry with no URL to type;
+   - the three entities have their states, and the device shows the add-on's version;
+   - the today card on `http://localhost:7123/ha-fitness-dev` shows the open day.
 6. The MCP check (below) against `http://localhost:8765/mcp`.
 7. The backup check (below).
 8. `scripts/full-loop down` removes the container and its volumes. The next `up` downloads HA Core again.
@@ -100,6 +110,19 @@ For every UI change, in the fast loop (and in the full loop before a release):
 - No errors in the console.
 - Screenshots of the changed screens go in the PR description. They show the dev HA only, never the real one.
 
+### The today card
+
+On the dev dashboard `http://localhost:8123/ha-fitness-dev`, as the Danish user, with a screenshot of each step. Due
+and late days never show together, so they are separate steps.
+
+1. `scripts/seed --today`: one due row, the program's name over "5 øvelser · 5 runder · ca. … min", and Spring over.
+2. Skip with two taps: Spring over, then Ja. The card hides, and leaves no empty cell.
+3. `scripts/seed --late`: the card comes back **without a reload**, and the row reads "Forfalden · <weekday> · …".
+4. Edit mode with nothing open: the card stays, with the note "Ingen træning i dag".
+5. Stop the add-on server alone (`kill "$(cat local/addon-server.pid)"`): the card shows "HA Fitness kan ikke nås".
+   Start the fast loop again afterwards.
+6. The console is clean throughout.
+
 ## MCP check from Claude Code
 
 From step 3 on the add-on serves MCP at `/mcp`; the tools are spec §8
@@ -113,8 +136,8 @@ From step 3 on the add-on serves MCP at `/mcp`; the tools are spec §8
    call <tool>" --allowedTools "mcp__ha-fitness-dev__<tool>"`.
 3. Ask in plain words for a program, for example "Make a program for Wednesday with five body-weight exercises, five
    rounds, 45 s work". Claude searches the library and creates it.
-4. `list_programs` shows it, and so does the add-on's page at `http://localhost:8765/`. From step 4 on, also see it
-   on the card in the dev HA.
+4. `list_programs` shows it, and so does the add-on's page at `http://localhost:8765/`. On a day the program
+   trains, it is also on the today card on the dev dashboard (`http://localhost:8123/ha-fitness-dev`).
 5. Delete the test programs again, then `claude mcp remove ha-fitness-dev -s local`.
 
 The same works against the full loop: the add-on's port 8765 is mapped to the Mac.

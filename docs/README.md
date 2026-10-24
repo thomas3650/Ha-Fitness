@@ -13,7 +13,7 @@ The root [`README.md`](../README.md) is the public intro. Everything else lives 
 | [`domain-language.md`](domain-language.md) | The words: program, station, round, training day, due/late/missed/skipped, streak … | Naming anything, or reading a spec |
 | [`testing.md`](testing.md) | The fast loop, the full loop, the Chrome check, the MCP check | Testing a change beyond the gates |
 | [`notes.md`](notes.md) | Small learned facts that fit no other doc, and dates to renew | Looking for a fact that isn't elsewhere |
-| [`ha-notes.md`](ha-notes.md) | Learned Home Assistant facts: the Supervisor, testing, macOS, bumping HA | Building or testing against Home Assistant |
+| [`ha-notes.md`](ha-notes.md) | Learned Home Assistant facts: the Supervisor, the integration, the frontend, testing, macOS, bumping HA | Building or testing against Home Assistant |
 | [`superpowers/specs/`](superpowers/specs/) | One design spec per feature; snapshots, not edited after merge | Why a feature is shaped this way |
 | [`superpowers/plans/`](superpowers/plans/) | One implementation plan per feature; snapshots | How a feature was built |
 | [`mockups/`](mockups/README.md) | The initial mockups (a reference only) and the updated screens | Building or changing a screen |
