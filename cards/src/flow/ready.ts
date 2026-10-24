@@ -50,7 +50,7 @@ export function renderReady(ctx: ReadyContext): TemplateResult {
       ${renderStarts(ctx)}
     </div>
     ${renderError(ctx.error)}
-    <div class="actions">
+    <div class="actions ready-actions">
       ${paused
         ? iconButton({
             icon: "mdi:play",
@@ -99,7 +99,7 @@ function renderStarts(ctx: ReadyContext): TemplateResult {
         ${view.participants.map((person, index) => {
           const station = view.stations?.[index]?.current;
           return html`
-            <li class="start" style="--person-color: ${ctx.colors[index]}">
+            <li class="ready-card" style="--person-color: ${ctx.colors[index]}">
               <span class="number">${index + 1}</span>
               ${station ? renderThumbnail(ctx.imageOf, station) : nothing}
               <span class="where">
@@ -168,7 +168,7 @@ export const readyStyles = css`
     gap: 16px;
     margin: 0;
   }
-  .ready-starts .start {
+  .ready-starts .ready-card {
     display: flex;
     align-items: center;
     gap: 16px;
@@ -178,7 +178,7 @@ export const readyStyles = css`
     background: var(--card-background-color, var(--secondary-background-color));
     font-size: 1.25rem;
   }
-  .start .number {
+  .ready-card .number {
     display: flex;
     flex: none;
     align-items: center;
@@ -187,28 +187,31 @@ export const readyStyles = css`
     height: 44px;
     border-radius: 50%;
     background: var(--person-color);
-    color: var(--text-primary-color);
+    color: var(--primary-text-color);
     font-size: 1.5rem;
     font-weight: 700;
   }
-  .start .thumb {
+  .ready-card .thumb {
     flex: none;
     width: 112px;
     height: 112px;
   }
-  .start .where {
+  .ready-card .where {
     display: flex;
     flex-direction: column;
     gap: 4px;
     min-width: 0;
     overflow-wrap: anywhere;
   }
-  .start .station {
+  .ready-card .station {
     color: var(--secondary-text-color);
   }
-  .start .exercise {
+  .ready-card .exercise {
     font-size: 1.75rem;
     font-weight: 700;
+  }
+  .ready-actions {
+    justify-content: center;
   }
   @container (max-width: 1000px) {
     .ready {
