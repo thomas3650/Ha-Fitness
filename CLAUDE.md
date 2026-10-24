@@ -12,7 +12,7 @@ workout, runs it for one or two people and keeps per-person stats; programs are 
 - `custom_components/ha_fitness/` — the integration; `frontend/` holds the built cards bundle (git-ignored)
 - `cards/` — the cards' source (Lit + TypeScript, Vite, Vitest)
 - `tests/` — the integration's tests
-- `scripts/` — the fast loop, the full loop and the link check; `scripts/dev/` holds the fake Music Assistant
+- `scripts/` — the fast loop, the full loop and the link check
 - `.devcontainer/supervisor/` — the Supervisor dev container of the full loop
 - `.github/` — CI, release workflows, Dependabot, the PR template
 - `.claude/` — project settings and the agents (`implementer`, `task-reviewer`, `full-reviewer`)
