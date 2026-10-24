@@ -403,3 +403,13 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** A session ended before one round is no workout. Counting dates keeps the streak independent of the order the
   days were created in.
 - **Source:** [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3.1, §3.2 and §7; Claude, 2026-10-24
+
+### D49: Per-person sensor ids come from the HA person entity's object id; names are translated with a `{person}` placeholder
+- **Date:** 2026-10-24 · **Status:** active
+- **Decision:** Per-person sensor ids come from the HA person entity's object id (`person.thomas` →
+  `sensor.ha_fitness_thomas_streak`); names are translated with a `{person}` placeholder, the add-on person's name. The
+  streak sensor has no unit.
+- **Why:** The ids stay the same when a name changes or HA's language does, so automations keep working. HA takes a
+  translated unit from the English file only, so a streak in "days" would show in English on a Danish HA
+  ([`ha-notes.md`](ha-notes.md#the-integration)).
+- **Source:** [stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.1 and §7; the unit, Claude, 2026-10-24

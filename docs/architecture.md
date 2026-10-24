@@ -82,13 +82,15 @@ The cards are built into the integration: one bundle, released and versioned wit
     `binary_sensor.ha_fitness_session_running`, the services `ha_fitness.start_session` and `ha_fitness.end_session`,
     the session events, the session relay for the cards and the websocket commands
     ([below](#sessions-in-the-integration)).
+  - **Stats** (the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.1): four sensors per person and the
+    stats relay for the cards ([below](#stats-in-the-integration)).
   - **The media proxy** `GET /api/ha_fitness/media/{exercise_id}/{kind}`, an exercise's GIF or thumbnail behind HA's
     login (D44; [below](#the-media-proxy)).
   - **The cards bundle:** setting up the entry serves `custom_components/ha_fitness/frontend/` at
     `/ha_fitness_frontend/` and loads `/ha_fitness_frontend/ha-fitness-cards.js?v=<integration version>` in the
     frontend. The version in the URL busts browser caches after an update.
 - **Cards:** Vite builds `cards/src/index.ts` into `custom_components/ha_fitness/frontend/ha-fitness-cards.js`.
-  The bundle registers its elements, the two cards and `ha-fitness-workout-flow`, once HA's frontend has booted
+  The bundle registers its elements, the three cards and `ha-fitness-workout-flow`, once HA's frontend has booted
   ([`ha-notes.md`](ha-notes.md#the-frontend)). The texts come from `cards/src/i18n/`
   (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the HA user's language
   (D11, D38).
@@ -102,9 +104,17 @@ The cards are built into the integration: one bundle, released and versioned wit
     people, get ready, the timer, paused and done. It follows the session through `ha_fitness/session/subscribe`,
     starts and steers it through `ha_fitness/session/command`, shows the media through the proxy (D44), and plays the
     beeps with Web Audio (step 5 spec §5).
-
-Not built yet: the stats in the integration (the sensors and the relay) and the stats card. They come with the
-second stats PR ([stats spec](superpowers/specs/2026-10-24-stats-design.md) §5).
+  - **The stats card** (`custom:ha-fitness-stats-card`, stats spec §5.2) goes on the workout tab, below the workout
+    card. It follows `ha_fitness/stats/subscribe`. It has one panel per person, side by side, in the people's order and
+    colours (purple `#B18CFF`, teal `#3DD6C6`, then the primary colour). Below about 600 px of card width the panels
+    stack (a container query). A panel has the name with a colour dot, the streak ("7 i træk"), and a table of
+    Gennemført, Missede and Tid for "Denne måned" and "I alt". Missede is missed plus skipped. "· 2 ekstra" and
+    "· 1 sprunget over" show only when the count is above 0. Tid is "4 t 35 min", or minutes only under an hour.
+    - Which line shows, the first that applies: no stats yet and unreachable, "HA Fitness kan ikke nås"; no people,
+      "Ingen personer"; `counting_from` null, "Statistikken starter ved første træning"; else the panels.
+    - While the add-on is unreachable, the card keeps the last stats, with "HA Fitness kan ikke nås" as a small note
+      above whichever line shows.
+    - It shows nothing before the first message.
 
 ### Routing in the add-on server
 
@@ -157,17 +167,19 @@ second stats PR ([stats spec](superpowers/specs/2026-10-24-stats-design.md) §5)
 - **REST calls** (the skip and the session commands) send `User-Agent: ha_fitness/<integration version>`, so the
   add-on's change log names the integration.
 - **While disconnected, or on an unsupported version,** every entity is unavailable and the today subscription sends
-  `null`. The session subscription sends `available: false` with the last view instead
-  ([below](#sessions-in-the-integration)).
+  `null`. The session and stats subscriptions send `available: false` with the last view or stats instead
+  ([below](#sessions-in-the-integration), [stats](#stats-in-the-integration)).
 - **The repair issues**, both errors that the user fixes by updating a part. Each is deleted once a supported add-on
   connects.
   - `unsupported_api_version`: the add-on speaks another API version. It says to update the integration.
   - `addon_too_old`: the ws handshake is refused with an HTTP status, `GET /api/v1/health` answers and
     `GET /api/v1/today` gives 404. That is an add-on from before step 4 (D37). It says to update the add-on, and the
     client keeps retrying.
-    - It is also raised for an add-on from before sessions. After each supported `hello`, a background probe gets
-      `GET /api/v1/session`. A 404 while `/health` answers raises the issue. The connection stays up, so `today` still
-      works. Each `hello` deletes the issue first, and the probe raises it again on such an add-on.
+    - It is also raised for an add-on from before sessions or before stats. After each supported `hello`, one
+      background route probe gets `GET /api/v1/session`, then `GET /api/v1/stats`. A 404 on either while `/health`
+      answers raises the issue. The connection stays up, so `today` still works. Each `hello` deletes the issue first,
+      and the probe raises it again on such an add-on. A probe that can't reach the add-on does nothing; the next
+      `hello` probes again.
 
 ### Sessions in the integration
 
@@ -213,6 +225,45 @@ The integration relays it.
 - **While the add-on can't be used** it sends `available: false` with the last view, not `null`. With no loaded entry
   it sends `{available: false, session: null}`.
 - It follows the dispatcher, not one coordinator, so it survives an entry reload.
+
+### Stats in the integration
+
+The add-on's side (what counts, the route and the `stats` message) is the
+[stats spec](superpowers/specs/2026-10-24-stats-design.md) §3–§4. The integration relays it and makes sensors of it.
+
+- **The last stats.** The coordinator keeps the last `stats` message's data, also across a disconnect. A `stats`
+  message whose `data` isn't an object is ignored. The stats are available while the add-on is connected and has sent
+  a `stats` message since the last `hello`. So they are unavailable between a connect and the first `stats`, and while
+  the add-on is unreachable.
+- **`ha_fitness/stats/subscribe`** sends `{available, stats}` at once and after each change of the pair. While
+  unavailable, `stats` is the last one known, or `null` before the first. With no loaded entry it sends
+  `{available: false, stats: null}`. It follows the dispatcher, so it survives an entry reload. It needs no admin.
+- **An older add-on** never sends `stats`. The route probe raises `addon_too_old` for it
+  ([above](#the-integrations-side)), and the stats stay unavailable.
+- **Four sensors per person**, on the "HA Fitness" device. `<person>` is the object id of the person's HA person
+  entity (`person.thomas` → `thomas`), so the ids stay the same when a name changes (D49). The unique id is
+  `{entry_id}_person_{id}_{key}`, with the add-on person's id.
+
+  | Key | Entity id | Name (en / da) | State | Attributes |
+  | --- | --- | --- | --- | --- |
+  | `streak` | `sensor.ha_fitness_<person>_streak` | "{person} streak" / "{person} i træk" | the streak; state class measurement; no unit | — |
+  | `done` | `sensor.ha_fitness_<person>_done` | "{person} done" / "{person} gennemført" | all-time done; state class total | `this_month`, `extra`, `extra_this_month` |
+  | `missed` | `sensor.ha_fitness_<person>_missed` | "{person} missed" / "{person} missede" | all-time missed plus skipped; state class total | `this_month` (missed plus skipped), `skipped`, `skipped_this_month` |
+  | `time_trained` | `sensor.ha_fitness_<person>_time_trained` | "{person} time trained" / "{person} træningstid" | all-time minutes, rounded down; device class duration; state class total | `this_month` (minutes, rounded down) |
+
+  - The names are translated, with the add-on person's name as `{person}`. HA caches a name, so a rename in the
+    add-on shows after the entry is reloaded. The ids stay.
+  - The streak has no unit: HA takes a translated unit from the English file only
+    ([`ha-notes.md`](ha-notes.md#the-integration)), so "dage" would never show.
+  - State class `total`, not `total_increasing`, because the dev routes can lower a count.
+  - The attribute names are keys; the UI's names for them come from the translation files. The attributes aren't
+    recorded.
+  - A sensor is unavailable unless the stats are available and still hold its person.
+- **Added and removed with the people.** On each update while the stats are available, the entry's person sensors in
+  the registry are compared with the people in the stats. A person added in the add-on gets four sensors. A removed
+  person's sensors are removed from the registry and the state machine. The removals come before any add, so a person
+  removed and added again with a new add-on id keeps the entity ids (no `_2`). One update runs at a time, and running
+  it twice changes nothing. A disconnect keeps the sensors, unavailable.
 
 ### The media proxy
 
