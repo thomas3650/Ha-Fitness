@@ -355,13 +355,15 @@ class Sessions:
                     row.paused_at = row.last_tick_at
                     messages += self._changed(row, now, phase_changed=False)
                 messages += self._tick(db_session, now)
+                # Only a view still inside its 5 minutes needs a null later; the tick's own finish may be older.
                 last = self._last_finished(db_session)
-                if (
-                    last is not None
+                self._shown = (
+                    last.id
+                    if last is not None
                     and last.ended_at is not None
                     and now - last.ended_at < FINISHED_VIEW_KEPT
-                ):
-                    self._shown = last.id
+                    else None
+                )
             self._send(messages)
 
     def pause_for_shutdown(self) -> None:

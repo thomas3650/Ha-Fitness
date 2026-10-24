@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 import json
 from typing import Any
 
@@ -463,7 +464,10 @@ async def test_mcp_get_session_and_list_sessions(make_app: MakeApp) -> None:
         await start(client, program["id"], [thomas])
         running_view = await call(session, "get_session")
         rest_running = (await client.get(SESSION)).json()
-        await ok(client, "end")
+        first = await ok(client, "end")
+        clock.advance(timedelta(minutes=1))
+        await start(client, program["id"], [thomas])
+        second = await ok(client, "end")
         history = await call(session, "list_sessions")
         rest_history = (await client.get(SESSIONS)).json()
         one = await call(session, "list_sessions", limit=1)
@@ -473,8 +477,12 @@ async def test_mcp_get_session_and_list_sessions(make_app: MakeApp) -> None:
     assert running_view == {"result": rest_running}
     assert history == rest_history
     assert history["counting_from"] is None
-    assert [listed["status"] for listed in history["sessions"]] == ["ended"]
-    assert one == rest_history
+    assert [listed["id"] for listed in history["sessions"]] == [
+        second["id"],
+        first["id"],
+    ]
+    assert one == {**rest_history, "sessions": rest_history["sessions"][:1]}
+    assert len(one["sessions"]) == 1
     detail = json.loads(str(refused.value))
     assert detail["code"] == "invalid"
     assert "limit" in detail["message"]

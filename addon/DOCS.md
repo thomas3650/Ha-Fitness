@@ -68,6 +68,11 @@ The add-on also writes the snapshot when it stops, so a backup taken while it is
 stop. Only after a crash does such a backup hold an older snapshot: the Supervisor runs the snapshot command only in a
 running add-on.
 
+## Workouts
+
+Stopping or updating the add-on pauses a running workout; resume it on the tablet afterwards. A workout that stays
+paused for 30 minutes ends.
+
 ## Support
 
 Report problems at <https://github.com/thomas3650/Ha-Fitness/issues>.

@@ -58,12 +58,22 @@ async def _crash_at_12(clock: FrozenClock, make_app: MakeApp) -> None:
         clock.set(at(WEDNESDAY_9, 14))
 
 
+async def _shut_down_at_12(clock: FrozenClock, make_app: MakeApp) -> None:
+    """Start a session at 9:00, move to 12 s with no tick, and shut down normally.
+
+    The loop waits an hour, so nothing ticks after the start: `last_tick_at` stays at 0 s, and only the shutdown's
+    pause can keep the session at 12 s.
+    """
+    app = make_session_app(clock, make_app, {"session_tick_max": 3600})
+    async with running(app) as client:
+        await _start_small(client)
+        clock.set(at(WEDNESDAY_9, 12))
+
+
 async def test_shutdown_pauses_running_session(make_app: MakeApp) -> None:
     """A normal shutdown pauses a running session at the shutdown; the next start keeps it paused there."""
     clock = FrozenClock(WEDNESDAY_9)
-    async with started(clock, make_app) as client:
-        await _start_small(client)
-        clock.set(at(WEDNESDAY_9, 12))
+    await _shut_down_at_12(clock, make_app)
     clock.set(at(WEDNESDAY_9, 12) + timedelta(minutes=10))
     async with started(clock, make_app) as client:
         paused = await current(client)
@@ -150,3 +160,18 @@ async def test_shutdown_snapshot_holds_latest_program(
     async with started(clock, make_app) as client:
         programs = (await client.get(PROGRAMS)).json()
     assert [program["program"]["name"] for program in programs] == ["Seneste"]
+
+
+async def test_shutdown_pauses_before_the_snapshot(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """The snapshot written at shutdown holds the session paused as of the shutdown, not as of `last_tick_at`."""
+    clock = FrozenClock(WEDNESDAY_9)
+    await _shut_down_at_12(clock, make_app)
+    (tmp_path / DATABASE_NAME).unlink()
+    clock.set(at(WEDNESDAY_9, 12) + timedelta(minutes=10))
+    async with started(clock, make_app) as client:
+        paused = await current(client)
+    assert paused["status"] == "paused"
+    assert paused["phase"]["index"] == 1
+    assert paused["phase"]["remaining"] == 3.0
