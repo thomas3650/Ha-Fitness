@@ -211,6 +211,8 @@ class WorkoutSession(Base):
     ended_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     rounds_completed: Mapped[int]
     revision: Mapped[int]
+    # How the workout felt (`too_easy`, `just_right`, `too_hard`); null until rated (migration 0005).
+    feeling: Mapped[str | None] = mapped_column(String(16))
 
 
 class SessionParticipant(Base):

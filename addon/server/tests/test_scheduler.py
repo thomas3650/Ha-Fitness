@@ -96,6 +96,7 @@ async def test_midnight_creates_due_days(make_app: MakeApp) -> None:
             "date": "2026-10-27",
             "open": [],
             "next": {"date": "2026-10-28", "programs": ["Onsdag"]},
+            "week": {"done": 0, "planned": 1},
         }
         clock.set(local(2026, 10, 27, 23, 59))
         assert (await _today(client))["open"] == []
@@ -352,7 +353,12 @@ async def test_next_is_null_without_active_programs(make_app: MakeApp) -> None:
     """`next` is null with no program or only inactive ones, and is after today otherwise."""
     clock = FrozenClock(local(2026, 10, 28))
     async with started(make_app, clock) as client:
-        assert await _today(client) == {"date": "2026-10-28", "open": [], "next": None}
+        assert await _today(client) == {
+            "date": "2026-10-28",
+            "open": [],
+            "next": None,
+            "week": {"done": 0, "planned": 0},
+        }
         await _create(client, "Hvile", ["wed"], active=False)
         assert (await _today(client))["next"] is None
         await _create(client, "Onsdag", ["wed"])

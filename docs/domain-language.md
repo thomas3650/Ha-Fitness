@@ -31,6 +31,7 @@ spec already names.
 | **Participant** | A person taking part in one session (1 or 2, at most the number of stations). Participant 1 starts at station 1, participant 2 at station 2. |
 | **Session** | One run of a program's workout, from start to done or ended early. |
 | **Extra session** | A session started when nothing is due, or from the workout tab. It counts toward done and time trained, not toward the streak, and closes no training day. |
+| **Feeling** | How a workout felt, given on the finished screen: too easy, just right or too hard. Stored with the completed session, so Claude can read it when it adjusts a program. |
 | **Ended early** | A session stopped before its last work phase ended: with Slut or Annullér, or after 30 minutes paused. It counts as done if at least one full round was completed. |
 
 ## Training days
@@ -44,11 +45,20 @@ spec already names.
 | **Skipped** | | A training day closed on purpose with Spring over (one confirmation, no reason). |
 | **Done** | | A training day closed by a counted session. |
 | **Done late** | | A done day whose date is before the local date of the session's first work phase. A session that crosses midnight is not late. |
+| **Week ring** | Denne uge | Done over planned training days for the current local week, Monday to Sunday, for the household. Planned counts this week's days of any status, plus the days the active programs will still create until Sunday. Done counts days with status done. |
 | **Open** | | Due or late. |
 | **Closed** | | Done, missed or skipped. |
 | **Next training day** | Næste træningsdag | The first date after today on which an active program trains. The entity `sensor.ha_fitness_next_training_day`, with the programs of that date. |
 | **Training today** (the open-days sensor) | Træning i dag | The entity `sensor.ha_fitness_today`: `due` if any open day is due, else `late` if any is late, else `none`. Its `training_days` attribute lists the open days. |
 | **Training open** | Træning åben | The entity `binary_sensor.ha_fitness_training_open`: on while any training day is open. Unavailable, like every HA Fitness entity, while the add-on can't be reached. |
+
+The week ring in five cases:
+
+- A late day from last week, trained on Monday, counts as done in last week. The ring doesn't move.
+- After a fresh install, or when a program is created or switched on mid-week, planned counts only from today.
+- Skipped and missed days count in planned, never in done.
+- Extra sessions don't count.
+- The ring starts over at the Sunday to Monday midnight.
 
 ## Stats
 

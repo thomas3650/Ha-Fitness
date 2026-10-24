@@ -47,6 +47,11 @@ The cards are built into the integration: one bundle, released and versioned wit
     `{"status": "ok", "version": "<server version>", "api_version": 1}`. Step 4 adds `GET /api/v1/today`,
     `GET /api/v1/training-days?from=&to=` and `POST /api/v1/training-days/{id}/skip` (step 4 spec §3.4–§3.5). Step 5
     adds the [session routes](#sessions). The stats add `GET /api/v1/stats` ([below](#stats)).
+  - **UI-refresh fields** ([spec](superpowers/specs/2026-10-24-ui-refresh-design.md) §3). `GET /api/v1/today` and the
+    `today` message carry `week: {done, planned}`: household numbers for the current local week, Monday to Sunday. A
+    program (REST and MCP) carries `equipment`, the distinct equipment of its stations without "body weight". A
+    completed session can be rated with `POST /api/v1/session/feeling` ([below](#the-session-routes)). A card hides
+    what a missing field would feed, so there is no `addon_too_old` for these and `api_version` stays 1.
   - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5,
     the read-only `get_session` and `list_sessions` from step 5 spec §3.5, and the read-only `get_stats` from the
     stats spec §4). No MCP tool starts or steers a workout.
@@ -338,18 +343,22 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 | `GET /api/v1/session` | The running or paused session; else the last finished one for 5 minutes after it finished; else `null`. |
 | `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?}` → the session view (201). |
 | `POST /api/v1/session/{command}` | `pause`, `resume`, `next`, `previous` or `end` → the session view. |
+| `POST /api/v1/session/feeling` | `{"feeling": "too_easy" \| "just_right" \| "too_hard"}` on a completed session within its 5-minute finished view → the session view. It is declared before `{command}`. A later call changes the rating. Any other current view gives 409 `conflict`; an unknown value gives 422 `invalid`. |
 | `GET /api/v1/sessions?limit=` | `{"counting_from", "sessions": [finished views, newest first]}`; `limit` 1–100, default 20. |
 
 - **Errors.** These routes answer `{"detail": {"code", "message"}}`. The codes are `not_found` (404), `conflict` (409)
   and `invalid` (422). An unknown command is a 404 `not_found`; a command not allowed now is a 409 `conflict`. Steps
   3–4's routes keep their own error shapes, and so do the skip and program 409s above. A start body that doesn't
-  parse (a missing field, an extra key, a participant that isn't a number) gets FastAPI's own 422 list.
+  parse (a missing field, an extra key, a participant that isn't a number) gets FastAPI's own 422 list. So does a
+  feeling body that isn't `{"feeling": <text>}`.
 - **The view** (`SessionView` in `schemas.py`) has the phase with `ends_at` (UTC with milliseconds, null while paused)
   or `remaining` (while paused), the next phase, each participant's current and next station, `totals`
   (`planned`, `rounds`, `stations`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
   `server_time`. A finished view has no phase, next phase or stations.
-- **The change log** records `session.started`, `session.completed` and `session.ended`. Pause, resume, next and
-  previous aren't logged.
+- **The feeling** is stored on the session (a nullable column) and shown in the view, in `GET /api/v1/sessions` and in
+  the MCP `list_sessions`. A write raises `revision` and publishes `session`.
+- **The change log** records `session.started`, `session.completed`, `session.ended` and `session.feeling`. Pause,
+  resume, next and previous aren't logged.
 
 ### Session messages on the push channel
 

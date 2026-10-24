@@ -81,13 +81,18 @@ class Programs:
     def _out(self, row: ProgramRow) -> ProgramOut:
         """Turn a row into a `ProgramOut`, with the station names looked up now."""
         document = ProgramDocument.model_validate(row.document)
+        exercises = [
+            self._library.get(station.exercise) for station in document.stations
+        ]
+        equipment: dict[str, None] = {}
+        for exercise in exercises:
+            if exercise.equipment and exercise.equipment.lower() != "body weight":
+                equipment.setdefault(exercise.equipment)
         return ProgramOut(
             id=row.id,
             program=document,
-            station_names=[
-                self._library.get(station.exercise).name
-                for station in document.stations
-            ],
+            station_names=[exercise.name for exercise in exercises],
+            equipment=list(equipment),
             total_seconds=total_seconds(document),
             created_at=row.created_at,
             updated_at=row.updated_at,

@@ -221,6 +221,7 @@ class ProgramOut(BaseModel):
     id: int
     program: ProgramDocument
     station_names: list[str]
+    equipment: list[str]
     total_seconds: int
     created_at: datetime
     updated_at: datetime
@@ -270,12 +271,20 @@ class NextTraining(BaseModel):
     programs: list[str]
 
 
+class Week(BaseModel):
+    """The local week, Monday to Sunday, in the today view (UI refresh spec §3.1)."""
+
+    done: int
+    planned: int
+
+
 class TodayView(BaseModel):
-    """Body of `GET /api/v1/today` (step 4 spec §3.5)."""
+    """Body of `GET /api/v1/today` (step 4 spec §3.5, `week` UI refresh spec §3.1)."""
 
     date: dt.date
     open: list[OpenDay]
     next: NextTraining | None
+    week: Week
 
 
 def _utc_millis(moment: datetime) -> str:
@@ -352,6 +361,10 @@ class SessionTotals(BaseModel):
     stations: int
 
 
+# How a completed session felt (UI refresh spec §3.3); `sessions.FEELINGS` lists the same values.
+type Feeling = Literal["too_easy", "just_right", "too_hard"]
+
+
 class SessionView(BaseModel):
     """A session as `GET /api/v1/session` and the push channel give it (step 5 spec §3.5).
 
@@ -374,6 +387,16 @@ class SessionView(BaseModel):
     rounds_completed: int
     time_trained: int
     server_time: UtcMillis
+    # How a completed session felt; null on a live view and on a finished one not rated (UI refresh spec §3.3).
+    feeling: Feeling | None
+
+
+class FeelingIn(BaseModel):
+    """Body of `POST /api/v1/session/feeling`; any text, so the service answers an unknown value with `{code, message}`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    feeling: str
 
 
 class SessionHistory(BaseModel):

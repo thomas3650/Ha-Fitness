@@ -22,6 +22,7 @@ from tests.session_helpers import (
     AGENT,
     DAYS,
     PEOPLE,
+    SESSIONS,
     SMALL,
     SMALL_END,
     SMALL_STARTS,
@@ -514,6 +515,91 @@ async def test_migration_0004_keeps_the_numbers(
     assert of(body, 1)["all_time"] == totals(done=1, missed=1, time_trained=75)
     assert of(body, 1)["streak"] == 0
     assert of(body, 2)["all_time"] == totals(missed=2)
+
+
+async def test_migration_0005_keeps_step_6_data(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """A step 6 database keeps its history and numbers after migration 0005; its session has a null feeling (spec §4).
+
+    Elin was added on 2026-10-10, after Thomas's first day, so only the missed day counts for her.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'ha_fitness.db'}")
+    try:
+        db.migrate(engine, "0004_people_added_at")
+    finally:
+        engine.dispose()
+    plan = {
+        "program_id": 1,
+        "program_name": "Onsdag",
+        "stations": [
+            {"exercise_id": "0001", "name": "One"},
+            {"exercise_id": "0002", "name": "Two"},
+        ],
+        "rounds": 2,
+        "work_seconds": 10,
+        "switch_seconds": 5,
+        "round_rest_seconds": 20,
+        "countdown_seconds": 5,
+        "participants": [{"id": 1, "name": "Thomas"}],
+    }
+    # Raw-database setup only, as step 6 stored it: the days' program was deleted since, so `program_id` is null.
+    with sqlite3.connect(tmp_path / "ha_fitness.db") as connection:
+        connection.executemany(
+            "INSERT INTO people (id, name, person_entity_id, position, added_at) VALUES (?, ?, ?, ?, ?)",
+            [
+                (1, "Thomas", "person.thomas", 0, None),
+                (2, "Elin", "person.elin", 1, "2026-10-10 08:00:00"),
+            ],
+        )
+        connection.executemany(
+            "INSERT INTO training_days (id, program_id, program_name, date, status, created_at, closed_at) "
+            "VALUES (?, NULL, 'Onsdag', ?, ?, ?, ?)",
+            [
+                (
+                    1,
+                    "2026-10-07",
+                    "done",
+                    "2026-10-07 04:00:00",
+                    "2026-10-07 07:01:20",
+                ),
+                (
+                    2,
+                    "2026-10-14",
+                    "missed",
+                    "2026-10-14 04:00:00",
+                    "2026-10-21 04:00:00",
+                ),
+            ],
+        )
+        connection.execute(
+            "INSERT INTO sessions (id, plan, training_day_id, status, counted, phase_index, phase_started_at, "
+            "paused_at, paused_seconds, last_tick_at, started_at, ended_at, rounds_completed, revision) "
+            "VALUES (1, ?, 1, 'completed', 1, 8, '2026-10-07 07:01:10', NULL, 0, '2026-10-07 07:01:20', "
+            "'2026-10-07 07:00:05', '2026-10-07 07:01:20', 2, 9)",
+            (json.dumps(plan),),
+        )
+        connection.execute(
+            "INSERT INTO session_participants (session_id, position, person_id, name) VALUES (1, 0, 1, 'Thomas')"
+        )
+        connection.execute("UPDATE app_state SET counting_from = '2026-10-07'")
+    connection.close()
+    clock = FrozenClock(local(2026, 10, 28, 9))
+    app = make_app(settings_overrides={"timezone": ZONE}, clock=clock)
+    async with running(app) as client:
+        body = await stats(client)
+        history = (await client.get(SESSIONS)).json()
+    assert body["counting_from"] == "2026-10-07"
+    assert of(body, 1)["all_time"] == totals(done=1, missed=1, time_trained=75)
+    assert of(body, 2)["all_time"] == totals(missed=1)
+    assert history["counting_from"] == "2026-10-07"
+    [session] = history["sessions"]
+    assert session["id"] == 1
+    assert session["status"] == "completed"
+    assert session["revision"] == 9
+    assert session["time_trained"] == 75
+    assert session["participants"] == [{"id": 1, "name": "Thomas"}]
+    assert session["feeling"] is None
 
 
 async def test_removed_person_has_no_stats(make_app: MakeApp) -> None:
