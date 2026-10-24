@@ -2,8 +2,7 @@ import { type TemplateResult, css, html, nothing } from "lit";
 
 import { iconButton } from "../icon-button";
 import { personColor } from "../people";
-import { type ImageOf, type Translate, clock, renderError, renderImage } from "./shared";
-import { RING_COLORS } from "./timer";
+import { type ImageOf, RING_COLORS, type Translate, clock, renderError, renderImage } from "./shared";
 
 /** An active program, as `ha_fitness/programs` returns it (spec §4). */
 export interface Program {

@@ -4,6 +4,14 @@ import type { Vars } from "../i18n";
 import type { ImageKind } from "../images";
 import type { PhaseKind } from "../overlay";
 
+/** The ring's colours: orange for work, blue for the rest (design §3.4). Never used for text. */
+export const RING_COLORS: Record<PhaseKind, string> = {
+  countdown: "#4DA8FF",
+  work: "#FF8A3D",
+  switch: "#4DA8FF",
+  rest: "#4DA8FF",
+};
+
 /** The flow's texts in the card's language. */
 export type Translate = (key: string, vars?: Vars) => string;
 

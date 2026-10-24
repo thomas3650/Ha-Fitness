@@ -1,7 +1,7 @@
 import { LitElement, type PropertyValues, css, html, nothing, svg } from "lit";
 
 import { unlockAudio } from "./audio";
-import { type Vars, localize } from "./i18n";
+import { type Vars, WEEKDAYS, localize } from "./i18n";
 import { iconButton } from "./icon-button";
 import { type LanguageConfig, type LanguageHass, cardLanguage } from "./language";
 import * as overlay from "./overlay";
@@ -56,7 +56,6 @@ const TAG = "ha-fitness-today-card";
 const ARM_MS = 500;
 const CONFIRM_MS = 10_000;
 const ERROR_MS = 5_000;
-const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 /** The week ring's size and stroke, in px. */
 const WEEK_SIZE = 88;
 const WEEK_STROKE = 8;

@@ -74,7 +74,7 @@ async def test_subscription_passes_the_week_through(
     config_entry: MockConfigEntry,
 ) -> None:
     """A week in the add-on's today reaches the card as it is."""
-    week = [{"date": "2026-10-26", "programs": ["Onsdag"]}]
+    week = {"done": 1, "planned": 3}
     fake_addon.today = {**copy.deepcopy(TODAY_DUE), "week": week}
     await set_up(hass, config_entry)
     await wait_for(hass, lambda: is_open(hass))

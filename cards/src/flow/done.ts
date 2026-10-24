@@ -1,5 +1,6 @@
 import { type TemplateResult, css, html, nothing } from "lit";
 
+import { WEEKDAYS } from "../i18n";
 import { iconButton } from "../icon-button";
 import type { Feeling, SessionView } from "../overlay";
 import { type Translate, clock, renderError } from "./shared";
@@ -26,7 +27,6 @@ export interface DoneContext {
   onClose: () => void;
 }
 
-const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const MONTHS = [
   "january",
   "february",

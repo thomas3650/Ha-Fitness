@@ -7,6 +7,7 @@ import { ring } from "../ring";
 import {
   type Countdown,
   type ImageOf,
+  RING_COLORS,
   type ReachNote,
   type SoundButton,
   type Translate,
@@ -15,7 +16,6 @@ import {
   renderSound,
   renderThumbnail,
 } from "./shared";
-import { RING_COLORS } from "./timer";
 
 /**
  * What get ready shows (the `GetReady` mockup): the summary pill and Annullér, the countdown in a

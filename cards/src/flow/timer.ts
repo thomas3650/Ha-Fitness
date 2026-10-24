@@ -1,7 +1,7 @@
 import { type TemplateResult, css, html, nothing } from "lit";
 
 import { iconButton } from "../icon-button";
-import type { PhaseKind, SessionStation, SessionView } from "../overlay";
+import type { SessionStation, SessionView } from "../overlay";
 import { personTextColor } from "../people";
 import { ring } from "../ring";
 import {
@@ -9,6 +9,7 @@ import {
   type ImageOf,
   type ReachNote,
   type SoundButton,
+  RING_COLORS,
   type Translate,
   clock,
   renderError,
@@ -16,14 +17,6 @@ import {
   renderReach,
   renderSound,
 } from "./shared";
-
-/** The ring's colours: orange for work, blue for the rest (design §3.4). Never used for text. */
-export const RING_COLORS: Record<PhaseKind, string> = {
-  countdown: "#4DA8FF",
-  work: "#FF8A3D",
-  switch: "#4DA8FF",
-  rest: "#4DA8FF",
-};
 
 /**
  * What the timer shows (the `Timer`, `TimerRest` and `TimerDuo` mockups): the top row with Slut, the stations,
