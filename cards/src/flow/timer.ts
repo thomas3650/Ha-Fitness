@@ -1,4 +1,4 @@
-import { type TemplateResult, css, html, nothing } from "lit";
+import { type TemplateResult, css, html, nothing, unsafeCSS } from "lit";
 
 import { iconButton } from "../icon-button";
 import type { SessionStation, SessionView } from "../overlay";
@@ -9,6 +9,7 @@ import {
   type ImageOf,
   type ReachNote,
   type SoundButton,
+  PHASE_TEXT_COLORS,
   RING_COLORS,
   type Translate,
   clock,
@@ -62,6 +63,7 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
     value: countdown.seconds,
     fraction: countdown.fraction,
     color: RING_COLORS[countdown.kind],
+    wordColor: PHASE_TEXT_COLORS[countdown.kind],
     caption: t(paused ? "flow.tap_to_resume" : "flow.seconds_left"),
     onTap: () => ctx.onRingTap(),
   });
@@ -128,24 +130,14 @@ function renderHeader(
   one: boolean,
 ) {
   const { t, view } = ctx;
-  const stations = view.totals.stations;
-  const where = one
-    ? stations === undefined
-      ? t("flow.station", { number: interval })
-      : t("flow.station_of", { station: interval, stations })
-    : stations === undefined
-      ? t("flow.interval", { interval })
-      : t("flow.interval_of", { interval, intervals: stations });
   return html`
     <header class="timer-top">
-      <span class="timer-pill"
-        >${t("flow.round", { round, rounds: view.totals.rounds })}</span
-      >
-      <span class="timer-pill">${where}</span>
+      ${renderPill(t("flow.round_label"), round, view.totals.rounds)}
+      ${renderPill(t(one ? "flow.station_label" : "flow.interval_label"), interval, view.totals.stations)}
       ${view.status === "paused" ? html`<span class="timer-pill paused">${t("flow.paused")}</span>` : nothing}
-      <span class="elapsed">
-        ${t("flow.elapsed", { elapsed: clock(ctx.elapsed), planned: clock(view.totals.planned) })}
-      </span>
+      <span class="elapsed"
+        ><strong>${clock(ctx.elapsed)}</strong> <span class="planned">/ ${clock(view.totals.planned)}</span></span
+      >
       <span class="end">
         ${
           ctx.asking
@@ -158,13 +150,23 @@ function renderHeader(
                   ${t("flow.no")}
                 </button>
               `
-            : html`<button class="slot" @click=${() => ctx.onAskEnd()}>
+            : html`<button class="slot soft" @click=${() => ctx.onAskEnd()}>
                 ${t("flow.end")}
               </button>`
         }
       </span>
     </header>
   `;
+}
+
+/**
+ * A pill in the top row: the label, then the number out of the total in bold ("Runde **2 / 5**"),
+ * or the number alone when the add-on sends no total. The " / " is a numeric separator, not a word.
+ */
+function renderPill(label: string, current: number, total: number | undefined) {
+  return html`<span class="timer-pill"
+    >${label} <strong>${total === undefined ? current : `${current} / ${total}`}</strong></span
+  >`;
 }
 
 /**
@@ -209,7 +211,7 @@ function renderNext(ctx: TimerContext, next: SessionStation, moving: boolean) {
       ? t("flow.after.none")
       : t(`flow.after.${after.kind}`, { seconds: after.duration });
   return html`
-    <section class="timer-next" aria-label=${label}>
+    <section class="timer-next card" aria-label=${label}>
       <span class="label">${label}</span>
       ${renderImage(ctx.imageOf, next, "thumbnail", "timer-next-image")}
       <span class="exercise">${next.name}</span>
@@ -219,9 +221,9 @@ function renderNext(ctx: TimerContext, next: SessionStation, moving: boolean) {
 }
 
 /**
- * A person's card in the two-person layout (the `TimerDuo` mockup): a bar in the person's colour
- * along the top, the badge with the person's number and name, the station on the right, the GIF,
- * the exercise big, and the next station small.
+ * A person's card in the two-person layout (the `TimerDuo` mockup): the badge with the person's
+ * number and name, the station on the right with its number in bold, the GIF, the exercise big, and
+ * the next station small.
  */
 function renderCard(ctx: TimerContext, index: number) {
   const { t, view } = ctx;
@@ -230,7 +232,7 @@ function renderCard(ctx: TimerContext, index: number) {
   if (!person || !station) return nothing;
   return html`
     <section
-      class="duo-card"
+      class="duo-card card"
       aria-label=${person.name}
       style="--person-color: ${ctx.colors[index]}; --person-text: ${personTextColor(ctx.colors[index])}"
     >
@@ -238,7 +240,7 @@ function renderCard(ctx: TimerContext, index: number) {
         <span class="duo-number">${index + 1}</span>
         <span class="duo-name">${person.name}</span>
         <span class="duo-station"
-          >${t("flow.station", { number: station.current.number })}</span
+          >${t("flow.station_label")} <strong>${station.current.number}</strong></span
         >
       </div>
       ${renderImage(ctx.imageOf, station.current, "gif", "gif")}
@@ -285,6 +287,9 @@ export const timerStyles = css`
     margin-left: auto;
     font-variant-numeric: tabular-nums;
   }
+  .timer-top .planned {
+    color: var(--secondary-text-color);
+  }
   .timer-top .end {
     display: flex;
     gap: 16px;
@@ -309,7 +314,7 @@ export const timerStyles = css`
     height: 400px;
   }
   .timer-solo > .ring .seconds {
-    font-size: 8rem;
+    font-size: 10rem;
   }
   .timer-now {
     grid-column: 1;
@@ -323,6 +328,9 @@ export const timerStyles = css`
     width: min(320px, 100%);
     height: auto;
     aspect-ratio: 1;
+    box-sizing: border-box;
+    background: #fff;
+    border: 1px solid var(--divider-color);
   }
   .timer-now .exercise {
     font-size: 2.25rem;
@@ -335,7 +343,7 @@ export const timerStyles = css`
     letter-spacing: 0.08em;
   }
   .timer-move {
-    color: var(--primary-color);
+    color: ${unsafeCSS(PHASE_TEXT_COLORS.switch)};
   }
   .timer-next {
     grid-column: 3;
@@ -348,7 +356,6 @@ export const timerStyles = css`
     min-width: 0;
     padding: 18px;
     border-radius: 20px;
-    background: var(--card-background-color, var(--secondary-background-color));
     overflow-wrap: anywhere;
   }
   .timer-next .label,
@@ -381,6 +388,13 @@ export const timerStyles = css`
   .timer-duo > .duo-card:last-child {
     justify-self: end;
   }
+  .timer-duo > .ring {
+    width: 360px;
+    height: 360px;
+  }
+  .timer-duo > .ring .seconds {
+    font-size: 7rem;
+  }
   .duo-card {
     display: flex;
     flex-direction: column;
@@ -390,8 +404,6 @@ export const timerStyles = css`
     min-width: 0;
     padding: 18px;
     border-radius: 24px;
-    border-top: 6px solid var(--person-color);
-    background: var(--card-background-color, var(--secondary-background-color));
     overflow-wrap: anywhere;
   }
   .duo-who {
@@ -414,7 +426,7 @@ export const timerStyles = css`
   }
   .duo-name {
     min-width: 0;
-    font-size: 1.375rem;
+    font-size: 1.5rem;
     font-weight: 700;
   }
   .duo-station {
@@ -561,6 +573,11 @@ export const timerStyles = css`
     .timer-duo > .ring {
       grid-area: ring;
       justify-self: center;
+      width: 320px;
+      height: 320px;
+    }
+    .timer-duo > .ring .seconds {
+      font-size: 6rem;
     }
     /* One person: the exercise and NÆSTE side by side, the ring below them. */
     .timer-solo {
