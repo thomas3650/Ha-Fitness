@@ -64,3 +64,23 @@ async def test_subscription_sends_null_without_loaded_entry_then_data(
 
     await unload(hass, config_entry)
     assert (await client.receive_json())["event"] is None
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_subscription_passes_the_week_through(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A week in the add-on's today reaches the card as it is."""
+    week = [{"date": "2026-10-26", "programs": ["Onsdag"]}]
+    fake_addon.today = {**copy.deepcopy(TODAY_DUE), "week": week}
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: is_open(hass))
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(SUBSCRIBE)
+    assert (await client.receive_json())["success"]
+    assert (await client.receive_json())["event"]["week"] == week
+    await unload(hass, config_entry)
