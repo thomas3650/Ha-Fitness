@@ -349,15 +349,16 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 - **Errors.** These routes answer `{"detail": {"code", "message"}}`. The codes are `not_found` (404), `conflict` (409)
   and `invalid` (422). An unknown command is a 404 `not_found`; a command not allowed now is a 409 `conflict`. Steps
   3–4's routes keep their own error shapes, and so do the skip and program 409s above. A start body that doesn't
-  parse (a missing field, an extra key, a participant that isn't a number) gets FastAPI's own 422 list.
+  parse (a missing field, an extra key, a participant that isn't a number) gets FastAPI's own 422 list. So does a
+  feeling body that isn't `{"feeling": <text>}`.
 - **The view** (`SessionView` in `schemas.py`) has the phase with `ends_at` (UTC with milliseconds, null while paused)
   or `remaining` (while paused), the next phase, each participant's current and next station, `totals`
   (`planned`, `rounds`, `stations`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
   `server_time`. A finished view has no phase, next phase or stations.
 - **The feeling** is stored on the session (a nullable column) and shown in the view, in `GET /api/v1/sessions` and in
-  the MCP `list_sessions`. A write raises `revision`, publishes `session` and adds a change-log row.
-- **The change log** records `session.started`, `session.completed` and `session.ended`. Pause, resume, next and
-  previous aren't logged.
+  the MCP `list_sessions`. A write raises `revision` and publishes `session`.
+- **The change log** records `session.started`, `session.completed`, `session.ended` and `session.feeling`. Pause,
+  resume, next and previous aren't logged.
 
 ### Session messages on the push channel
 
