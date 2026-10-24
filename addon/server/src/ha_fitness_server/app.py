@@ -28,6 +28,7 @@ from .push import Hub, Message
 from .services import Services, ServicesHolder
 from .sessions import Sessions
 from .settings import Settings
+from .stats import StatsService
 from .training_days import TrainingDays
 
 _LOGGER = logging.getLogger(__name__)
@@ -142,6 +143,7 @@ def create_app(
                 people=people,
                 programs=programs,
                 sessions=sessions,
+                stats=StatsService(engine, training_days, sessions),
                 training_days=training_days,
             )
         )

@@ -767,7 +767,7 @@ class Sessions:
             started_at=row.started_at,
             ended_at=row.ended_at,
             rounds_completed=row.rounds_completed,
-            time_trained=_time_trained(row, now),
+            time_trained=time_trained(row, now),
             server_time=now,
         )
 
@@ -828,7 +828,7 @@ class Sessions:
             started_at=row.started_at,
             ended_at=row.ended_at,
             rounds_completed=row.rounds_completed,
-            time_trained=_time_trained(row, now),
+            time_trained=time_trained(row, now),
             server_time=now,
         )
 
@@ -841,7 +841,7 @@ def _counted_pause(row: WorkoutSession, until: datetime) -> float:
     return max(0.0, (until - since).total_seconds())
 
 
-def _time_trained(row: WorkoutSession, now: datetime) -> int:
+def time_trained(row: WorkoutSession, now: datetime) -> int:
     """Return the whole active seconds: from `started_at` to the end, the open pause or now, less the pauses; 0 before it."""
     if row.started_at is None:
         return 0

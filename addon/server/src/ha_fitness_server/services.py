@@ -9,6 +9,7 @@ from .library.service import Library
 from .people import People
 from .programs import Programs
 from .sessions import Sessions
+from .stats import StatsService
 from .training_days import TrainingDays
 
 
@@ -22,6 +23,7 @@ class Services:
     people: People
     programs: Programs
     sessions: Sessions
+    stats: StatsService
     training_days: TrainingDays
 
 

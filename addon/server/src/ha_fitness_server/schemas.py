@@ -381,3 +381,32 @@ class SessionHistory(BaseModel):
 
     counting_from: dt.date | None
     sessions: list[SessionView]
+
+
+class Totals(BaseModel):
+    """One person's numbers over a period (stats spec §3.4); `extra` is the part of `done` from extra sessions."""
+
+    done: int
+    extra: int
+    missed: int
+    skipped: int
+    time_trained: int
+
+
+class PersonStats(BaseModel):
+    """One person's stats: the streak is all time only (stats spec §3.2)."""
+
+    id: int
+    name: str
+    person_entity_id: str
+    streak: int
+    all_time: Totals
+    this_month: Totals
+
+
+class Stats(BaseModel):
+    """Body of `GET /api/v1/stats` (stats spec §3.4): `month` is the add-on's local month as `YYYY-MM`."""
+
+    counting_from: dt.date | None
+    month: str
+    people: list[PersonStats]

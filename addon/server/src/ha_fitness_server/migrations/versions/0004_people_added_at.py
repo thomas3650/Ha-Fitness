@@ -23,6 +23,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop `people.added_at`."""
-    with op.batch_alter_table("people") as batch_op:
+    """Drop `people.added_at`; the rebuilt table keeps AUTOINCREMENT, so ids are still never reused."""
+    with op.batch_alter_table(
+        "people", table_kwargs={"sqlite_autoincrement": True}
+    ) as batch_op:
         batch_op.drop_column("added_at")

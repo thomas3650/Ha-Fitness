@@ -28,6 +28,7 @@ from .schemas import (
     SearchLimit,
     SessionHistory,
     SessionView,
+    Stats,
     TodayView,
     TrainingDayOut,
 )
@@ -279,5 +280,18 @@ old values.
         """
         with _tool_errors():
             return holder.get().sessions.finished(limit)
+
+    @mcp.tool(annotations=_READ)
+    def get_stats() -> Stats:
+        """Return each person's stats, in people order: the streak, and the totals for this month and all time.
+
+        Totals: `done` (days done plus extra sessions), `extra` (of done, the extra sessions), `missed`, `skipped`
+        and `time_trained` in whole seconds. The streak counts the latest dates on which every training day was done;
+        a missed or skipped day ends it, and extra sessions don't count. `month` is the current local month,
+        `YYYY-MM`; `counting_from` is the date counting starts (null before the first counted session, when every
+        number is 0).
+        """
+        with _tool_errors():
+            return holder.get().stats.view()
 
     return mcp
