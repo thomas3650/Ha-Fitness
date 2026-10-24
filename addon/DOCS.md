@@ -5,22 +5,10 @@ the add-on's own data folder, so they are part of Home Assistant backups.
 
 ## Installation
 
-Install the integration first, then accept the Discovered card.
-
-1. Install the HA Fitness integration from HACS (see the repository's README), and restart Home Assistant.
-2. In Home Assistant go to *Settings → Add-ons → Add-on store → ⋮ → Repositories* and add
+1. In Home Assistant go to *Settings → Add-ons → Add-on store → ⋮ → Repositories* and add
    `https://github.com/thomas3650/Ha-Fitness`.
-3. Install *HA Fitness* from the store and start it.
-4. Go to *Settings → Devices & services*. Under *Discovered* there is a card *HA Fitness*. Choose *Add*, and confirm
-   *HA Fitness app found*. The integration gets the add-on's address from the add-on itself: there is no URL to type.
-
-If the add-on started before the integration was installed, the Discovered card appears after Home Assistant has
-restarted with the integration. There is only one HA Fitness entry: when the add-on's address changes, the next
-discovery updates the entry.
-
-When one part needs a newer version of the other, Home Assistant shows a repair issue that says which part to update.
-While the add-on is stopped or updating, the HA Fitness entities are unavailable and the card says that HA Fitness
-can't be reached.
+2. Install *HA Fitness* from the store and start it.
+3. Install the HA Fitness integration from HACS (see the repository's README).
 
 ## Configuration
 
