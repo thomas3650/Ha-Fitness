@@ -204,7 +204,8 @@ export class WorkoutFlow extends LitElement {
     :host {
       display: flex;
       flex-direction: column;
-      justify-content: center;
+      /* Centred while it fits; content taller than the screen starts at the top and scrolls. */
+      justify-content: safe center;
       box-sizing: border-box;
       min-height: 100%;
       padding: 32px;
@@ -212,11 +213,33 @@ export class WorkoutFlow extends LitElement {
       background: var(--primary-background-color);
       font-size: 1.25rem;
     }
+    /* The page is the container the sizes below follow (cqi: 1% of its width). */
     .page {
       box-sizing: border-box;
       width: 100%;
       max-width: 1280px;
       margin: 0 auto;
+      container-type: inline-size;
+    }
+    /* Details, get ready and done: one centred column. The timer keeps the wide page. */
+    .page.column {
+      max-width: 720px;
+    }
+    .page.column h2,
+    .page.column > .line {
+      text-align: center;
+    }
+    .page.column .actions,
+    .page.column .chips {
+      justify-content: center;
+    }
+    .page.centred {
+      text-align: center;
+    }
+    .page.centred .starts li {
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     h2 {
       margin: 0 0 8px;
@@ -300,9 +323,13 @@ export class WorkoutFlow extends LitElement {
       align-items: center;
       margin-top: 32px;
     }
+    /* Get ready's countdown, readable across a kitchen: larger than the timer's ring number. */
     .count {
-      font-size: 6rem;
+      font-size: clamp(8rem, 30cqi, 14rem);
       font-weight: 500;
+      line-height: 1;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
       margin: 16px 0;
     }
     .badge {
@@ -330,9 +357,15 @@ export class WorkoutFlow extends LitElement {
     }
     header.top {
       display: flex;
-      gap: 32px;
+      flex-wrap: wrap;
+      gap: 12px 32px;
       align-items: center;
       font-size: 1.5rem;
+    }
+    /* Each part stays on one line; at a narrow width whole parts wrap instead. */
+    header.top > span,
+    header.top .question {
+      white-space: nowrap;
     }
     header.top .elapsed {
       margin-left: auto;
@@ -369,6 +402,8 @@ export class WorkoutFlow extends LitElement {
     }
     .panel {
       flex: 1;
+      min-width: 0;
+      overflow-wrap: anywhere;
       padding: 16px;
       border: 4px solid var(--person-color);
       border-radius: 16px;
@@ -394,8 +429,8 @@ export class WorkoutFlow extends LitElement {
       background: var(--secondary-background-color, var(--divider-color));
     }
     .duo .gif {
-      width: 200px;
-      height: 200px;
+      width: min(200px, 30cqi);
+      height: min(200px, 30cqi);
     }
     .ring {
       position: relative;
@@ -445,6 +480,56 @@ export class WorkoutFlow extends LitElement {
     .big {
       font-size: 2rem;
       font-weight: 500;
+    }
+    /* A portrait tablet (about 800 px wide): nothing scrolls sideways. */
+    @container (max-width: 1000px) {
+      header.top {
+        gap: 12px 20px;
+        font-size: 1.25rem;
+      }
+      /* Two people: both panels side by side, the ring below them. */
+      .duo {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+          "first second"
+          "ring ring";
+        gap: 24px;
+        align-items: stretch;
+      }
+      .duo > .panel:first-child {
+        grid-area: first;
+      }
+      .duo > .panel:last-child {
+        grid-area: second;
+      }
+      .duo > .ring {
+        grid-area: ring;
+        justify-self: center;
+      }
+      /* One person: the station and Næste side by side, the ring below them. */
+      .solo {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+        grid-template-areas:
+          "now next"
+          "ring ring";
+        gap: 24px;
+      }
+      .solo > .now {
+        grid-area: now;
+      }
+      .solo > .next {
+        grid-area: next;
+      }
+      .solo > .ring {
+        grid-area: ring;
+        justify-self: center;
+      }
+      .solo .gif {
+        width: min(280px, 50cqi);
+        height: min(280px, 50cqi);
+      }
     }
   `;
 
@@ -1228,7 +1313,11 @@ export class WorkoutFlow extends LitElement {
   }
 
   protected override render() {
-    return html`<div class="page">${this.renderStep()}</div>`;
+    // The timer uses the wide page; the other steps one centred column, get ready and done centred
+    // text too.
+    const step = this.step();
+    const layout = step === "timer" ? "" : step === "details" ? "column" : "column centred";
+    return html`<div class="page ${layout}">${this.renderStep()}</div>`;
   }
 
   private renderStep() {
