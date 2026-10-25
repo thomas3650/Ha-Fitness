@@ -89,13 +89,17 @@ Model: opus · Review: yes
     `training_day_id`); at Wed 00:00:30 `open` holds both Monday (late) and Wednesday (due).
   - **Existing tests the new rule changes** (traced by the plan review; say in the report if a trace was wrong):
     - `test_scheduler.py::test_create_on_training_day_makes_today_and_closes_late`: rename to
-      `…_keeps_late_open`; creating Torsdag no longer closes Onsdag, both are open.
+      `…_keeps_late_open`; creating Torsdag no longer closes Onsdag, both are open. Its second half changes too: on
+      10-30 Torsdag stays late instead of turning missed, and Onsdag is still late (default 2).
     - `test_scheduler.py::test_training_days_range_is_inclusive_by_date`: `late_days` 0, expectations unchanged.
     - `test_scheduler.py::test_date_without_days_closes_nothing`: `late_days` 6, expectations unchanged.
     - `test_skip.py::test_skip_closed_day_is_409`: `late_days` 0, so only Thursday is open.
-    - `test_session_finish.py::test_reconcile_skips_in_session_day`: `late_days` 0, expectations unchanged.
+    - `test_session_finish.py::test_reconcile_skips_in_session_day`: `late_days` 0 through
+      `running(make_session_app(clock, make_app, settings_overrides={"late_days": 0}))` (its `started()` takes no
+      settings); expectations unchanged.
     - Docstrings that state the old rule: `test_stats.py`'s module docstring, `test_done_late_and_not_late_across_midnight`
-      ("reconcile would close the day as missed") and `upsert_open` in `training_days.py`.
+      ("reconcile would close the day as missed"), `upsert_open` in `training_days.py`, and the test at
+      `test_dev_routes.py:111` ("so open days keep sharing one date").
 - [ ] **Step 2:** `test_settings_late_days.py`: `Settings.from_env()` reads `late_days` from
   `<HA_FITNESS_DATA_DIR>/options.json` (`{"late_days": 4}` → 4); `HA_FITNESS_LATE_DAYS=1` wins over the file; no file
   and no variable → 2; a value outside 0–6, not an integer, or a boolean (`true`) → ignored with a warning (don't
@@ -194,10 +198,10 @@ Model: opus · Review: yes
     Thursday is added to its weekdays on Thursday; Thursday's day is due; at Fri 00:05 Thursday's day is `missed`.
   - `test_uncounted_early_session_leaves_no_day`: ended before one round → Wednesday has no training day, the program's
     `upcoming` entry is Wednesday again with `startable` true; the session is in `GET /api/v1/sessions`.
-  - `test_early_session_across_midnight_counted`: starts Tue 23:55; at Wed 00:01 `open` holds Wednesday `due`, the
-    program's `upcoming` moved past Wednesday (`startable` false), no `due` event; the finish closes it `done`.
-  - `test_early_session_across_midnight_not_counted`: same, ended before one round → Wednesday stays `due` and a `due`
-    event is sent when the session ends.
+  - `test_early_session_across_midnight_counted`: starts Tue 23:59:50; at Wed 00:00:05 `open` holds Wednesday `due`,
+    the program's `upcoming` moved past Wednesday (`startable` false), no `due` event; the finish closes it `done`.
+  - `test_early_session_across_midnight_not_counted`: starts Tue 23:59:50, ended at Wed 00:00:10 (before round 1's
+    last work phase ends, 30 s in) → Wednesday stays `due` and a `due` event is sent when the session ends.
   - `test_uncounted_due_day_session_sends_no_second_due`: an ordinary due day, a session ended before one round → no
     `due` event at the end.
   - `test_upcoming_after_an_early_done_day`: a fri-only program, its Friday done early on Wednesday → on Wednesday
@@ -278,7 +282,8 @@ Model: opus · Review: yes
 
 **Files:**
 - Modify: `cards/src/audio.ts`, `cards/src/workout-flow.ts`
-- Test: `cards/test/workout-flow-pings.test.ts`, `cards/test/audio.test.ts`
+- Test: `cards/test/workout-flow-pings.test.ts`, `cards/test/audio.test.ts`, `cards/test/workout-flow-details.test.ts`
+  (the no-countdown Start test lives there, with the fake audio from `fake-audio.ts` and a tone check of its own)
 
 - [ ] **Step 1: Write the failing tests** in `workout-flow-pings.test.ts` (its `mount`, `view`, `phase`, `at`, `wait`,
   `push`, `live`, `beeps` helpers):
