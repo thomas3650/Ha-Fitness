@@ -55,16 +55,21 @@ Model: opus · Review: yes
 - Modify: `addon/server/src/ha_fitness_server/settings.py`, `training_days.py`, `app.py`
 - Modify: `addon/config.yaml`; create `addon/translations/en.yaml`, `addon/translations/da.yaml`
 - Modify: `addon/DOCS.md`; `scripts/develop` and `docs/testing.md` if the fast loop sets it
+- Modify: `addon/server/src/ha_fitness_server/training_days.py` docstring of `upsert_open` ("open days share one
+  date" goes)
 - Test: `addon/server/tests/test_scheduler.py`, `addon/server/tests/test_settings_late_days.py` (new),
-  `addon/server/tests/test_dev_routes.py`
+  `addon/server/tests/test_skip.py`, `addon/server/tests/test_session_finish.py`, `addon/server/tests/test_stats.py`
+  (docstrings only). `test_dev_routes.py`'s future-date refusal (line 111) stays green unchanged.
 
 **Interfaces:**
 - Produces: `Settings.late_days: int` (default `DEFAULT_LATE_DAYS = 2`); `TrainingDays(engine, clock, timezone,
   publish, late_days: int = DEFAULT_LATE_DAYS)`. `open` in the today view sorted by date, then program name ignoring
   case, then id.
 
-- [ ] **Step 1: Write the failing tests** in `test_scheduler.py` (use `make_app(settings_overrides={"late_days": n})`
-  and the file's `FrozenClock`, `local`, `_create`, `_today`, `_open`, `_days`, `_statuses` helpers):
+- [ ] **Step 1: Write the failing tests** in `test_scheduler.py`. Give the file's `started()` helper a
+  `late_days: int | None = None` parameter that it merges into its settings overrides next to the timezone it sets
+  (so `local(…)` keeps meaning Copenhagen time). Use the file's `FrozenClock`, `local`, `_create`, `_today`, `_open`,
+  `_days`, `_statuses` helpers:
   - `test_other_programs_day_keeps_late_day_open`: replaces `test_next_training_day_closes_late_as_missed`. Onsdag
     (wed) and Lørdag (sat), `late_days` 6; on Sat 2026-10-31 00:05 `_open` is
     `[("Onsdag", "2026-10-28", "late"), ("Lørdag", "2026-10-31", "due")]` (late first: by date).
@@ -78,17 +83,30 @@ Model: opus · Review: yes
     a new app on the same folder with `late_days` 2 shows it `missed` at its first read.
   - `test_weekday_edit_adding_today_closes_late_day_at_once`: mon program, Monday late on Tuesday 10:00; the program's
     weekdays become mon and tue; Monday is `missed`, Tuesday `due`.
-  - `test_session_keeps_late_day_open_across_own_next_day` (D42): mon/wed program, Monday late; a session for
-    Monday's day started Tue 23:50 (`POST /api/v1/session` with `training_day_id`); at Wed 00:05 `open` holds both
-    Monday (late) and Wednesday (due).
+  - `test_session_keeps_late_day_open_across_own_next_day` (D42): put it in `test_session_finish.py`, which has the
+    people: `session_helpers.make_session_app(clock, make_app, settings_overrides=…)` and `set_people`. A mon/wed
+    program, Monday late; a session for Monday's day started Tue 23:59:50 (`POST /api/v1/session` with
+    `training_day_id`); at Wed 00:00:30 `open` holds both Monday (late) and Wednesday (due).
+  - **Existing tests the new rule changes** (traced by the plan review; say in the report if a trace was wrong):
+    - `test_scheduler.py::test_create_on_training_day_makes_today_and_closes_late`: rename to
+      `…_keeps_late_open`; creating Torsdag no longer closes Onsdag, both are open.
+    - `test_scheduler.py::test_training_days_range_is_inclusive_by_date`: `late_days` 0, expectations unchanged.
+    - `test_scheduler.py::test_date_without_days_closes_nothing`: `late_days` 6, expectations unchanged.
+    - `test_skip.py::test_skip_closed_day_is_409`: `late_days` 0, so only Thursday is open.
+    - `test_session_finish.py::test_reconcile_skips_in_session_day`: `late_days` 0, expectations unchanged.
+    - Docstrings that state the old rule: `test_stats.py`'s module docstring, `test_done_late_and_not_late_across_midnight`
+      ("reconcile would close the day as missed") and `upsert_open` in `training_days.py`.
 - [ ] **Step 2:** `test_settings_late_days.py`: `Settings.from_env()` reads `late_days` from
   `<HA_FITNESS_DATA_DIR>/options.json` (`{"late_days": 4}` → 4); `HA_FITNESS_LATE_DAYS=1` wins over the file; no file
-  and no variable → 2; a value outside 0–6 or not an integer → 2 (a warning; don't assert its text).
+  and no variable → 2; a value outside 0–6, not an integer, or a boolean (`true`) → ignored with a warning (don't
+  assert its text). An invalid `HA_FITNESS_LATE_DAYS` falls back to the file, then to 2.
 - [ ] **Step 3: Run them to see them fail:** `uv run --directory addon/server pytest tests/test_scheduler.py
   tests/test_settings_late_days.py -q`. Expected: the new tests fail.
-- [ ] **Step 4: Implement.** In `TrainingDays._handle`, replace the "close every earlier open day" query: for a date
-  `day`, an open day `d` (not under a session, `~_in_session`) with `d.date < day` closes as missed when its program
-  has a training day dated after `d.date` and at most `day`, or when `day > d.date + late_days`. Keep the event order
+- [ ] **Step 4: Implement.** In `TrainingDays._handle`, remove the early return when no training day is dated `day`
+  (`training_days.py:174`): the "days up" rule must also fire on dates with no training day. Replace the "close every
+  earlier open day" query: for a date `day`, an open day `d` (not under a session, `~_in_session`) with
+  `d.date < day` closes as missed when its program has a training day dated after `d.date` and at most `day`, or when
+  `day > d.date + late_days`. Keep the event order
   and `closed_at`. Sort `open` in `_build_view` by `(date, name.casefold(), id)`. Pass `settings.late_days` in
   `app.py`. In `upsert_open` keep the refusal of a date after today, with the reason in the message: an open day dated
   after today would show as due (spec §2.1.7).
@@ -98,8 +116,8 @@ Model: opus · Review: yes
   It closes earlier when the same program trains again. 0 closes it at midnight."; da: "Dage en forfalden træning er
   åben" / "Hvor mange dage efter sin dato en forfalden træning kan tages. Den lukker før, hvis samme program træner
   igen. 0 lukker den ved midnat."). `addon/DOCS.md`: the option, and that it takes effect at the add-on's next start.
-  If the fast loop should set it, `scripts/develop` exports `HA_FITNESS_LATE_DAYS` only when the caller set it, and
-  `docs/testing.md` says so.
+  No change to `scripts/develop`: `docs/testing.md` says the fast loop takes `late_days` from `options.json` in its
+  data folder or from `HA_FITNESS_LATE_DAYS` in the environment it is started from.
 - [ ] **Step 6: Run** the add-on gates (`CLAUDE.md`). Expected: all pass, coverage as before.
 - [ ] **Step 7: Commit** `feat(addon): late training days stay open per program, for late_days days`.
 
@@ -116,8 +134,9 @@ Model: opus · Review: yes
 - Consumes: Task 1's closing rule.
 - Produces: `class UpcomingTraining(BaseModel)`: `program_id: int`, `program_name: str`, `date: dt.date`,
   `station_count: int`, `rounds: int`, `total_minutes: int`, `startable: bool`. `TodayView.upcoming:
-  list[UpcomingTraining]`, sorted by date, then name ignoring case. `TrainingDays.upcoming_for(db_session, program,
-  today) -> UpcomingTraining | None` (Task 3 uses it to check a start).
+  list[UpcomingTraining]`, sorted by date, then name ignoring case. `TrainingDays.upcoming_for(db_session: Session,
+  program_id: int, today: date) -> UpcomingTraining | None`, None for an inactive or unknown program (Task 3 uses it
+  to check a start).
 
 - [ ] **Step 1: Write the failing tests** (`GET /api/v1/today`, frozen clock):
   - `test_upcoming_lists_each_programs_next_training`: Onsdag (wed) and Fredag (fri) on Mon 2026-10-26 → two entries,
@@ -128,7 +147,9 @@ Model: opus · Review: yes
   - `test_done_day_today_blocks_until_tomorrow`: A done today through a counted session (`session_helpers`) → A's
     entry `startable` false today, true at the next 00:05.
   - `test_no_upcoming_without_active_programs`: `upcoming == []`.
-  - `test_next_leaves_out_done_dates` and `test_next_is_null_only_without_active_programs` in `test_scheduler.py`.
+  - In `test_scheduler.py`: extend the existing `test_next_is_null_without_active_programs` so it also asserts that
+    `next` isn't null while one program is active. `test_next_leaves_out_done_dates` comes in Task 3, where a day can
+    be done early.
   - The MCP `get_today` result has `upcoming` (one assertion in the new file through the MCP client the other MCP tests
     use).
 - [ ] **Step 2: Run them to see them fail.**
@@ -155,31 +176,46 @@ Model: opus · Review: yes
   client, speaker=None, date: dt.date | None = None)`. REST body `{"program_id", "participants", "date"}`.
 
 - [ ] **Step 1: Write the failing tests** (REST and the push channel; frozen clock; mon/wed/fri program unless said):
+  Use `session_helpers` (`make_session_app`, `set_people`) and its programs; start the midnight tests at 23:59:50,
+  as `test_reconcile_skips_in_session_day` does, because the small program lasts 80 s.
   - `test_early_start_accepted`: on Tue, `POST /api/v1/session` with Wednesday's `date` → 201; the view's
-    `training_day_id` is set; a `today` message follows at once; in it Wednesday is not in `open`, and the program's
-    `upcoming` entry is Wednesday with `startable` false; `GET /api/v1/training-days` lists Wednesday `open`.
+    `training_day_id` is set; a `today` message follows at once; in it Wednesday is not in `open`, the program's
+    `upcoming` entry is Wednesday with `startable` false, and `week.planned` is the same as before the start;
+    `GET /api/v1/training-days` lists Wednesday `open`.
   - `test_early_start_refused`: 409 `conflict` for a date that isn't the program's upcoming date, for a program with
-    an open day, and for a date not after today; 422 `invalid` for both `training_day_id` and `date`.
-  - `test_counted_early_session_closes_day_done`: the finish sends `done` for Wednesday; at Wed 00:05 no `due` event,
-    `open` is empty, and `GET /api/v1/stats` counts done on Wednesday's date (streak follows); the week ring counts it
-    once in Wednesday's week.
+    an open day, and for a date not after today; 422 `invalid` in the session error shape (`{"detail": {"code",
+    "message"}}`) for both `training_day_id` and `date`.
+  - `test_counted_early_session_closes_day_done`: a mon-only program; a counted session on Sat 2026-10-31 for Mon
+    2026-11-02. The finish sends `done` for Monday; this week's ring (Oct 26 – Nov 1) has the same `done` as before;
+    at Mon 00:05 no `due` event and `open` is empty; on Monday `GET /api/v1/stats` counts the done in November's
+    `this_month` and the streak, and on Saturday the session's time counted in October's `this_month`.
+  - `test_next_leaves_out_done_dates`: after that early session, `next` (on Saturday) isn't Monday.
+  - `test_early_day_closes_earlier_late_day` (spec §2.2.8): a fri-only program, its Friday done early on Wednesday;
+    Thursday is added to its weekdays on Thursday; Thursday's day is due; at Fri 00:05 Thursday's day is `missed`.
   - `test_uncounted_early_session_leaves_no_day`: ended before one round → Wednesday has no training day, the program's
     `upcoming` entry is Wednesday again with `startable` true; the session is in `GET /api/v1/sessions`.
   - `test_early_session_across_midnight_counted`: starts Tue 23:55; at Wed 00:01 `open` holds Wednesday `due`, the
     program's `upcoming` moved past Wednesday (`startable` false), no `due` event; the finish closes it `done`.
   - `test_early_session_across_midnight_not_counted`: same, ended before one round → Wednesday stays `due` and a `due`
     event is sent when the session ends.
+  - `test_uncounted_due_day_session_sends_no_second_due`: an ordinary due day, a session ended before one round → no
+    `due` event at the end.
   - `test_upcoming_after_an_early_done_day`: a fri-only program, its Friday done early on Wednesday → on Wednesday
     the entry is the following Friday (9 days ahead, found by the 14-day search) with `startable` false, `next` skips
     the done Friday; on Saturday the entry is `startable` true.
   - `test_weekday_edit_during_early_session`: during the early session the program's weekdays drop Wednesday; the
     finish still closes Wednesday `done`, and no second Wednesday day exists.
 - [ ] **Step 2: Run them to see them fail.**
-- [ ] **Step 3: Implement.** `start` with `date`: under the lock, check against `upcoming_for` (409 otherwise), make
-  the day `open` with `created_at` now, and use its id as `training_day_id`. `_send` also calls `publish_today()` after
-  a start. `_build_view` leaves out of `open` the open days dated after today. On an uncounted finish of a session
-  whose day is open: delete the day if its date is after today; if its date is today and no `due` was sent for it,
-  send `due` in the finish's batch. Reconcile already skips a date that has the program's day, so no new day is made.
+- [ ] **Step 3: Implement.** `start` with `date`: the 422 for both fields is a `SessionError` in `Sessions.start`,
+  not a validator on `NewSession` (a validator gives FastAPI's list shape, which the integration reads as
+  `unavailable`). Under the lock, check against `upcoming_for` (409 otherwise), make the day `open` with `created_at`
+  now, and use its id as `training_day_id`. `_send` also calls `publish_today()` after a start. `_build_view` leaves
+  out of `open` the open days dated after today. In `_finish` (so `end`, the pause limit and recovery all pass
+  there), for an uncounted session whose day is still open: delete the day if its date is after today; if its date is
+  today and it was made early (the local date of its `created_at` is before its `date`), send `due` in the finish's
+  batch. Build the finish's events before the delete, so `session_ended` carries the day's id; the foreign key then
+  sets the stored session's `training_day_id` to null (`ondelete="SET NULL"`). Reconcile already skips a date that has
+  the program's day, so no new day is made.
 - [ ] **Step 4: Run** the add-on gates. Expected: pass.
 - [ ] **Step 5: Commit** `feat(addon): start a program's next training early from its upcoming date`.
 
@@ -199,17 +235,21 @@ Model: opus · Review: yes
   (`YYYY-MM-DD`). Refusal key `session_early_unsupported`.
 
 - [ ] **Step 1: Write the failing tests:**
-  - The ws `start` and the service relay `date` to the add-on (the fake records the body), and return the view.
-  - With the coordinator's last today data lacking `upcoming`, both refuse before any relay: the ws command answers
-    `invalid`; the service raises a translated validation error with key `session_early_unsupported` (en: "The HA
+  - The ws `start` and the service relay `date` to the add-on as `YYYY-MM-DD` (the fake records the body), and
+    return the view.
+  - With the coordinator's last today data lacking `upcoming`, a start **with** `date` is refused before any relay:
+    the ws command answers code `invalid` with key `session_early_unsupported` (assert with `_assert_error(reply,
+    code, key)` in `tests/test_websocket.py`); the service raises a translated validation error with key `session_early_unsupported` (en: "The HA
     Fitness add-on is too old to start a training early. Update the add-on."; da: "HA Fitness-tilføjelsen er for gammel
     til at starte en træning før tid. Opdater tilføjelsen."). Use the same wording style as the existing
     `session_*` keys if they differ.
+  - A start without `date` is relayed as before on such an add-on.
   - A `date` that isn't a date fails HA's schema (`invalid_format` for ws, a schema error for the service).
 - [ ] **Step 2: Run them to see them fail:** `uv run pytest tests/test_session_services.py tests/test_websocket.py -q`.
-- [ ] **Step 3: Implement** the field next to `training_day_id` in both schemas and `client.start_session`, the gate
-  on `"upcoming" in coordinator.today`, and the field's name and description in `services.yaml`, `strings.json` and
-  both translations.
+- [ ] **Step 3: Implement** the field next to `training_day_id` in both schemas and `client.async_start_session`
+  (send `date.isoformat()`: aiohttp's JSON body can't serialise a `date`), the gate on `"upcoming" in
+  coordinator.today` for starts with a date, the ws error key, and the field's name and description in
+  `services.yaml`, `strings.json` and both translations.
 - [ ] **Step 4: Run** the integration gates. Expected: pass.
 - [ ] **Step 5: Commit** `feat: the integration starts a training early with a date`.
 
@@ -223,6 +263,7 @@ Model: opus · Review: yes
 
 - [ ] **Step 1: Write the failing tests:**
   - A today card with `language: 1` renders in the user's language (Danish text with `hass.locale.language` "da").
+    The test file's `mount` passes `language` only as a string, so call `setConfig` directly.
   - Each editor opened with `language: 1` shows a selected option labelled "1" next to the three usual ones; choosing
     it again fires no change that turns it into `"1"`; choosing "Follow the user's language" removes the key.
 - [ ] **Step 2: Run them to see them fail:** `npm test --prefix cards -- card-editor today-card`.
@@ -246,20 +287,26 @@ Model: opus · Review: yes
     `live()` holds exactly one `work` tone, starting at once (≈ 9.99 s), and the work phase's beeps and rest tone.
   - `the change tone plays once when the view arrives just after it started` stays green (existing "a natural phase
     change gets its change tone once").
-  - `no beep in the first second of a work phase`: a 10 s work phase (`duration: 10`) has beeps at 5–9 s left only if
-    each is at least the long beep's length after the start; a 5 s switch keeps its beep at 1 s left.
-  - `a program without a countdown plays the long beep at Start`: in the details flow, Start on a program whose first
-    phase is work, with the start's view answering; one `work` tone at once. A second flow on the same session (opened
-    with `resume`) plays none.
+  - `no beep in the long beep's time`: a 5 s work phase starting at 0 has beeps only at 2, 3 and 4 (3, 2 and 1 s
+    left); a 5 s switch starting at 0 keeps beeps at 1, 2, 3 and 4. The existing "no beep in first 0.3 s" test uses a
+    5 s work phase: its expectation loses the beep 1 s after the start; update it and say so in the report.
+  - `a pending change tone is planned again, never added`: the existing "short phase beeps only its seconds" and "no
+    beep in first 0.3 s" get no new change tone at their phase's start.
+  - `a program without a countdown plays the long beep at Start`: use the setup of
+    `workout-flow-details.test.ts` (its `fakeHass` answers `ha_fitness/programs`); Start on a program whose first
+    phase is work, the start's view answering with phase work → one `work` tone at once.
+  - `Fortsæt into a work phase plays no long beep`: resume mode, a paused work phase resumed → no `work` tone at the
+    resume.
   - `audio.test.ts`: the `work` tone lasts at least 0.9 s (the stop is at least 0.9 s after the start); `beep` stays
     0.12 s.
 - [ ] **Step 2: Run them to see them fail:** `npm test --prefix cards -- workout-flow-pings audio`.
-- [ ] **Step 3: Implement.** `TONES.work` becomes one 1320 Hz note of 1.0 s. In `plan()`, a change tone that was
-  pending when the new view arrived and whose `at` is the new phase's start is planned again (at once if passed),
-  never twice; the simplest shape is `tonesOf()` also listing the current phase's own change tone at its start, which
-  the existing started/pending rules then keep or drop. Keep `playSkipTone` from doubling it (Næste/Forrige tests).
-  The quiet time after a phase start is `WORK_QUIET_MS` (≥ the tone's length) for work and `QUIET_MS` otherwise. The
-  flow that sent `start` plays `work` at once when the answer's phase is work.
+- [ ] **Step 3: Implement.** `TONES.work` becomes one 1320 Hz note of 1.0 s. In `plan()`, after `silence()`: a tone
+  that was pending (or started) when the view arrived, whose kind is the new phase's change tone (`work` for a work
+  phase, `rest` for switch and rest) and whose `at` is the new phase's start, is planned again (at once if passed;
+  skipped if it had started). Nothing new is added: a tone that wasn't pending or started stays unplanned. A countdown
+  phase has no start tone. Keep `playSkipTone` from doubling it (the Næste/Forrige tests). The quiet time after a
+  phase start is `WORK_QUIET_MS = 1100` for work and `QUIET_MS` (300) otherwise. The flow that sent `start` plays
+  `work` at once when the answer's phase is work.
 - [ ] **Step 4: Run** the cards gates. Expected: pass, the existing tone tests included.
 - [ ] **Step 5: Commit** `feat(cards): a long beep at every work start, also after the countdown`.
 
@@ -290,7 +337,11 @@ Model: opus · Review: yes
   - Start on an upcoming row opens the details step; its Start sends `{command: "start", program_id, participants,
     date}` and no `training_day_id`; a refused start (409) shows the existing error text.
   - The today card's editor has a "Days ahead" / "Dage frem" field (0–6); 0 removes the key; the workout and stats
-    editors have no such field.
+    editors have no such field. `CardEditor` is one class registered under all three editor tags
+    (`registerCardEditor`); the implementer picks how only the today editor shows the field (a subclass or a flag
+    from the registration) and says which in the report.
+  - The range test sets the tablet's clock (`Date.now`) to a different day than the today data's `date`, and the rows
+    follow `date`.
 - [ ] **Step 2: Run them to see them fail.**
 - [ ] **Step 3: Implement** the rows (the look follows the open row, visibly "coming"; keys in both language files),
   the editor field for the today card only, the details mode's `date`, and `date` on the start.
