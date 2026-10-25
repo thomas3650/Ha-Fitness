@@ -81,20 +81,26 @@ Thomas, 2026-10-25, in chat:
    finds one for an active program (it trains at least weekly, and §2.2.2 allows one early training).
 2. **`startable`** is false while the program has an open day (any date), or a done day dated today or later; true
    otherwise. So a program has one early training at a time: once Friday is done early, next Monday is a reminder
-   until Friday has passed, and gets its Start on Saturday. Only within one program: another program's days don't
+   until Friday has passed, and gets its Start on Saturday. It also means one training per program per day: after
+   Monday's training is done on Monday, Wednesday stays a reminder until Tuesday. A late Monday done on Tuesday blocks
+   nothing, because its date is before today. Only within one program: another program's days don't
    block it (Thomas).
 3. **Starting early.** A start may name a program and its upcoming date instead of a training day. The add-on accepts
    it only for that program's current upcoming entry with `startable` true; otherwise 409 `conflict`. A start with
    both a training day and a date is 422 `invalid`.
 4. **What clients see during an early session.** The start makes the training day at once, open, dated on its future
    date, and the session carries its id as `training_day_id` from the start (so it is never an extra session, also in
-   the stats). While the session runs:
+   the stats). The add-on publishes `today` right after the start, as it does after a finish. While the session runs
+   and the day's date is still after today:
    - The day is not in `open`, so `sensor.ha_fitness_today` and `binary_sensor.ha_fitness_training_open` don't change
      for it.
    - The program's `upcoming` entry stays on that date, with `startable` false.
    - The day shows in `GET /api/v1/training-days` as open. The week ring's `planned` doesn't change (it already counted
      that date).
    - No `due` event is sent for it, also when the session crosses midnight into its date.
+
+   From the midnight into its date, the day is that date's day under a session (D42): in `open` as due, out of
+   `upcoming` (whose entry moves to the program's following date, not startable), still with no `due` event.
 5. **A counted early session closes the day as done**, with a `done` event, for its own date. On that date the
    scheduler makes no new day. In the stats the day belongs to its own date (D47), as a day done late already does:
    done and the streak follow its date, and the time follows the session's start, as today (`stats.py`). It counts in
@@ -138,12 +144,14 @@ Thomas, 2026-10-25, in chat:
 1. Every work phase starts with one clearly **long beep, about 1 s**, that can't be mistaken for the short countdown
    beeps (Thomas: every exercise, not only the first). This is the tone at the end of the countdown, at the end of
    each switch and rest, and the change tone of Næste and Forrige into a work phase. A program without a countdown
-   plays it when its first work phase starts at Start. Resuming into a work phase plays none. (Claude's calls.)
+   plays it when its first work phase starts at Start, in the flow that tapped Start (its audio was unlocked in that
+   tap). Resuming into a work phase plays none. (Claude's calls.)
 2. **The bug:** the start tone after the opening countdown is missing (§1). Its cause is found (systematic debugging,
    in the fast loop) and fixed, with a test that fails before the fix and models what the existing tests missed.
 3. The short beeps in the last 5 s of every phase, the switch/rest tone and the chime stay as they are.
-4. No short beep overlaps the long beep, also in a short work phase: the quiet time after a phase start (`QUIET_MS` in
-   `workout-flow.ts`) is at least the long beep's length.
+4. No short beep overlaps the long beep, also in a short work phase: the quiet time after a work phase's start is at
+   least the long beep's length. Switch and rest phases keep today's quiet time (`QUIET_MS`, 0.3 s, in
+   `workout-flow.ts`), so their beeps stay as they are.
 5. The long beep is checked in Chrome on the Mac in the fast loop, with Thomas listening, after the countdown too. The kitchen tablet check
    doesn't block the merge; if the beep doesn't play there, that becomes a new issue (Claude's call).
 
