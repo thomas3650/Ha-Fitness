@@ -491,3 +491,12 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   even a client that kept up, and that burst's events were lost. The check keeps the memory bounded by 100 messages
   plus one batch.
 - **Source:** Claude, 2026-10-25, issue #49
+
+### D59: The cards have visual editors; layout is HA's
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** Each card has a visual editor. Options go there; layout stays HA's Layout tab, never a control of
+  ours. The editor uses `getConfigElement` with native controls, not `getConfigForm` or `ha-form`. Its texts follow
+  the HA user's language, a narrow exception to D38.
+- **Why:** HA builds the Layout tab only around a visual editor. `getConfigForm` has no `hass`, so it can't follow the
+  user's language. `ha-form` loads lazily and doesn't render in tests.
+- **Source:** [card editors spec](superpowers/specs/2026-10-25-card-editors-design.md) §2 and §6

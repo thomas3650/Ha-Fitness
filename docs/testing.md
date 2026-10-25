@@ -198,6 +198,8 @@ For every UI change, in the fast loop (and in the full loop before a release):
   The folder is git-ignored: screenshots show exercise-library pictures, which stay out of the public repo. The PR
   description lists the screens checked and the folder. Screenshots show the dev HA only, never the real one.
 
+For a card change, open each card's editor as well. Check the Layout tab and the language field.
+
 ### The today card
 
 On the dev dashboard `http://localhost:8123/ha-fitness-dev`, as the Danish user, with a screenshot of each step. Due

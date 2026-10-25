@@ -142,6 +142,11 @@ From HA core's `music_assistant` integration and HA's REST API (HA 2026.10). The
 - **Chrome's window can't always be resized for the Chrome check.** When it can't, a same-origin page holding an
   800×1280 `<iframe>` of the dashboard (scaled down with a CSS transform) gives the portrait layout; HA allows
   same-origin framing.
+- **Layout and Visibility tabs need a visual editor.** HA builds them only around a card that has one.
+- **`getConfigForm()` has no `hass`.** HA calls it without `hass`, so its labels are static.
+- **`ha-form` loads lazily.** `ha-form` and the like may not be defined yet, so a custom editor can't count on them.
+- **The Layout tab's size slider.** It stores `rows` together with `columns`, taken from the card's defaults. The "Full
+  width" switch stores only `columns`.
 
 ## Testing
 
