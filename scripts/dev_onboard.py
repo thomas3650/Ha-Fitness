@@ -1,6 +1,6 @@
 """Onboard a fresh dev Home Assistant and add the HA Fitness and fake Music Assistant entries; safe to run again.
 
-Usage: `uv run python scripts/dev_onboard.py [--url URL] [--no-entry | --fake-music-only] [--token-file PATH]`
+Usage: `.venv/bin/python scripts/dev_onboard.py [--url URL] [--no-entry | --fake-music-only] [--token-file PATH]`
 
 - Refuses, before any request, unless the host of `--url` is `localhost` or `127.0.0.1`: it never talks to a real
   Home Assistant.

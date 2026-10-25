@@ -7,11 +7,14 @@ wrong one. The scheduler runs every 0.05 s, so a test that only moves the clock 
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+import logging
+import threading
 from typing import Any
 
 from fastapi.testclient import TestClient
 from ha_fitness_server import __version__
 from ha_fitness_server.push import Hub
+import pytest
 from starlette.websockets import WebSocketDisconnect
 
 from tests.conftest import FrozenClock, MakeApp
@@ -124,6 +127,70 @@ def test_midnight_publishes_today_without_creates(make_app: MakeApp) -> None:
             message = ws.receive_json()
             assert _today(message) == ("2026-10-27", [])
             assert message["data"]["next"] == first["data"]["next"]
+
+
+class _FailOnceClock(FrozenClock):
+    """A frozen clock that raises on its next read once armed, then reads normally again.
+
+    `failed` is set at the raise, and `recovered` at the first normal read after it.
+    """
+
+    def __init__(self, start: datetime) -> None:
+        """Start at `start`, not armed."""
+        super().__init__(start)
+        self.armed = False
+        self.raised = 0
+        self.error = RuntimeError("clock failure")
+        self.failed = threading.Event()
+        self.recovered = threading.Event()
+
+    def now(self) -> datetime:
+        """Raise once when armed, else return the frozen time."""
+        if self.armed:
+            self.armed = False
+            self.raised += 1
+            self.failed.set()
+            raise self.error
+        if self.failed.is_set():
+            self.recovered.set()
+        return super().now()
+
+
+def test_failed_scheduler_run_is_logged_and_the_next_runs(
+    make_app: MakeApp, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A scheduler run that raises is logged at ERROR, and the next run still reconciles and pushes `today`."""
+    clock = _FailOnceClock(local(2026, 10, 26, 23, 59))  # a Monday
+    # The session loop ticks once at the start, then waits an hour: only the scheduler reads the clock below.
+    app = make_app(
+        settings_overrides={
+            "timezone": ZONE,
+            "scheduler_interval": FAST,
+            "session_tick_max": 3600.0,
+        },
+        clock=clock,
+    )
+    with (
+        caplog.at_level(logging.ERROR, logger="ha_fitness_server.app"),
+        TestClient(app) as tc,
+        tc.websocket_connect(WS) as ws,
+    ):
+        _connect_expect(ws, "2026-10-26")
+        clock.armed = True
+        assert clock.failed.wait(timeout=5)
+        # No request: only a later scheduler run reconciles.
+        clock.set(local(2026, 10, 27, 0, 1))
+        # A dead scheduler never reads the clock again; checked first, as receive_json() has no timeout.
+        assert clock.recovered.wait(timeout=5)
+        assert _today(ws.receive_json()) == ("2026-10-27", [])
+    assert clock.raised == 1
+    assert any(
+        record.levelno == logging.ERROR
+        and record.name == "ha_fitness_server.app"
+        and record.exc_info is not None
+        and record.exc_info[1] is clock.error
+        for record in caplog.records
+    )
 
 
 def test_due_event_only_for_today(make_app: MakeApp) -> None:

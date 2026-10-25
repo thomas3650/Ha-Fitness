@@ -8,7 +8,6 @@ FROM ${BUILD_FROM}
 
 ENV \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
-    UV_PYTHON=/usr/local/bin/python \
     UV_PYTHON_DOWNLOADS=never \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

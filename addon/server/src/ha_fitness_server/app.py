@@ -185,7 +185,6 @@ def create_app(
         version=__version__,
         lifespan=combine_lifespans(lifespan, mcp_app.lifespan),
     )
-    app.state.settings = settings
     app.state.services = holder
     app.state.mcp = mcp
     app.state.ha_transport = ha_transport

@@ -48,6 +48,11 @@ fit no doc stay in [`notes.md`](notes.md).
 
 ## The integration
 
+- **`categories` in `manifest.json`.** HA core's dev hassfest has the key since October 2026 (one to three values,
+  such as `health_wellbeing`; optional for a custom integration). The hassfest image that CI runs
+  (`home-assistant/actions/hassfest`) still rejects it as of 2026-10-26: "not a valid option at 'categories'". So the
+  manifest has no `categories`, and the HACS action's "no categories" warning stays until that image accepts the key.
+  The list: [integration categories](https://contributors.home-assistant.io/core/integrations/categories/).
 - **`single_config_entry` blocks discovery updates.** With `"single_config_entry": true` in `manifest.json`, HA
   aborts every new flow with `single_instance_allowed` once an entry exists, before the flow's first step runs
   (checked in HA's `config_entries.py`). A Supervisor discovery for the existing entry then never reaches

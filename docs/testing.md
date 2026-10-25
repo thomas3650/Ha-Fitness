@@ -25,10 +25,11 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
      [fake Music Assistant](#the-fake-music-assistant).
 3. Wait for HA: `curl -sf -o /dev/null --retry 60 --retry-delay 2 --retry-connrefused --retry-all-errors
    http://localhost:8123/manifest.json`.
-4. On a fresh `config/`: `uv run python scripts/dev_onboard.py`, while the add-on server runs. It onboards HA with the
-   user `dev` / `dev`, sets that user's language to Danish and sets the dev HA's timezone to Europe/Copenhagen (the
+4. On a fresh `config/`: `.venv/bin/python scripts/dev_onboard.py`, while the add-on server runs. It onboards HA with
+   the user `dev` / `dev`, sets that user's language to Danish and sets the dev HA's timezone to Europe/Copenhagen (the
    server's zone). It also writes a long-lived token for the dev user to `local/dev-ha-token` (mode 600), or keeps the
    one there when HA still accepts it. It is safe to run again, and the server needs no restart after it.
+   - Run it with `.venv/bin/python`, not `uv run` ([why](ha-notes.md#testing)).
    - It adds the HA Fitness entry through the user step, with the URL `http://localhost:8765`. The integration checks
      that the server answers there; if it doesn't, the script stops and says so.
    - It then adds the fake Music Assistant's entry, "Fake Music Assistant", when HA has no `music_assistant` entry. It

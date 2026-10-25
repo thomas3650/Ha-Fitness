@@ -1,6 +1,7 @@
 import { getAllByRole, getByRole, queryAllByRole, queryByRole } from "@testing-library/dom";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import en from "../src/i18n/en.json";
 import "../src/index";
 
 interface Totals {
@@ -171,8 +172,8 @@ afterEach(() => {
 
 test("the card picker lists the card in English", () => {
   const entry = window.customCards?.find((card) => card.type === TAG);
-  expect(entry?.name).toBe("HA Fitness – stats");
-  expect(entry?.description).toBeTruthy();
+  expect(entry?.name).toBe(en.picker_stats.name);
+  expect(entry?.description).toBe(en.picker_stats.description);
 });
 
 test("takes the full width of a section", async () => {
