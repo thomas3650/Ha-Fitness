@@ -17,6 +17,9 @@ test("if HA's frontend never boots, the cards register after about 15 s anyway",
     "ha-fitness-workout-card",
     "ha-fitness-stats-card",
     "ha-fitness-workout-flow",
+    "ha-fitness-today-card-editor",
+    "ha-fitness-workout-card-editor",
+    "ha-fitness-stats-card-editor",
   ]) {
     expect(customElements.get(tag), tag).toBeDefined();
   }

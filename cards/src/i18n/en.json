@@ -197,5 +197,11 @@
     "band": "band",
     "kettlebell": "kettlebell",
     "resistance_band": "resistance band"
+  },
+  "editor": {
+    "language": "Language",
+    "language_default": "Follow the user's language",
+    "language_en": "English",
+    "language_da": "Dansk"
   }
 }

@@ -98,10 +98,12 @@ The cards are built into the integration: one bundle, released and versioned wit
     `/ha_fitness_frontend/` and loads `/ha_fitness_frontend/ha-fitness-cards.js?v=<integration version>` in the
     frontend. The version in the URL busts browser caches after an update.
 - **Cards:** Vite builds `cards/src/index.ts` into `custom_components/ha_fitness/frontend/ha-fitness-cards.js`.
-  The bundle registers its elements, the three cards and `ha-fitness-workout-flow`, once HA's frontend has booted
-  ([`ha-notes.md`](ha-notes.md#the-frontend)). The texts come from `cards/src/i18n/`
-  (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the HA user's language
-  (D11, D38).
+  The bundle registers its elements, the three cards, their three editors and `ha-fitness-workout-flow`, once HA's
+  frontend has booted ([`ha-notes.md`](ha-notes.md#the-frontend)). Each card has a visual editor with the `language`
+  option (D59). Width and height are HA's Layout tab. The today card's height is `auto` (grid rows), and its
+  `getCardSize()` still counts one row for the top line and three per open day (masonry views). The texts come
+  from `cards/src/i18n/` (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the
+  HA user's language (D11, D38). The editors' texts follow the user's language (D59).
   - **"Træning i dag"** (`custom:ha-fitness-today-card`) has a top line with the streak badge, the week ring, then
     one row per open training day (a two-tap Spring over, and Start), or the session row (the program's name,
     "I gang · runde 2 af 5" or "Pauset · runde 2 af 5", the people with the planned length, and Fortsæt) while a

@@ -197,5 +197,11 @@
     "band": "elastik",
     "kettlebell": "kettlebell",
     "resistance_band": "modstandselastik"
+  },
+  "editor": {
+    "language": "Sprog",
+    "language_default": "Følg brugerens sprog",
+    "language_en": "English",
+    "language_da": "Dansk"
   }
 }

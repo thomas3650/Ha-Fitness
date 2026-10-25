@@ -1,6 +1,7 @@
 import { LitElement, type PropertyValues, css, html, nothing } from "lit";
 
 import { unlockAudio } from "./audio";
+import { registerCardEditor } from "./card-editor";
 import { type Vars, localize } from "./i18n";
 import { type LanguageConfig, type LanguageHass, cardLanguage } from "./language";
 import * as overlay from "./overlay";
@@ -33,6 +34,7 @@ declare global {
 }
 
 const TAG = "ha-fitness-workout-card";
+const EDITOR_TAG = "ha-fitness-workout-card-editor";
 /** The waits before the retries of a failed fetch; the last one repeats. */
 const RETRY_MS = [5_000, 10_000, 30_000];
 
@@ -72,6 +74,16 @@ export class WorkoutCard extends LitElement {
   private readonly onReady = (): void => {
     void this.fetchPrograms();
   };
+
+  /** Home Assistant's card editor shows this element for the card (card editors spec). */
+  static getConfigElement(): HTMLElement {
+    return document.createElement(EDITOR_TAG);
+  }
+
+  /** The config the card picker starts from, besides `type`: no options. */
+  static getStubConfig(): Record<string, unknown> {
+    return {};
+  }
 
   static override styles = css`
     :host {
@@ -305,6 +317,7 @@ export class WorkoutCard extends LitElement {
 export function registerWorkoutCard(): void {
   if (customElements.get(TAG)) return;
   customElements.define(TAG, WorkoutCard);
+  registerCardEditor(EDITOR_TAG);
   window.customCards = window.customCards ?? [];
   window.customCards.push({
     type: TAG,

@@ -7,6 +7,9 @@ const TAGS = [
   "ha-fitness-workout-card",
   "ha-fitness-stats-card",
   "ha-fitness-workout-flow",
+  "ha-fitness-today-card-editor",
+  "ha-fitness-workout-card-editor",
+  "ha-fitness-stats-card-editor",
 ];
 
 /** A stand-in for HA's polyfill: a registry of its own that knows only what is defined in it. */

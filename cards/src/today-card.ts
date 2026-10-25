@@ -1,6 +1,7 @@
 import { LitElement, type PropertyValues, type TemplateResult, css, html, nothing, svg } from "lit";
 
 import { unlockAudio } from "./audio";
+import { registerCardEditor } from "./card-editor";
 import { type Vars, WEEKDAYS, localize } from "./i18n";
 import { iconButton } from "./icon-button";
 import { type LanguageConfig, type LanguageHass, cardLanguage } from "./language";
@@ -53,6 +54,7 @@ interface Confirming {
 }
 
 const TAG = "ha-fitness-today-card";
+const EDITOR_TAG = "ha-fitness-today-card-editor";
 const ARM_MS = 500;
 const CONFIRM_MS = 10_000;
 const ERROR_MS = 5_000;
@@ -120,6 +122,16 @@ export class TodayCard extends LitElement {
   private readonly confirming = new Map<number, Confirming>();
   private errorTimer?: ReturnType<typeof setTimeout>;
   private stopListening?: () => void;
+
+  /** Home Assistant's card editor shows this element for the card (card editors spec). */
+  static getConfigElement(): HTMLElement {
+    return document.createElement(EDITOR_TAG);
+  }
+
+  /** The config the card picker starts from, besides `type`: no options. */
+  static getStubConfig(): Record<string, unknown> {
+    return {};
+  }
 
   static override styles = css`
     :host {
@@ -301,9 +313,9 @@ export class TodayCard extends LitElement {
     this.config = config;
   }
 
-  /** One row of HA's grid for the top line, then three per open day (or for the session row). */
-  getGridOptions(): { columns: "full"; rows: number } {
-    return { columns: "full", rows: 1 + 3 * this.rowCount };
+  /** Full width. The height follows the content, so a width set in HA's Layout tab doesn't fix it. */
+  getGridOptions(): { columns: "full"; rows: "auto" } {
+    return { columns: "full", rows: "auto" };
   }
 
   getCardSize(): number {
@@ -681,6 +693,7 @@ export class TodayCard extends LitElement {
 export function registerTodayCard(): void {
   if (customElements.get(TAG)) return;
   customElements.define(TAG, TodayCard);
+  registerCardEditor(EDITOR_TAG);
   window.customCards = window.customCards ?? [];
   window.customCards.push({
     type: TAG,
