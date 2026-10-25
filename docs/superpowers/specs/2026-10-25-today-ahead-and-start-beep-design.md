@@ -152,7 +152,8 @@ Thomas, 2026-10-25, in chat:
 4. No short beep overlaps the long beep, also in a short work phase: the quiet time after a work phase's start is at
    least the long beep's length. Switch and rest phases keep today's quiet time (`QUIET_MS`, 0.3 s, in
    `workout-flow.ts`), so their beeps stay as they are.
-5. The long beep is checked in Chrome on the Mac in the fast loop, with Thomas listening, after the countdown too. The kitchen tablet check
+5. The long beep is checked in Chrome on the Mac in the fast loop, with Thomas listening, after the countdown
+   too. The kitchen tablet check
    doesn't block the merge; if the beep doesn't play there, that becomes a new issue (Claude's call).
 
 ### 2.5 A non-string language option (#72)
@@ -241,7 +242,9 @@ In the same PR:
   data has no `upcoming`.
 - Card tests through the rendered text and roles: upcoming rows in and out of range, Start or reminder, order, hidden
   or shown, an older add-on without `upcoming`; the today editor's `days_ahead`; the language fix; the long beep
-  scheduled at every work start and no beep overlapping it.
+  scheduled at every work start and no beep overlapping it; the new test for the start tone after the opening
+  countdown (§2.4.2), failing before the fix.
+- If the countdown bug's cause is a browser or Web Audio fact, it gets a line in `docs/notes.md` (way of working §5).
 - The fast loop and the Chrome check with screenshots of the today card with upcoming rows and a late day, reviewed
   with Thomas.
 - The long beep in Chrome on the Mac, with Thomas listening (§2.4.5).
