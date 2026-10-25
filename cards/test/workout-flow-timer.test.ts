@@ -1050,25 +1050,27 @@ test("pause and next send ha_fitness/music", async () => {
 test("buttons per state", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo(), true, music("waiting"));
-  const names = () => getAllByRole(player(flow), "button").map((element) => element.getAttribute("aria-label"));
-  const disabled = () => getAllByRole(player(flow), "button").map((element) => (element as HTMLButtonElement).disabled);
+  /** The player's two buttons, found by role and name in order (Pause or Play, then Next), and whether each is disabled. */
+  const disabled = (toggle: string) => {
+    const buttons = getAllByRole(player(flow), "button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toBe(playerButton(flow, toggle));
+    expect(buttons[1]).toBe(playerButton(flow, "Næste nummer"));
+    return buttons.map((element) => (element as HTMLButtonElement).disabled);
+  };
 
   // Waiting for the first work phase: both disabled.
-  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
-  expect(disabled()).toEqual([true, true]);
+  expect(disabled("Afspil musik")).toEqual([true, true]);
 
   // Unavailable: Play can retry a failed start; Next can't.
   await push(flow, solo(), true, music("unavailable"));
-  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
-  expect(disabled()).toEqual([false, true]);
+  expect(disabled("Afspil musik")).toEqual([false, true]);
 
   await push(flow, solo(), true, music("playing"));
-  expect(names()).toEqual(["Pause musik", "Næste nummer"]);
-  expect(disabled()).toEqual([false, false]);
+  expect(disabled("Pause musik")).toEqual([false, false]);
 
   await push(flow, solo(), true, music("paused"));
-  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
-  expect(disabled()).toEqual([false, false]);
+  expect(disabled("Afspil musik")).toEqual([false, false]);
 });
 
 test("no player when music is null", async () => {
