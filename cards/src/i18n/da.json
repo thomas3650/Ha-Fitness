@@ -186,7 +186,7 @@
     },
     "music": "Musik",
     "speaker": "Højttaler",
-    "speaker_unavailable": "{name} (utilgængelig)",
+    "speaker_unavailable": "(utilgængelig) {name}",
     "music_unavailable": "Musik utilgængelig",
     "music_pause": "Pause musik",
     "music_play": "Afspil musik",

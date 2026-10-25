@@ -756,7 +756,7 @@ test("music row in English", async () => {
   const { flow } = await mount(fake, details);
 
   expect(facts(flow)).toContainEqual(["Music", "Workout Mix"]);
-  expect(getAllByRole(speakerSelect(flow, "Speaker"), "option").map(text)).toEqual(["Køkken", "Stue (unavailable)"]);
+  expect(getAllByRole(speakerSelect(flow, "Speaker"), "option").map(text)).toEqual(["Køkken", "(unavailable) Stue"]);
 });
 
 test("music row shows the playlist when it has no name", async () => {
@@ -811,7 +811,7 @@ test("select defaults to program speaker, falls back to first available", async 
 test("unavailable speaker is marked", async () => {
   const fake = fakeHass("da", [thomas, maria], [withMusic], [kitchen, { ...stue, available: false }]);
   const { flow } = await mount(fake, details);
-  expect(getAllByRole(speakerSelect(flow), "option").map(text)).toEqual(["Køkken", "Stue (utilgængelig)"]);
+  expect(getAllByRole(speakerSelect(flow), "option").map(text)).toEqual(["Køkken", "(utilgængelig) Stue"]);
 });
 
 test("start sends the chosen speaker", async () => {

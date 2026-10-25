@@ -186,7 +186,7 @@
     },
     "music": "Music",
     "speaker": "Speaker",
-    "speaker_unavailable": "{name} (unavailable)",
+    "speaker_unavailable": "(unavailable) {name}",
     "music_unavailable": "Music unavailable",
     "music_pause": "Pause music",
     "music_play": "Play music",
