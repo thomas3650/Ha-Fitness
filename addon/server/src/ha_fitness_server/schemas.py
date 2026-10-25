@@ -300,6 +300,21 @@ class NextTraining(BaseModel):
     programs: list[str]
 
 
+class UpcomingTraining(BaseModel):
+    """An active program's next training after today, with the program's fields (today-ahead spec §2.2.1).
+
+    `startable` is false while the program has an open day, or a done day dated today or later (§2.2.2).
+    """
+
+    program_id: int
+    program_name: str
+    date: dt.date
+    station_count: int
+    rounds: int
+    total_minutes: int
+    startable: bool
+
+
 class Week(BaseModel):
     """The local week, Monday to Sunday, in the today view (UI refresh spec §3.1)."""
 
@@ -308,12 +323,16 @@ class Week(BaseModel):
 
 
 class TodayView(BaseModel):
-    """Body of `GET /api/v1/today` (step 4 spec §3.5, `week` UI refresh spec §3.1)."""
+    """Body of `GET /api/v1/today` (step 4 spec §3.5, `week` UI refresh spec §3.1, `upcoming` today-ahead spec §2.2).
+
+    `upcoming` has one entry per active program, by date, then program name ignoring case.
+    """
 
     date: dt.date
     open: list[OpenDay]
     next: NextTraining | None
     week: Week
+    upcoming: list[UpcomingTraining]
 
 
 def _utc_millis(moment: datetime) -> str:
@@ -339,6 +358,9 @@ class NewSession(BaseModel):
     program_id: int
     participants: list[int]
     training_day_id: int | None = None
+    # Starts the program's next training early, from its upcoming date (today-ahead spec §2.2.3); the service refuses
+    # it together with `training_day_id`, so that error has the session shape too.
+    date: dt.date | None = None
     # Overrides the program's speaker for this session (music spec §4.2); the service checks the pattern.
     speaker: str | None = None
 

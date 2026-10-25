@@ -28,6 +28,7 @@ import { type LanguageHass, cardLanguage } from "./language";
 import {
   type Feeling,
   type OverlayMode,
+  type PhaseKind,
   type SessionState,
   type SessionView,
   isActive,
@@ -71,8 +72,10 @@ const BEEP_SECONDS = 5;
 const RESTART_MS = 500;
 /** How long a started tone is remembered, so a new plan doesn't play it again (seconds). */
 const STARTED_S = 2;
-/** No beep falls this soon after a phase starts, where it would clash with the change tone. */
+/** No beep falls this soon after a switch or rest starts, where it would clash with the change tone. */
 const QUIET_MS = 300;
+/** No beep falls this soon after a work phase starts, where it would clash with the long beep. */
+const WORK_QUIET_MS = 1100;
 
 /** Slut's question. */
 interface EndQuestion {
@@ -88,6 +91,21 @@ const FEELING_ERRORS = new Set(["conflict", "invalid", "unavailable"]);
 function errorCode(error: unknown): string | undefined {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === "string" ? code : undefined;
+}
+
+/** The tone that starts a phase of `kind`: the long beep for work, the low tone for switch and rest. */
+function changeTone(kind: PhaseKind): ToneKind {
+  return kind === "work" ? "work" : "rest";
+}
+
+/**
+ * When `view`'s running phase started (the add-on's epoch ms), for its start tone. A countdown
+ * has no start tone, and a paused phase no start.
+ */
+function phaseStart(view: SessionView): number | undefined {
+  const phase = view.phase;
+  if (!phase?.ends_at || phase.kind === "countdown") return undefined;
+  return Date.parse(phase.ends_at) - phase.duration * 1000;
 }
 
 /**
@@ -510,8 +528,13 @@ export class WorkoutFlow extends LitElement {
         program_id: program.id,
         participants,
         ...(mode.trainingDayId === undefined ? {} : { training_day_id: mode.trainingDayId }),
+        ...(mode.date === undefined ? {} : { date: mode.date }),
         ...(speaker === undefined ? {} : { speaker }),
       });
+      // With no countdown, work starts now: the flow whose tap unlocked the audio plays its long beep.
+      if (this.isConnected && result.status === "running" && result.phase?.kind === "work") {
+        this.playStartTone(result);
+      }
       if (this.isConnected) this.result = result;
     } catch (error) {
       if (this.isConnected) this.error = this.t(this.startErrorKey(error));
@@ -522,6 +545,10 @@ export class WorkoutFlow extends LitElement {
 
   private startErrorKey(error: unknown): string {
     const code = errorCode(error);
+    // An early start the add-on is too old for: the integration refuses it as invalid, with its own key.
+    if ((error as { translation_key?: unknown } | null)?.translation_key === "session_early_unsupported") {
+      return "flow.error.cant_start";
+    }
     if (code === "conflict") {
       return isActive(this.state?.session) ? "flow.error.already_running" : "flow.error.cant_start";
     }
@@ -629,10 +656,22 @@ export class WorkoutFlow extends LitElement {
       Date.parse(after.ends_at) - Date.parse(before.ends_at) > RESTART_MS &&
       Date.parse(after.ends_at) - Date.parse(view.server_time) >= after.duration * 1000 - RESTART_MS;
     if (after.index === before.index && !restarted) return;
-    if (view.status !== "running" || after.kind === "countdown" || audioLocked()) return;
+    if (view.status !== "running" || after.kind === "countdown") return;
+    if (Date.parse(before.ends_at) <= this.now()) return;
+    this.playStartTone(view);
+  }
+
+  /**
+   * Play the change tone of `view`'s phase now, and remember it as that phase's start tone, so a
+   * plan made right after doesn't play it again.
+   */
+  private playStartTone(view: SessionView): void {
+    const start = phaseStart(view);
+    if (audioLocked() || !view.phase || start === undefined) return;
+    const kind = changeTone(view.phase.kind);
     const now = this.now();
-    if (Date.parse(before.ends_at) <= now) return;
-    scheduleTone(after.kind === "work" ? "work" : "rest", now, now);
+    const cancel = scheduleTone(kind, now, now);
+    this.tones.push({ kind, at: start, when: cancel.when, cancel });
   }
 
   /** The add-on's time now, from the local clock and the newest message's offset. */
@@ -706,6 +745,18 @@ export class WorkoutFlow extends LitElement {
     const view = from.view;
     if (!counting || from.locked || view?.status !== "running") return;
     const now = this.now();
+    // The phase that just began: its change tone, planned at the old phase's end, may still have
+    // been waiting when this view arrived. It plays then, at once if its time has passed; one
+    // that has started isn't played again, and none is added that wasn't planned.
+    const start = phaseStart(view);
+    if (start !== undefined && view.phase) {
+      const kind = changeTone(view.phase.kind);
+      const same = (tone: { kind: ToneKind; at: number }) => tone.kind === kind && tone.at === start;
+      if (!started.some(same) && pending.some(same)) {
+        const cancel = scheduleTone(kind, start, now);
+        this.tones.push({ kind, at: start, when: cancel.when, cancel });
+      }
+    }
     for (const [kind, at] of this.tonesOf(view)) {
       const same = (tone: { kind: ToneKind; at: number }) => tone.kind === kind && tone.at === at;
       // A tone that has started isn't played again. One that was waiting still plays, at once if
@@ -717,22 +768,23 @@ export class WorkoutFlow extends LitElement {
   }
 
   /**
-   * The current phase's tones (spec §5.4): a beep at 5 to 1 s left, none in the phase's first
-   * 0.3 s, and the next phase's change tone at local zero. While unreachable the ring holds at
-   * zero, so no change tone.
+   * The current phase's tones (spec §5.4): a beep at 5 to 1 s left, none in a switch or rest's
+   * first 0.3 s or in a work phase's long beep, and the next phase's change tone at local zero.
+   * While unreachable the ring holds at zero, so no change tone.
    */
   private tonesOf(view: SessionView): [ToneKind, number][] {
     const phase = view.phase;
     if (!phase?.ends_at) return [];
     const end = Date.parse(phase.ends_at);
     const start = end - phase.duration * 1000;
+    const quiet = phase.kind === "work" ? WORK_QUIET_MS : QUIET_MS;
     const tones: [ToneKind, number][] = [];
     for (let left = BEEP_SECONDS; left >= 1; left--) {
       const at = end - left * 1000;
-      if (at >= start + QUIET_MS) tones.push(["beep", at]);
+      if (at >= start + quiet) tones.push(["beep", at]);
     }
     const next = view.next_phase;
-    if (next && this.reachable()) tones.push([next.kind === "work" ? "work" : "rest", end]);
+    if (next && this.reachable()) tones.push([changeTone(next.kind), end]);
     return tones;
   }
 

@@ -134,7 +134,9 @@ def create_app(
             settings.ha_url, settings.ha_token, settings.ha_token_file, ha_transport
         )
         publish = _publisher(hub, asyncio.get_running_loop())
-        training_days = TrainingDays(engine, the_clock, settings.timezone, publish)
+        training_days = TrainingDays(
+            engine, the_clock, settings.timezone, publish, settings.late_days
+        )
         people = People(engine, ha, training_days, the_clock)
         programs = Programs(engine, library, training_days)
         sessions = Sessions(engine, the_clock, training_days, programs, people, publish)

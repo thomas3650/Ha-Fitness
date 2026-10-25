@@ -1,0 +1,6 @@
+configuration:
+  late_days:
+    name: Dage en forfalden træning er åben
+    description: >-
+      Hvor mange dage efter sin dato en forfalden træning kan tages. Den lukker før, hvis samme program træner igen.
+      0 lukker den ved midnat.

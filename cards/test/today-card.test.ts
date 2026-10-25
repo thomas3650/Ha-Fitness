@@ -22,7 +22,7 @@ interface Day {
 
 /** The parts of the card's interface that Home Assistant's `hui-card` and the dashboard use. */
 interface CardElement extends HTMLElement {
-  setConfig(config: { type: string; language?: string }): void;
+  setConfig(config: { type: string; language?: string; days_ahead?: unknown }): void;
   hass?: unknown;
   preview?: boolean;
   editMode?: boolean;
@@ -72,6 +72,54 @@ const onsdag = {
 
 function today(open: Day[], date = "2026-10-28") {
   return { date, open, next: { date: "2026-10-31", programs: ["Lørdag"] } };
+}
+
+/** One upcoming training, as the add-on's today data has it (today-ahead spec §2.2.1). */
+interface Upcoming {
+  program_id: number;
+  program_name: string;
+  date: string;
+  station_count: number;
+  rounds: number;
+  total_minutes: number;
+  startable: boolean;
+}
+
+/** Thursday's training, the day after the today data's Wednesday; it can start early. */
+const thursday: Upcoming = {
+  program_id: 5,
+  program_name: "Torsdag",
+  date: "2026-10-29",
+  station_count: 4,
+  rounds: 3,
+  total_minutes: 18,
+  startable: true,
+};
+
+/** Friday's, two days ahead; only a reminder. */
+const friday: Upcoming = {
+  program_id: 6,
+  program_name: "Fredag",
+  date: "2026-10-30",
+  station_count: 1,
+  rounds: 2,
+  total_minutes: 9,
+  startable: false,
+};
+
+/** Saturday's, three days ahead. */
+const saturday: Upcoming = {
+  program_id: 7,
+  program_name: "Lørdag",
+  date: "2026-10-31",
+  station_count: 6,
+  rounds: 4,
+  total_minutes: 32,
+  startable: true,
+};
+
+function todayAhead(open: Day[], upcoming: Upcoming[], date = "2026-10-28") {
+  return { ...today(open, date), upcoming };
 }
 
 type Listener = (message: unknown) => void;
@@ -192,12 +240,13 @@ type Fake = ReturnType<typeof fakeHass>;
 
 async function mount(
   fake: Fake,
-  options: { language?: string; preview?: boolean; editMode?: boolean } = {},
+  options: { language?: string; preview?: boolean; editMode?: boolean; daysAhead?: unknown } = {},
 ): Promise<CardElement> {
   const card = document.createElement("ha-fitness-today-card") as unknown as CardElement;
   card.setConfig({
     type: "custom:ha-fitness-today-card",
     ...(options.language ? { language: options.language } : {}),
+    ...(options.daysAhead === undefined ? {} : { days_ahead: options.daysAhead }),
   });
   if (options.preview) card.preview = true;
   if (options.editMode) card.editMode = true;
@@ -686,6 +735,21 @@ test("language option wins", async () => {
   expect(text(getByRole(root(card), "alert"))).toBe("Træningsdagen er allerede afsluttet.");
 });
 
+test("a language option that isn't a string falls back to the user's language", async () => {
+  const fake = fakeHass("da");
+  const card = document.createElement("ha-fitness-today-card") as unknown as CardElement;
+  // YAML can give a number; `mount` passes the option only as a string.
+  card.setConfig({ type: "custom:ha-fitness-today-card", language: 1 } as unknown as { type: string });
+  card.hass = fake.hass;
+  document.body.append(card);
+  await vi.advanceTimersByTimeAsync(0);
+  await card.updateComplete;
+  await push(card, fake, today([{ ...wednesday, state: "late" }], "2026-10-29"));
+  expect(rows(card).map(text)).toEqual([
+    "Onsdag Forfalden · onsdag 5 øvelser · 29 min Start Spring over",
+  ]);
+});
+
 test("full width, the height follows the content", async () => {
   // getCardSize still counts one for the top line, then three per day (or for the session row).
   const fake = fakeHass();
@@ -1144,17 +1208,18 @@ test("due day says I dag, late day keeps Forfalden", async () => {
   const fake = fakeHass("da");
   const card = await mount(fake);
   await push(card, fake, today([wednesday, { ...strength, state: "late", date: "2026-10-23" }]));
+  // The late day comes first: open rows go by date (today-ahead spec §2.3.5).
   expect(rows(card).map(text)).toEqual([
-    "Onsdag I dag 5 øvelser · 29 min Start Spring over",
     "Styrke Forfalden · fredag 1 øvelse · 12 min Start Spring over",
+    "Onsdag I dag 5 øvelser · 29 min Start Spring over",
   ]);
 
   const english = fakeHass("en");
   const englishCard = await mount(english);
   await push(englishCard, english, today([wednesday, { ...strength, state: "late", date: "2026-10-23" }]));
   expect(rows(englishCard).map(text)).toEqual([
-    "Onsdag Today 5 exercises · 29 min Start Skip",
     "Styrke Late · Friday 1 exercise · 12 min Start Skip",
+    "Onsdag Today 5 exercises · 29 min Start Skip",
   ]);
 });
 
@@ -1217,4 +1282,149 @@ test("session row replaces the days but keeps the top line", async () => {
   expect(getByRole(root(card), "img", { name: "I træk: Thomas 6" })).toBeTruthy();
   expect(weekRing(card, "Denne uge")?.getAttribute("aria-valuenow")).toBe("2");
   expect(text(root(card)).startsWith("TRÆNING T 6")).toBe(true);
+});
+
+test("upcoming rows within days_ahead, in da and en, follow the today data's date, not the clock", async () => {
+  // The tablet's clock is days away from the add-on's date, far west of UTC.
+  vi.stubEnv("TZ", "America/Los_Angeles");
+  vi.setSystemTime(new Date("2026-11-03T06:00:00.000Z"));
+
+  const fake = fakeHass("da");
+  const card = await mount(fake, { daysAhead: 2 });
+  await push(card, fake, todayAhead([], [saturday, friday, thursday]));
+  expect(rows(card).map(text)).toEqual([
+    "Torsdag I morgen 4 øvelser · 18 min Start",
+    "Fredag fredag 1 øvelse · 9 min",
+  ]);
+  expect(buttonNames(rows(card)[0])).toEqual(["Start"]);
+  expect(queryAllByRole(rows(card)[1], "button")).toEqual([]);
+
+  const english = fakeHass("en");
+  const englishCard = await mount(english, { daysAhead: 2 });
+  await push(englishCard, english, todayAhead([], [thursday, friday, saturday]));
+  expect(rows(englishCard).map(text)).toEqual([
+    "Torsdag Tomorrow 4 exercises · 18 min Start",
+    "Fredag Friday 1 exercise · 9 min",
+  ]);
+
+  // A day later in the add-on's date, Saturday comes into range and Thursday is tomorrow no more.
+  await push(englishCard, english, todayAhead([], [{ ...friday, startable: true }, saturday], "2026-10-29"));
+  expect(rows(englishCard).map(text)).toEqual([
+    "Fredag Tomorrow 1 exercise · 9 min Start",
+    "Lørdag Saturday 6 exercises · 32 min Start",
+  ]);
+});
+
+test("no upcoming rows without days_ahead, at 0, or with a value that isn't a number", async () => {
+  for (const daysAhead of [undefined, 0, "2", null]) {
+    const fake = fakeHass("da");
+    const card = await mount(fake, { daysAhead });
+    await push(card, fake, todayAhead([wednesday], [thursday]));
+    expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
+    document.body.replaceChildren();
+  }
+});
+
+test("open rows by date then name, then upcoming rows by date then name", async () => {
+  const fake = fakeHass("da");
+  const card = await mount(fake, { daysAhead: 6 });
+  const lateStrength: Day = { ...strength, id: 14, state: "late", date: "2026-10-26" };
+  const lateAbs: Day = { ...strength, id: 15, program_id: 8, program_name: "Mave", state: "late", date: "2026-10-26" };
+  const fridayToo: Upcoming = { ...friday, program_id: 9, program_name: "cardio" };
+  // As the add-on sorts: case ignored, and Ø after Z.
+  const east: Upcoming = { ...saturday, program_id: 10, program_name: "Øst" };
+  const zumba: Upcoming = { ...saturday, program_id: 11, program_name: "Zumba" };
+  await push(
+    card,
+    fake,
+    todayAhead([wednesday, lateStrength, lateAbs], [east, saturday, friday, zumba, thursday, fridayToo]),
+  );
+  expect(rows(card).map((row) => text(row).split(" ")[0])).toEqual([
+    "Mave",
+    "Styrke",
+    "Onsdag",
+    "Torsdag",
+    "cardio",
+    "Fredag",
+    "Lørdag",
+    "Zumba",
+    "Øst",
+  ]);
+});
+
+test("an upcoming row in range keeps the card shown and counts in its size", async () => {
+  const fake = fakeHass("da");
+  const card = await mount(fake, { daysAhead: 1 });
+  await push(card, fake, todayAhead([wednesday], [thursday, friday]));
+  expect(card.getCardSize()).toBe(7);
+
+  const events = visibilityEvents();
+  await push(card, fake, todayAhead([], [thursday, friday]));
+  expect(card.hidden).toBe(false);
+  expect(events).toEqual([]);
+  expect(rows(card).map(text)).toEqual(["Torsdag I morgen 4 øvelser · 18 min Start"]);
+  expect(card.getCardSize()).toBe(4);
+
+  // Nothing open and nothing in range: hidden, as before.
+  await push(card, fake, todayAhead([], [friday]));
+  expect(card.hidden).toBe(true);
+  expect(events).toEqual([HIDE]);
+  expect(card.getCardSize()).toBe(4);
+});
+
+test("an older add-on without upcoming renders as before with days_ahead", async () => {
+  const fake = fakeHass("da");
+  const card = await mount(fake, { daysAhead: 2 });
+  await push(card, fake, today([wednesday]));
+  expect(rows(card).map(text)).toEqual(["Onsdag I dag 5 øvelser · 29 min Start Spring over"]);
+  await push(card, fake, today([]));
+  expect(card.hidden).toBe(true);
+});
+
+test("the week ring sits in the first row when only upcoming rows show", async () => {
+  const fake = fakeHass("da");
+  const card = await mount(fake, { daysAhead: 2 });
+  await push(card, fake, { ...todayAhead([], [thursday, friday]), week: { done: 1, planned: 3 } });
+  const [first, second] = rows(card);
+  expect(getByRole(first, "progressbar", { name: "Denne uge" })).toBeTruthy();
+  expect(queryByRole(second, "progressbar")).toBeNull();
+});
+
+test("Start on an upcoming row opens the details and starts that date's training", async () => {
+  const fake = fakeHass("da");
+  const card = await mount(fake, { daysAhead: 1 });
+  await push(card, fake, todayAhead([], [{ ...thursday, program_id: 3, program_name: "Onsdag" }]));
+
+  lockAudio();
+  const before = resumes();
+  getByRole(rows(card)[0], "button", { name: "Start" }).click();
+  expect(resumes()).toBe(before + 1);
+  expect(theDialog()?.open).toBe(true);
+
+  await wait(card, 0);
+  expect(text(flowRoot())).toContain("Onsdag");
+  expect(sessionCommands(fake)).toEqual([]);
+  getByRole(flowRoot(), "button", { name: "Start" }).click();
+  await wait(card, 0);
+  expect(sessionCommands(fake)).toEqual([
+    { type: "ha_fitness/session/command", command: "start", program_id: 3, participants: [1], date: "2026-10-29" },
+  ]);
+});
+
+test("a refused early start shows the start error text", async () => {
+  const fake = fakeHass("da");
+  const answer = fake.callWS.getMockImplementation()!;
+  fake.callWS.mockImplementation((message: Message) =>
+    message.type === "ha_fitness/session/command"
+      ? Promise.reject({ code: "conflict", message: "Not startable" })
+      : answer(message),
+  );
+  const card = await mount(fake, { daysAhead: 1 });
+  await push(card, fake, todayAhead([], [{ ...thursday, program_id: 3, program_name: "Onsdag" }]));
+
+  getByRole(rows(card)[0], "button", { name: "Start" }).click();
+  await wait(card, 0);
+  getByRole(flowRoot(), "button", { name: "Start" }).click();
+  await wait(card, 0);
+  expect(text(getByRole(flowRoot(), "alert"))).toBe("Træningen kan ikke startes nu.");
 });

@@ -205,10 +205,11 @@ test("short phase beeps only its seconds", async () => {
 });
 
 test("no beep in first 0.3 s", async () => {
-  // A 5 s phase from 1 s to 6 s, in a view stamped before it starts: 5 s left is its first
-  // instant, where the change tone plays.
+  // A 5 s work phase from 1 s to 6 s, in a view stamped before it starts: 5 s left is its first
+  // instant, and 4 s left falls in the long beep's time. No flow tone waited for its start, so
+  // none is added there.
   const flow = await mount(fakeHass(), view({ phase: phase({ duration: 5, ends_at: at(6) }) }));
-  expect(live()).toEqual([...beeps(2, 3, 4, 5), { kind: "rest", start: 6 }]);
+  expect(live()).toEqual([...beeps(3, 4, 5), { kind: "rest", start: 6 }]);
 
   // A view that arrives 2.5 s into a phase schedules only what is still ahead; nothing plays at once.
   document.body.replaceChildren();
@@ -507,4 +508,66 @@ test("a running phase that ends later with only part of it left is no restart", 
   mark = audio.tones().length;
   await push(flow, view({ revision: 13, phase: phase({ ends_at: at(55) }), server_time: at(30) }));
   expect(live()).toEqual([...beeps(50, 51, 52, 53, 54), { kind: "rest", start: 55 }]);
+});
+
+test("the change tone plays when the next phase's view arrives just before local zero", async () => {
+  // The countdown ends at 10 s; work follows. Its work tone waits for local zero.
+  const flow = await mount(
+    fakeHass(),
+    view({
+      revision: 1,
+      phase: phase({ index: 0, kind: "countdown", round: 1, duration: 10, ends_at: at(10) }),
+      next_phase: { kind: "work", duration: 45 },
+    }),
+  );
+  await wait(flow, 9_990);
+  mark = audio.tones().length;
+
+  // The view of work arrives 10 ms before local zero, stamped 20 ms after it: the clock moves on
+  // by 30 ms. The waiting work tone isn't lost: it plays at once, and only once.
+  await push(
+    flow,
+    view({
+      revision: 2,
+      phase: phase({ index: 1, round: 1, ends_at: at(55) }),
+      next_phase: { kind: "rest", duration: 60 },
+      server_time: at(10.02),
+    }),
+  );
+  expect(live()).toEqual([
+    { kind: "work", start: 9.99 },
+    ...beeps(49.97, 50.97, 51.97, 52.97, 53.97),
+    { kind: "rest", start: 54.97 },
+  ]);
+});
+
+test("no beep in the long beep's time", async () => {
+  // A 5 s work phase from 0 s: the long beep fills its first second, so 4 s left doesn't beep.
+  await mount(fakeHass(), view({ phase: phase({ duration: 5, ends_at: at(5) }) }));
+  expect(live()).toEqual([...beeps(2, 3, 4), { kind: "rest", start: 5 }]);
+
+  // A 5 s switch from 0 s keeps its beeps after the short quiet time.
+  document.body.replaceChildren();
+  mark = audio.tones().length;
+  await mount(
+    fakeHass(),
+    view({
+      phase: phase({ index: 4, kind: "switch", duration: 5, ends_at: at(5) }),
+      next_phase: { kind: "work", duration: 45 },
+    }),
+  );
+  expect(live()).toEqual([...beeps(1, 2, 3, 4), { kind: "work", start: 5 }]);
+});
+
+test("Fortsæt into a work phase plays no long beep", async () => {
+  const fake = fakeHass("da");
+  const flow = await mount(fake, view({ status: "paused", phase: phase({ ends_at: null, remaining: 30 }) }));
+  await wait(flow, 2_000);
+  mark = audio.tones().length;
+
+  // Resumed at 2 s with 30 s left: only the work phase's own tones, no work tone now.
+  await tap(flow, "Fortsæt");
+  fake.commands[0].resolve(view({ revision: 11, phase: phase({ ends_at: at(32) }), server_time: at(2) }));
+  await settle(flow);
+  expect(live()).toEqual([...beeps(27, 28, 29, 30, 31), { kind: "rest", start: 32 }]);
 });

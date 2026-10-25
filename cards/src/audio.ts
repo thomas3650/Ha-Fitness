@@ -11,8 +11,8 @@ interface Note {
 const TONES: Record<ToneKind, Note[]> = {
   // A short beep for the last 5 seconds of a phase.
   beep: [{ frequency: 880, offset: 0, length: 0.12 }],
-  // A longer, higher tone when work starts.
-  work: [{ frequency: 1320, offset: 0, length: 0.45 }],
+  // One long, higher beep of about a second when work starts.
+  work: [{ frequency: 1320, offset: 0, length: 1.0 }],
   // A lower tone when a switch or rest starts.
   rest: [{ frequency: 523, offset: 0, length: 0.45 }],
   // Three rising tones when the session completes.

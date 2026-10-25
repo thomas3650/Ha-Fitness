@@ -2,6 +2,7 @@
 
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 import probatio
 
 from .client import (
@@ -22,6 +23,7 @@ SERVICE_END_SESSION = "end_session"
 ATTR_TRAINING_DAY_ID = "training_day_id"
 ATTR_PROGRAM_ID = "program_id"
 ATTR_PARTICIPANTS = "participants"
+ATTR_DATE = "date"
 
 # Training day ids start at 1, as services.yaml says.
 SKIP_SCHEMA = probatio.Schema(
@@ -38,6 +40,7 @@ START_SESSION_SCHEMA = probatio.Schema(
         probatio.Required(ATTR_PROGRAM_ID): probatio.Coerce(int),
         probatio.Required(ATTR_PARTICIPANTS): [probatio.Coerce(int)],
         probatio.Optional(ATTR_TRAINING_DAY_ID): probatio.Coerce(int),
+        probatio.Optional(ATTR_DATE): cv.date,
     }
 )
 END_SESSION_SCHEMA = probatio.Schema({})
@@ -66,6 +69,11 @@ def _refused(err: SessionRefusedError) -> ServiceValidationError:
 async def _async_start_session(call: ServiceCall) -> None:
     """Start a session through the add-on."""
     coordinator = _coordinator(call.hass)
+    # An add-on before upcoming doesn't know the date (the today-ahead spec §6).
+    if ATTR_DATE in call.data and "upcoming" not in (coordinator.today or {}):
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="session_early_unsupported"
+        )
     try:
         await async_start_session(
             coordinator.http_session,
@@ -74,6 +82,7 @@ async def _async_start_session(call: ServiceCall) -> None:
             call.data[ATTR_PARTICIPANTS],
             call.data.get(ATTR_TRAINING_DAY_ID),
             coordinator.integration_version,
+            date=call.data.get(ATTR_DATE),
         )
     except SessionRefusedError as err:
         raise _refused(err) from err

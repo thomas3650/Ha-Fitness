@@ -10,7 +10,7 @@ from typing import Any
 from fastmcp.exceptions import ToolError
 import pytest
 
-from tests.conftest import FrozenClock, MakeApp
+from tests.conftest import FrozenClock, MakeApp, running
 from tests.session_helpers import (
     CHANGES,
     PROGRAMS,
@@ -25,6 +25,7 @@ from tests.session_helpers import (
     current,
     days,
     iso,
+    make_session_app,
     ok,
     open_day,
     set_people,
@@ -141,7 +142,7 @@ async def test_done_late_and_not_late_across_midnight(make_app: MakeApp) -> None
     """Done late: a late day's session starts on a later local date. Across midnight: it starts on the day's date.
 
     Lateness is derived (spec §3.4): the day is `done` either way, and the session's `started_at` gives its date.
-    Across midnight the new date has a training day of its own, so reconcile would close the day as missed.
+    Across midnight the day stays open: its session is running (D42), and another program's day no longer closes it.
     """
     # Thursday 29 October: Wednesday's day of Lille is late, as no program trains on Thursdays yet.
     clock = FrozenClock(local(2026, 10, 28, 9))
@@ -186,7 +187,8 @@ async def test_reconcile_skips_in_session_day(make_app: MakeApp, paused: bool) -
     # 23:59:50 on Wednesday; 12 s later it is Thursday, with the session still in its first work phase.
     begin = local(2026, 10, 28, 23, 59) + timedelta(seconds=50)
     clock = FrozenClock(begin)
-    async with started(clock, make_app) as client:
+    app = make_session_app(clock, make_app, settings_overrides={"late_days": 0})
+    async with running(app) as client:
         [thomas] = await set_people(client, THOMAS)
         program = await create_small(client, "Lille")
         await create_small(client, "Torsdag", weekdays=["thu"])
@@ -204,6 +206,27 @@ async def test_reconcile_skips_in_session_day(make_app: MakeApp, paused: bool) -
         ("Torsdag", "2026-10-29"): "open",
     }
     assert after[("Lille", "2026-10-28")] == "missed"
+
+
+async def test_session_keeps_late_day_open_across_own_next_day(
+    make_app: MakeApp,
+) -> None:
+    """A session for a late day that crosses into the program's next training day keeps the late day open (D42)."""
+    clock = FrozenClock(local(2026, 10, 26, 9))  # a Monday
+    async with started(clock, make_app) as client:
+        [thomas] = await set_people(client, THOMAS)
+        program = await create_small(client, "Lille", weekdays=["mon", "wed"])
+        begin = local(2026, 10, 27, 23, 59) + timedelta(seconds=50)
+        clock.set(begin)
+        monday = await open_day(client, program["id"])
+        await start(client, program["id"], [thomas], monday)
+        clock.set(at(begin, 40))  # Wednesday 00:00:30, the session still running
+        response = await client.get(TODAY)
+    assert response.status_code == 200, response.text
+    assert [
+        (day["id"] == monday, day["date"], day["state"])
+        for day in response.json()["open"]
+    ] == [(True, "2026-10-26", "late"), (False, "2026-10-28", "due")]
 
 
 @pytest.mark.parametrize("paused", [False, True], ids=["running", "paused"])

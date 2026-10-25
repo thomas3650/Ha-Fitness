@@ -7,8 +7,8 @@ import threading
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Engine, delete, exists, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, delete, exists, or_, select, update
+from sqlalchemy.orm import Session, aliased
 
 from . import changes
 from .clock import Clock
@@ -30,8 +30,10 @@ from .schemas import (
     ProgramDocument,
     TodayView,
     TrainingDayOut,
+    UpcomingTraining,
     Week,
 )
+from .settings import DEFAULT_LATE_DAYS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +42,9 @@ type Publish = Callable[[list[dict[str, Any]]], None]
 
 # The scheduler's one row in `scheduler_state` (migration 0002).
 _STATE_ID = 1
+
+# How many days after today `upcoming` and `next` look (today-ahead spec §2.2.1, §2.2.9).
+_DAYS_AHEAD = 14
 
 
 def _trains_on(program: ProgramRow, day: date) -> bool:
@@ -90,10 +95,19 @@ class TrainingDays:
     """
 
     def __init__(
-        self, engine: Engine, clock: Clock, timezone: ZoneInfo, publish: Publish
+        self,
+        engine: Engine,
+        clock: Clock,
+        timezone: ZoneInfo,
+        publish: Publish,
+        late_days: int = DEFAULT_LATE_DAYS,
     ) -> None:
-        """Use `engine`, the local dates of `timezone` at `clock`'s time, and `publish` for push messages."""
+        """Use `engine`, the local dates of `timezone` at `clock`'s time, and `publish` for push messages.
+
+        A late day stays open at most `late_days` days after its date (spec §2.1 of the today-ahead spec).
+        """
         self._engine = engine
+        self._late_days = late_days
         self._clock = clock
         self._timezone = timezone
         self._publish = publish
@@ -111,10 +125,15 @@ class TrainingDays:
         """Return the local date now."""
         return self.local_date(self._clock.now())
 
-    def reconcile_now(self) -> None:
-        """Reconcile up to and including the local date now."""
+    def reconcile_now(self) -> date:
+        """Reconcile up to and including the local date now; return that date.
+
+        A write that reconciles first publishes its own `today` for this date too: the clock may pass midnight between.
+        """
         with self.lock:
-            self.reconcile(self.local_today())
+            today = self.local_today()
+            self.reconcile(today)
+            return today
 
     def reconcile(self, today: date) -> None:
         """Handle each date from the day after the last handled one up to today, and today again (spec §3.3).
@@ -140,12 +159,16 @@ class TrainingDays:
                     day += timedelta(days=1)
                 if state.last_date is None or state.last_date < today:
                     state.last_date = today
-            self._publish_today(events)
+            self._publish_today(events, today)
 
     def _handle(
         self, db_session: Session, programs: list[ProgramRow], day: date, today: date
     ) -> list[dict[str, Any]]:
-        """Apply rules 1 and 2 of spec §3.3 to one date; return the events, `due` only for a day made for today."""
+        """Make one date's training days and close the late days that are over; return the events.
+
+        Rule 1 of spec §3.3 makes the days; today-ahead spec §2.1 closes them. `due` goes out only for a day made for
+        today.
+        """
         events: list[dict[str, Any]] = []
         now = self._clock.now()
         for program in programs:
@@ -171,14 +194,21 @@ class TrainingDays:
             db_session.flush()
             if day == today:
                 events.append(_event("due", created))
-        if not db_session.scalar(select(exists().where(TrainingDay.date == day))):
-            return events
-        # A day whose session is running or paused stays open (step 5 spec §3.4).
+        # A late day closes once its program has a training day after it, up to `day`, or once its days are up
+        # (today-ahead spec §2.1.1). A day whose session is running or paused stays open (step 5 spec §3.4).
+        later = aliased(TrainingDay)
+        trains_again = exists().where(
+            later.program_id == TrainingDay.program_id,
+            later.date > TrainingDay.date,
+            later.date <= day,
+        )
+        days_up = TrainingDay.date < day - timedelta(days=self._late_days)
         earlier = db_session.scalars(
             select(TrainingDay)
             .where(
                 TrainingDay.status == TrainingDayStatus.OPEN,
                 TrainingDay.date < day,
+                or_(trains_again, days_up),
                 ~_in_session(TrainingDay.id),
             )
             .order_by(TrainingDay.date, TrainingDay.id)
@@ -213,15 +243,58 @@ class TrainingDays:
         db_session.flush()
         return _event("done", day)
 
-    def _publish_today(self, events: list[dict[str, Any]] | None = None) -> None:
+    def open_early(self, db_session: Session, program_id: int, day: date) -> int:
+        """Make a program's day on a date after today, open, in the caller's session; return its id.
+
+        For a session started early (today-ahead spec §2.2.4); the caller has checked the date against `upcoming_for`.
+        """
+        program = db_session.get_one(ProgramRow, program_id)
+        row = TrainingDay(
+            program_id=program_id,
+            program_name=program.name,
+            date=day,
+            status=TrainingDayStatus.OPEN,
+            created_at=self._clock.now(),
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row.id
+
+    def settle_uncounted(
+        self, db_session: Session, day_id: int
+    ) -> dict[str, Any] | None:
+        """Settle the open day of a session that ended uncounted, in the caller's session (today-ahead spec §2.2.6).
+
+        A day dated after today was made early and is removed. A day made early whose date is today now (the session
+        crossed midnight) stays as today's due day; its `due` event is returned, as reconcile sent none. Other days are
+        left as they are.
+        """
+        day = db_session.get(TrainingDay, day_id)
+        if day is None or day.status != TrainingDayStatus.OPEN:
+            return None
+        today = self.local_today()
+        if day.date > today:
+            db_session.delete(day)
+            db_session.flush()
+            return None
+        if day.date == today and self.local_date(day.created_at) < day.date:
+            return _event("due", day)
+        return None
+
+    def _publish_today(
+        self, events: list[dict[str, Any]] | None = None, today: date | None = None
+    ) -> None:
         """Publish `events`, then `today` if it changed, then what `on_change` returns, as one batch.
+
+        `today` is built for the date `today`, the clock's date when None. A reconcile passes the date it handled: the
+        clock may have passed midnight since, and a `today` for that new date would show the old date's days.
 
         `today` goes out when what `/today` returns differs from what was published last. The write has committed by
         now, so an error in `on_change` (the stats) is logged and swallowed: it never turns the write into a failure,
         and the rest of the batch still goes out.
         """
         batch = list(events or [])
-        view = self._build_view(self.local_today())
+        view = self._build_view(self.local_today() if today is None else today)
         if view != self._published:
             self._published = view
             batch.append({"type": "today", "data": view.model_dump(mode="json")})
@@ -233,21 +306,103 @@ class TrainingDays:
             self._publish(batch)
 
     def _build_view(self, today: date) -> TodayView:
-        """Build the body of `GET /today` for `today` (spec §3.5), without reconciling."""
+        """Build the body of `GET /today` for `today` (spec §3.5), without reconciling.
+
+        `open` is sorted by date, then program name ignoring case, then id. It leaves out a day dated after today, made
+        by a session started early (today-ahead spec §2.2.4).
+        """
         with session(self._engine) as db_session:
             rows = db_session.execute(
                 select(TrainingDay, ProgramRow)
                 .join(ProgramRow, TrainingDay.program_id == ProgramRow.id)
-                .where(TrainingDay.status == TrainingDayStatus.OPEN)
+                .where(
+                    TrainingDay.status == TrainingDayStatus.OPEN,
+                    TrainingDay.date <= today,
+                )
             ).all()
             active = list(
                 db_session.scalars(select(ProgramRow).where(ProgramRow.active))
             )
             week = self._week(db_session, active, today)
+            upcoming = [
+                entry
+                for program in active
+                if (entry := self.upcoming_for(db_session, program.id, today))
+                is not None
+            ]
+            next_training = self._next(db_session, active, today)
         open_days = [self._open_day(day, program, today) for day, program in rows]
-        open_days.sort(key=lambda day: (day.program_name.casefold(), day.id))
+        open_days.sort(key=lambda day: (day.date, day.program_name.casefold(), day.id))
+        upcoming.sort(key=lambda entry: (entry.date, entry.program_name.casefold()))
         return TodayView(
-            date=today, open=open_days, next=self._next(active, today), week=week
+            date=today,
+            open=open_days,
+            next=next_training,
+            week=week,
+            upcoming=upcoming,
+        )
+
+    @staticmethod
+    def upcoming_for(
+        db_session: Session, program_id: int, today: date
+    ) -> UpcomingTraining | None:
+        """Return a program's next training after today in the caller's session (today-ahead spec §2.2.1, §2.2.2).
+
+        That is the first date in the next 14 days on which the program trains and has no done, missed or skipped
+        day; an open day there doesn't move it. An open day dated after today (made by a session started early) pins
+        it to that date, even if the program's weekdays changed since (§2.2.4, §2.2.7). `startable` is false while the
+        program has an open day of any date, or a done day dated today or later. None for an unknown or inactive
+        program. Neither locks nor reconciles.
+        """
+        program = db_session.get(ProgramRow, program_id)
+        if program is None or not program.active:
+            return None
+        days = db_session.execute(
+            select(TrainingDay.date, TrainingDay.status).where(
+                TrainingDay.program_id == program_id,
+                or_(
+                    TrainingDay.status == TrainingDayStatus.OPEN,
+                    TrainingDay.date >= today,
+                ),
+            )
+        ).all()
+        closed = {day for day, status in days if status != TrainingDayStatus.OPEN}
+        startable = not any(
+            status == TrainingDayStatus.OPEN
+            or (status == TrainingDayStatus.DONE and day >= today)
+            for day, status in days
+        )
+        early = [
+            day
+            for day, status in days
+            if status == TrainingDayStatus.OPEN and day > today
+        ]
+        candidates = (
+            today + timedelta(days=offset) for offset in range(1, _DAYS_AHEAD + 1)
+        )
+        found = (
+            min(early)
+            if early
+            else next(
+                (
+                    day
+                    for day in candidates
+                    if _trains_on(program, day) and day not in closed
+                ),
+                None,
+            )
+        )
+        if found is None:
+            return None
+        document = ProgramDocument.model_validate(program.document)
+        return UpcomingTraining(
+            program_id=program.id,
+            program_name=program.name,
+            date=found,
+            station_count=len(document.stations),
+            rounds=document.rounds,
+            total_minutes=total_minutes(document),
+            startable=startable,
         )
 
     @staticmethod
@@ -295,12 +450,33 @@ class TrainingDays:
         )
 
     @staticmethod
-    def _next(active: list[ProgramRow], today: date) -> NextTraining | None:
-        """Return the first date after today on which an active program trains; null when none is active."""
-        for offset in range(1, 8):
+    def _next(
+        db_session: Session, active: list[ProgramRow], today: date
+    ) -> NextTraining | None:
+        """Return the first date after today on which an active program trains and isn't done there yet.
+
+        It looks 14 days ahead (today-ahead spec §2.2.9), so it is null only when no program is active.
+        """
+        last = today + timedelta(days=_DAYS_AHEAD)
+        done = {
+            (program_id, day)
+            for program_id, day in db_session.execute(
+                select(TrainingDay.program_id, TrainingDay.date).where(
+                    TrainingDay.status == TrainingDayStatus.DONE,
+                    TrainingDay.date > today,
+                    TrainingDay.date <= last,
+                )
+            )
+        }
+        for offset in range(1, _DAYS_AHEAD + 1):
             day = today + timedelta(days=offset)
             names = sorted(
-                (p.name for p in active if _trains_on(p, day)), key=str.casefold
+                (
+                    p.name
+                    for p in active
+                    if _trains_on(p, day) and (p.id, day) not in done
+                ),
+                key=str.casefold,
             )
             if names:
                 return NextTraining(date=day, programs=names)
@@ -334,7 +510,7 @@ class TrainingDays:
         Raise `NotFound`, or `Conflict` for a closed day or one whose session is running or paused.
         """
         with self.lock:
-            self.reconcile_now()
+            today = self.reconcile_now()
             with session(self._engine) as db_session:
                 day = db_session.get(TrainingDay, day_id)
                 if day is None:
@@ -357,19 +533,21 @@ class TrainingDays:
                 db_session.flush()
                 event = _event("skipped", day)
                 out = _out(day)
-            self._publish_today([event])
+            self._publish_today([event], today)
             return out
 
     def upsert_open(self, program_id: int, day: date) -> TrainingDayOut:
         """Dev only: make an open day for a program on today or a past date, or reopen the one there is.
 
-        Raise `NotFound` for an unknown program, and `Invalid` for a date after today: an open day there would break
-        "open days share one date".
+        Raise `NotFound` for an unknown program, and `Invalid` for a date after today: an open day there would show
+        as due (today-ahead spec §2.1.7).
         """
         with self.lock:
-            self.reconcile_now()
-            if day > self.local_today():
-                raise Invalid(f"{day.isoformat()} is after today")
+            today = self.reconcile_now()
+            if day > today:
+                raise Invalid(
+                    f"{day.isoformat()} is after today; an open day there would show as due"
+                )
             with session(self._engine) as db_session:
                 program = db_session.get(ProgramRow, program_id)
                 if program is None:
@@ -391,16 +569,16 @@ class TrainingDays:
                 row.closed_at = None
                 db_session.flush()
                 out = _out(row)
-            self._publish_today()
+            self._publish_today(today=today)
             return out
 
     def delete_date(self, day: date) -> None:
         """Dev only: remove every training day of `day`, open or closed."""
         with self.lock:
-            self.reconcile_now()
+            today = self.reconcile_now()
             with session(self._engine) as db_session:
                 db_session.execute(delete(TrainingDay).where(TrainingDay.date == day))
-            self._publish_today()
+            self._publish_today(today=today)
 
     def on_program_written(
         self, db_session: Session, before: ProgramRow | None, after: ProgramRow | None

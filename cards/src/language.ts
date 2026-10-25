@@ -9,9 +9,11 @@ export interface LanguageHass {
 }
 
 /**
- * The language a card shows its texts in: its `language` option if set,
- * else the user's language from `hass.locale.language`, else English.
+ * The language a card shows its texts in: its `language` option if it is a non-empty string,
+ * else the user's language from `hass.locale.language`, else English. YAML can give the option
+ * any type (a number, a list); such a value is ignored, so the card still renders.
  */
 export function cardLanguage(config?: LanguageConfig, hass?: LanguageHass): string {
-  return config?.language || hass?.locale?.language || "en";
+  const language: unknown = config?.language;
+  return (typeof language === "string" && language) || hass?.locale?.language || "en";
 }

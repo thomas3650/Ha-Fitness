@@ -6,7 +6,7 @@ wrong one. The scheduler runs every 0.05 s, so a test that only moves the clock 
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -161,6 +161,75 @@ def test_missed_event_when_next_day_begins(make_app: MakeApp) -> None:
             "2026-10-27",
             [("Hver dag", "2026-10-27", "due")],
         )
+
+
+class _MidnightClock(FrozenClock):
+    """A frozen clock that can cross midnight between a reconcile's own read and every read after it."""
+
+    def __init__(self, start: datetime) -> None:
+        """Start at `start`, with nothing armed."""
+        super().__init__(start)
+        self._then: datetime | None = None
+
+    def arm(self, first: datetime, then: datetime) -> None:
+        """Return `first` on the next read only, then `then` on every read after it."""
+        self.set(first)
+        self._then = then
+
+    def now(self) -> datetime:
+        """Return the frozen time; an armed clock moves on to its second time after this read."""
+        moment = super().now()
+        if self._then is not None:
+            self.set(self._then)
+            self._then = None
+        return moment
+
+
+@contextmanager
+def _quiet_client(make_app: MakeApp, clock: FrozenClock) -> Iterator[TestClient]:
+    """Run an app in Copenhagen time where only requests read the clock: the scheduler and session loop wait a minute."""
+    app = make_app(
+        settings_overrides={
+            "timezone": ZONE,
+            "scheduler_interval": 60,
+            "session_tick_max": 60,
+        },
+        clock=clock,
+    )
+    with TestClient(app) as tc:
+        yield tc
+
+
+def test_reconcile_publishes_today_for_the_date_it_handled(make_app: MakeApp) -> None:
+    """A reconcile whose date ends while it runs pushes `today` for the date it handled, not the clock's new date."""
+    clock = _MidnightClock(local(2026, 10, 26, 23, 59))  # a Monday
+    with _quiet_client(make_app, clock) as tc, tc.websocket_connect(WS) as ws:
+        _connect_expect(ws, "2026-10-26")
+        _create(tc, "Hver dag", ["mon", "tue"])
+        assert _event(ws.receive_json()) == ("due", "Hver dag", "2026-10-26")
+        _today(ws.receive_json())
+        clock.arm(local(2026, 10, 27, 23, 59), local(2026, 10, 28, 0, 1))
+        assert tc.get("/api/v1/today").status_code == 200
+        assert _event(ws.receive_json()) == ("due", "Hver dag", "2026-10-27")
+        assert _event(ws.receive_json()) == ("missed", "Hver dag", "2026-10-26")
+        assert _today(ws.receive_json()) == (
+            "2026-10-27",
+            [("Hver dag", "2026-10-27", "due")],
+        )
+
+
+def test_skip_publishes_today_for_the_date_it_reconciled(make_app: MakeApp) -> None:
+    """A skip whose date ends while it runs pushes `today` for the date its reconcile handled."""
+    clock = _MidnightClock(local(2026, 10, 26, 9))  # a Monday
+    with _quiet_client(make_app, clock) as tc, tc.websocket_connect(WS) as ws:
+        _connect_expect(ws, "2026-10-26")
+        _create(tc, "Hver dag", ["mon", "tue"])
+        assert _event(ws.receive_json()) == ("due", "Hver dag", "2026-10-26")
+        [day_id] = [day["id"] for day in ws.receive_json()["data"]["open"]]
+        clock.arm(local(2026, 10, 26, 23, 59), local(2026, 10, 27, 0, 1))
+        assert tc.post(f"{DAYS}/{day_id}/skip").status_code == 200
+        assert _event(ws.receive_json()) == ("skipped", "Hver dag", "2026-10-26")
+        assert _today(ws.receive_json()) == ("2026-10-26", [])
 
 
 def test_program_write_after_midnight_publishes_rollover_first(

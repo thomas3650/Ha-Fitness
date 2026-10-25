@@ -500,3 +500,22 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** HA builds the Layout tab only around a visual editor, and the other two routes fall short. The facts are in
   [`ha-notes.md`](ha-notes.md#the-frontend).
 - **Source:** [card editors spec](superpowers/specs/2026-10-25-card-editors-design.md) §2 and §6
+
+### D60: Late days stay open per program, for `late_days` days
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** A late day closes as missed when its own program trains again, or when `late_days` days after its date
+  have passed, whichever comes first. Another program's training day closes nothing. `late_days` is an add-on option
+  (0–6, default 2). This replaces the any-program rule in design spec §3.2 and step 4 spec §3.3, and the one-date rule
+  in step 4 spec §3.5.
+- **Why:** A missed Monday should still be doable on Tuesday, even when another program trains that day. The household
+  decides how long, so it is an add-on option and not a card option.
+- **Source:** [today ahead spec](superpowers/specs/2026-10-25-today-ahead-and-start-beep-design.md) §2.1
+
+### D61: A program's next training can be done early, one at a time
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** The today data lists each active program's next training as `upcoming`. A start may name the program
+  and that date. The add-on makes the training day at the start. A program has one early training at a time. An early
+  session that doesn't count leaves no day.
+- **Why:** The household wants to see what is coming and to train ahead when a day doesn't fit. One at a time keeps a
+  program to one early training.
+- **Source:** [today ahead spec](superpowers/specs/2026-10-25-today-ahead-and-start-beep-design.md) §2.2

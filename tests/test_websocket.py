@@ -19,7 +19,7 @@ from pytest_homeassistant_custom_component.typing import (
 from custom_components.ha_fitness.const import DOMAIN
 
 from .common import is_open, set_up, unload, wait_for
-from .fake_addon import PROGRAMS, TODAY_DUE, FakeAddon
+from .fake_addon import PROGRAMS, SESSION_RUNNING, TODAY_DUE, FakeAddon
 from .music_fakes import (
     DEFAULT_PLAYERS,
     Player,
@@ -204,6 +204,72 @@ async def test_start_rejects_bad_speaker(
         reply = await client.receive_json()
         assert not reply["success"]
         assert reply["error"]["code"] == "invalid"
+    assert fake_addon.session_calls == []
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_start_passes_date(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A start's date reaches the add-on as YYYY-MM-DD and the add-on's view comes back."""
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: is_open(hass))
+    client = await hass_ws_client(hass)
+
+    result = await _result(client, {**START, "program_id": 4, "date": "2026-10-31"})
+
+    assert result == SESSION_RUNNING
+    assert [call[1] for call in fake_addon.session_calls] == [
+        {"program_id": 4, "participants": [1], "date": "2026-10-31"}
+    ]
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_start_with_date_refused_by_an_older_addon(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+) -> None:
+    """An add-on whose today has no upcoming can't start early: refused before the relay; a start without a date goes."""
+    del fake_addon.today["upcoming"]
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: is_open(hass))
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id({**START, "date": "2026-10-31"})
+    _assert_error(await client.receive_json(), "invalid", "session_early_unsupported")
+    assert fake_addon.session_calls == []
+
+    await _result(client, START)
+    assert [call[1] for call in fake_addon.session_calls] == [
+        {"program_id": 3, "participants": [1]}
+    ]
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_start_rejects_a_date_that_isnt_one(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    fake_addon: FakeAddon,
+    config_entry: MockConfigEntry,
+) -> None:
+    """A date that isn't YYYY-MM-DD fails the schema and never reaches the add-on."""
+    await set_up(hass, config_entry)
+    await wait_for(hass, lambda: is_open(hass))
+    client = await hass_ws_client(hass)
+
+    for date in ("2026-13-01", "tomorrow", "", 20261031):
+        await client.send_json_auto_id({**START, "date": date})
+        reply = await client.receive_json()
+        assert not reply["success"], reply
+        assert reply["error"]["code"] == "invalid_format"
     assert fake_addon.session_calls == []
     await unload(hass, config_entry)
 
