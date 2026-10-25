@@ -125,10 +125,15 @@ class TrainingDays:
         """Return the local date now."""
         return self.local_date(self._clock.now())
 
-    def reconcile_now(self) -> None:
-        """Reconcile up to and including the local date now."""
+    def reconcile_now(self) -> date:
+        """Reconcile up to and including the local date now; return that date.
+
+        A write that reconciles first publishes its own `today` for this date too: the clock may pass midnight between.
+        """
         with self.lock:
-            self.reconcile(self.local_today())
+            today = self.local_today()
+            self.reconcile(today)
+            return today
 
     def reconcile(self, today: date) -> None:
         """Handle each date from the day after the last handled one up to today, and today again (spec §3.3).
@@ -154,7 +159,7 @@ class TrainingDays:
                     day += timedelta(days=1)
                 if state.last_date is None or state.last_date < today:
                     state.last_date = today
-            self._publish_today(events)
+            self._publish_today(events, today)
 
     def _handle(
         self, db_session: Session, programs: list[ProgramRow], day: date, today: date
@@ -276,15 +281,20 @@ class TrainingDays:
             return _event("due", day)
         return None
 
-    def _publish_today(self, events: list[dict[str, Any]] | None = None) -> None:
+    def _publish_today(
+        self, events: list[dict[str, Any]] | None = None, today: date | None = None
+    ) -> None:
         """Publish `events`, then `today` if it changed, then what `on_change` returns, as one batch.
+
+        `today` is built for the date `today`, the clock's date when None. A reconcile passes the date it handled: the
+        clock may have passed midnight since, and a `today` for that new date would show the old date's days.
 
         `today` goes out when what `/today` returns differs from what was published last. The write has committed by
         now, so an error in `on_change` (the stats) is logged and swallowed: it never turns the write into a failure,
         and the rest of the batch still goes out.
         """
         batch = list(events or [])
-        view = self._build_view(self.local_today())
+        view = self._build_view(self.local_today() if today is None else today)
         if view != self._published:
             self._published = view
             batch.append({"type": "today", "data": view.model_dump(mode="json")})
@@ -500,7 +510,7 @@ class TrainingDays:
         Raise `NotFound`, or `Conflict` for a closed day or one whose session is running or paused.
         """
         with self.lock:
-            self.reconcile_now()
+            today = self.reconcile_now()
             with session(self._engine) as db_session:
                 day = db_session.get(TrainingDay, day_id)
                 if day is None:
@@ -523,7 +533,7 @@ class TrainingDays:
                 db_session.flush()
                 event = _event("skipped", day)
                 out = _out(day)
-            self._publish_today([event])
+            self._publish_today([event], today)
             return out
 
     def upsert_open(self, program_id: int, day: date) -> TrainingDayOut:
@@ -533,8 +543,8 @@ class TrainingDays:
         as due (today-ahead spec §2.1.7).
         """
         with self.lock:
-            self.reconcile_now()
-            if day > self.local_today():
+            today = self.reconcile_now()
+            if day > today:
                 raise Invalid(
                     f"{day.isoformat()} is after today; an open day there would show as due"
                 )
@@ -559,16 +569,16 @@ class TrainingDays:
                 row.closed_at = None
                 db_session.flush()
                 out = _out(row)
-            self._publish_today()
+            self._publish_today(today=today)
             return out
 
     def delete_date(self, day: date) -> None:
         """Dev only: remove every training day of `day`, open or closed."""
         with self.lock:
-            self.reconcile_now()
+            today = self.reconcile_now()
             with session(self._engine) as db_session:
                 db_session.execute(delete(TrainingDay).where(TrainingDay.date == day))
-            self._publish_today()
+            self._publish_today(today=today)
 
     def on_program_written(
         self, db_session: Session, before: ProgramRow | None, after: ProgramRow | None
