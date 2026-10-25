@@ -130,14 +130,19 @@ def test_midnight_publishes_today_without_creates(make_app: MakeApp) -> None:
 
 
 class _FailOnceClock(FrozenClock):
-    """A frozen clock that raises on its next read once armed, then reads normally again."""
+    """A frozen clock that raises on its next read once armed, then reads normally again.
+
+    `failed` is set at the raise, and `recovered` at the first normal read after it.
+    """
 
     def __init__(self, start: datetime) -> None:
         """Start at `start`, not armed."""
         super().__init__(start)
         self.armed = False
         self.raised = 0
+        self.error = RuntimeError("clock failure")
         self.failed = threading.Event()
+        self.recovered = threading.Event()
 
     def now(self) -> datetime:
         """Raise once when armed, else return the frozen time."""
@@ -145,7 +150,9 @@ class _FailOnceClock(FrozenClock):
             self.armed = False
             self.raised += 1
             self.failed.set()
-            raise RuntimeError("clock failure")
+            raise self.error
+        if self.failed.is_set():
+            self.recovered.set()
         return super().now()
 
 
@@ -173,10 +180,15 @@ def test_failed_scheduler_run_is_logged_and_the_next_runs(
         assert clock.failed.wait(timeout=5)
         # No request: only a later scheduler run reconciles.
         clock.set(local(2026, 10, 27, 0, 1))
+        # A dead scheduler never reads the clock again; checked first, as receive_json() has no timeout.
+        assert clock.recovered.wait(timeout=5)
         assert _today(ws.receive_json()) == ("2026-10-27", [])
     assert clock.raised == 1
     assert any(
-        record.levelno == logging.ERROR and record.name == "ha_fitness_server.app"
+        record.levelno == logging.ERROR
+        and record.name == "ha_fitness_server.app"
+        and record.exc_info is not None
+        and record.exc_info[1] is clock.error
         for record in caplog.records
     )
 
