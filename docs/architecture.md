@@ -191,9 +191,9 @@ The cards are built into the integration: one bundle, released and versioned wit
     - It is also raised for an add-on from before sessions, stats or music. After each supported `hello`, one
       background route probe gets `GET /api/v1/music`, then `GET /api/v1/session`, then `GET /api/v1/stats`. The
       answer from `/music` sets whether the add-on supports music ([music](#music-in-the-integration)). A 404 on
-      any of them while `/health` answers raises the issue. The connection stays up, so `today` still works. Each `hello` deletes the issue first,
-      and the probe raises it again on such an add-on. A probe that can't reach the add-on does nothing; the next
-      `hello` probes again.
+      any of them while `/health` answers raises the issue. The connection stays up, so `today` still works. Each
+      `hello` deletes the issue first, and the probe raises it again on such an add-on. A probe that can't reach the
+      add-on does nothing; the next `hello` probes again.
 
 ### Sessions in the integration
 

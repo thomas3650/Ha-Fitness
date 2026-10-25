@@ -117,9 +117,11 @@ Desktop must run.
 8. The backup check (below).
 9. `scripts/full-loop down` removes the container and its volumes. The next `up` downloads HA Core again.
 
-The fast loop and the full loop can run at the same time, both on port 8765. The fast loop's server answers on
-`127.0.0.1:8765` and the full loop's on `[::1]:8765`. `scripts/seed` takes only `localhost` or `127.0.0.1`, so stop the
-fast loop before seeding the full loop. The Supervisor's log is `/tmp/supervisor_run.log` inside the container.
+Both loops use port 8765. They can run at the same time only when the fast loop starts first. The full loop's
+container holds `*:8765`, so a fast loop started after it can't bind its server. With the fast loop first, its server
+answers on `127.0.0.1:8765` and the full loop's on `[::1]:8765`. `scripts/seed` takes only `localhost` or `127.0.0.1`,
+so stop the fast loop before seeding the full loop. The Supervisor's log is `/tmp/supervisor_run.log` inside the
+container.
 
 ### Backup check
 
@@ -179,7 +181,7 @@ Music Assistant is installed.
    ([why](ha-notes.md#music-assistant)). Without it, HA has no speaker.
 6. Check the add-on's `GET /api/v1/music/speakers` and `/music/playlists`, then run a workout with that speaker.
 
-Both loops can run at once on port 8765 ([which address reaches which](#full-loop)).
+Both loops use port 8765 ([when they can run together](#full-loop)).
 Music Assistant's data is part of the full loop, so `scripts/full-loop down` removes it.
 
 ## Chrome check
@@ -247,9 +249,13 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
     - **Next:** Næste nummer moves the speaker to "Track 2".
     - **The fade at Slut:** Slut, then Ja. The speaker's volume steps down over about 5 s, the speaker pauses, and
       the volume is set back.
-    - **Unavailable:** start again, then `fake_set_available` with `available: false` for the chosen speaker
-      ([how](#the-fake-music-assistant)). The player reads "Musik utilgængelig", Afspil musik is enabled and Næste
-      nummer is disabled. With `available: true` the player recovers, and the music plays.
+    - **Unavailable:** start again. Before the countdown ends (on the details screen or during Get ready), call
+      `fake_set_available` with `available: false` for the chosen speaker ([how](#the-fake-music-assistant)), so the
+      start fails. The player reads "Musik utilgængelig", Afspil musik is enabled and Næste nummer is disabled.
+      The fake only flips availability and keeps the player's state, so the order matters: a speaker that drops after
+      the start reads `playing` again when it comes back.
+    - **Recovery:** call `fake_set_available` with `available: true` while the workout runs. The speaker gets
+      `play_media` (its `media_title` becomes the playlist), and the player shows Pause musik.
     - **Long names in portrait** (800×1280): give the program a long `playlist_name` and the speaker a long name
       (its name in HA's entity settings). Both lines end in an ellipsis; the pills and Slut keep their place.
 12. The console is clean throughout.
