@@ -54,16 +54,18 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
   const { t, view, countdown } = ctx;
   const phase = view.phase!;
   const paused = view.status === "paused";
-  // Paused, the ring keeps the phase word; the pill and the caption say it is paused.
+  // Paused, the ring keeps the phase word; the pill and the caption say it is paused, and the
+  // colours turn blue (rest), so a paused work phase no longer looks like work.
   const word = t(`flow.phase.${countdown.kind}`);
+  const tint = paused ? "rest" : countdown.kind;
   const theRing = ring({
     label: word,
     word,
     max: countdown.duration,
     value: countdown.seconds,
     fraction: countdown.fraction,
-    color: RING_COLORS[countdown.kind],
-    wordColor: PHASE_TEXT_COLORS[countdown.kind],
+    color: RING_COLORS[tint],
+    wordColor: PHASE_TEXT_COLORS[tint],
     caption: t(paused ? "flow.tap_to_resume" : "flow.seconds_left"),
     onTap: () => ctx.onRingTap(),
   });
@@ -112,7 +114,7 @@ function renderWhole(ctx: TimerContext) {
       aria-valuemin="0"
       aria-valuemax=${planned}
       aria-valuenow=${Math.min(now, planned)}
-      style="--ring-color: ${RING_COLORS[ctx.countdown.kind]}"
+      style="--ring-color: ${RING_COLORS[ctx.view.status === "paused" ? "rest" : ctx.countdown.kind]}"
     >
       <span class="timer-whole-done" style="width: ${share * 100}%"></span>
     </div>
