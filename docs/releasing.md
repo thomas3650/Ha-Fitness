@@ -73,6 +73,12 @@ types:
    for the add-on, the `addon-image` run is green.
 5. Open the house issue ([After a release](#after-a-release)).
 
+### A chosen version (1.0.0)
+
+A version the commits wouldn't give, such as 1.0.0, is set with `"release-as"` on the package in
+`release-please-config.json`, through a normal PR. release-please then moves that package's release PR to the version.
+After the release, a second PR removes `"release-as"`; while it stays, every later release PR keeps that version.
+
 ## After a release
 
 Claude opens an issue in `thomas3650/house` with the label `fitness` (D10):

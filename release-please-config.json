@@ -7,6 +7,7 @@
     "addon": {
       "component": "ha-fitness-addon",
       "release-type": "simple",
+      "release-as": "1.0.0",
       "initial-version": "0.1.0",
       "changelog-path": "CHANGELOG.md",
       "draft": true,
@@ -19,6 +20,7 @@
     ".": {
       "component": "ha-fitness",
       "release-type": "simple",
+      "release-as": "1.0.0",
       "initial-version": "0.1.0",
       "exclude-paths": ["addon", "docs", "scripts", "tools", ".github", ".devcontainer", ".claude"],
       "include-component-in-tag": false,
