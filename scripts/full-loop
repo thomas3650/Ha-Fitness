@@ -81,7 +81,7 @@ up() {
   # 180 tries of up to 10 s: up to about 30 min for a first start.
   curl -sf -o /dev/null -L --max-redirs 0 --retry 180 --retry-delay 10 --retry-connrefused \
     --retry-all-errors --max-time 10 "$ha_url/api/onboarding"
-  uv run python scripts/dev_onboard.py --url "$ha_url" --no-entry --token-file local/full-loop-ha-token
+  .venv/bin/python scripts/dev_onboard.py --url "$ha_url" --no-entry --token-file local/full-loop-ha-token
   echo "full-loop: Home Assistant runs on $ha_url (user dev / dev)."
 }
 
@@ -129,7 +129,7 @@ music() {
   # (the 8123 transition) is an error, so it is retried.
   curl -sf -o /dev/null -L --max-redirs 0 --retry 60 --retry-delay 5 --retry-connrefused \
     --retry-all-errors --max-time 10 "$ha_url/manifest.json"
-  uv run python scripts/dev_onboard.py --url "$ha_url" --fake-music-only --token-file local/full-loop-ha-token
+  .venv/bin/python scripts/dev_onboard.py --url "$ha_url" --fake-music-only --token-file local/full-loop-ha-token
   echo "full-loop: the fake Music Assistant runs on $ha_url."
 }
 

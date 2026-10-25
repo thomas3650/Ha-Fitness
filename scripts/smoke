@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start dev Home Assistant (config/) with the integration, let the HA Fitness entry set up, and fail on any
 # error from the integration. The full log stays in local/ (never committed); only the integration's error
-# lines are printed. The entry comes from `uv run python scripts/dev_onboard.py` against a running
+# lines are printed. The entry comes from `.venv/bin/python scripts/dev_onboard.py` against a running
 # scripts/develop.
 set -euo pipefail
 
