@@ -50,7 +50,7 @@ spec already names.
 | **Due** | | Today's training day, not done yet. |
 | **Late** | Forfalden | A due day that has passed untouched. It stays open until its own program trains again or `late_days` days have passed, whichever comes first (D60). A session for it that is running or paused keeps it open (D42). |
 | **Missed** | | A late day that closed because its program trains again or its `late_days` are up. Another program's training day closes nothing. |
-| **Upcoming** | Kommende | A program's next training after today, with no done, missed or skipped day. It is in the `upcoming` list of the today data, one per active program. Its Start is on only while the program has no open day and no day done today or later (D61). |
+| **Upcoming** | | A program's next training after today, with no done, missed or skipped day. It is in the `upcoming` list of the today data, one per active program. Its Start is on only while the program has no open day and no day done today or later (D61). |
 | **Done early** | | A training day done before its date, from an upcoming row. The day counts for its own date (D47). A session that doesn't count leaves no day. |
 | **Skipped** | | A training day closed on purpose with Spring over (one confirmation, no reason). |
 | **Done** | | A training day closed by a counted session. |
@@ -58,7 +58,7 @@ spec already names.
 | **Week ring** | Denne uge | Done over planned training days for the current local week, Monday to Sunday, for the household. Planned counts this week's days of any status, plus the days the active programs will still create until Sunday. Done counts days with status done. |
 | **Open** | | Due or late. |
 | **Closed** | | Done, missed or skipped. |
-| **Next training day** | Næste træningsdag | The first date after today on which an active program trains and has a day not yet done. The entity `sensor.ha_fitness_next_training_day`, with the programs of that date. |
+| **Next training day** | Næste træningsdag | The first date after today on which an active program trains and isn't already done there. The entity `sensor.ha_fitness_next_training_day`, with the programs of that date. |
 | **Training today** (the open-days sensor) | Træning i dag | The entity `sensor.ha_fitness_today`: `due` if any open day is due, else `late` if any is late, else `none`. Its `training_days` attribute lists the open days. |
 | **Training open** | Træning åben | The entity `binary_sensor.ha_fitness_training_open`: on while any training day is open. Unavailable, like every HA Fitness entity, while the add-on can't be reached. |
 
@@ -89,7 +89,7 @@ All per person. The add-on computes them from the training days and the counted 
 | **All time** | Everything above, from the start. |
 | **This month** | The same, limited to the add-on's current local month. A day counts in the month of its date. An extra session's done and every session's time count in the month the session started. |
 
-Two rules surprise:
+Three rules surprise:
 
 - A day dated 31 October and done on 1 November counts its done in October but its time in November.
 - A day dated 1 November and done early on 31 October counts its done in November but its time in October.

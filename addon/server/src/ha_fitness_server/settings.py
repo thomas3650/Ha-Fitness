@@ -1,4 +1,4 @@
-"""Server settings, read from the environment."""
+"""Server settings, read from the environment and from <data dir>/options.json."""
 
 from dataclasses import dataclass
 import json

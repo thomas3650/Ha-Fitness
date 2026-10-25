@@ -1,6 +1,6 @@
 configuration:
   late_days:
-    name: Days a missed training stays open
+    name: Days a late training stays open
     description: >-
-      How many days after its date a training you missed can still be done. It closes earlier when the same program
+      How many days after its date a late training can still be done. It closes earlier when the same program
       trains again. 0 closes it at midnight.

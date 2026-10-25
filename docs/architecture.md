@@ -54,12 +54,11 @@ The cards are built into the integration: one bundle, released and versioned wit
     program (REST and MCP) carries `equipment`, the distinct equipment of its stations without "body weight". A
     completed session can be rated with `POST /api/v1/session/feeling` ([below](#the-session-routes)). A card hides
     what a missing field would feed, so there is no `addon_too_old` for these and `api_version` stays 1.
-  - **Trainings ahead** ([spec](superpowers/specs/2026-10-25-today-ahead-and-start-beep-design.md) §2). `GET /api/v1/today`
-    and the `today` message carry `upcoming`: one entry per active program, its next training after today, with the
+  - **Trainings ahead** ([spec](superpowers/specs/2026-10-25-today-ahead-and-start-beep-design.md) §2).
+    `GET /api/v1/today` and the `today` message carry `upcoming`: one entry per active program, its next training after today, with the
     program's id and name, the date, stations, rounds, total minutes and `startable` (D61). `open` is sorted by date,
-    then by name ignoring case. `late_days` (0–6, default 2) is an add-on option that decides when a late day closes
-    (D60). It comes from `HA_FITNESS_LATE_DAYS`, else `<data folder>/options.json`, else 2
-    ([`addon/DOCS.md`](../addon/DOCS.md), [`testing.md`](testing.md)).
+    then by name ignoring case. `late_days` (0–6) is an add-on option that decides when a late day closes (D60); see
+    [`addon/DOCS.md`](../addon/DOCS.md) and [`testing.md`](testing.md).
   - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5,
     the read-only `get_session` and `list_sessions` from step 5 spec §3.5, the read-only `get_stats` from the
     stats spec §4, and the read-only `list_speakers` and `list_playlists` from the
@@ -111,12 +110,14 @@ The cards are built into the integration: one bundle, released and versioned wit
   from `cards/src/i18n/` (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the
   HA user's language (D11, D38). The editors' texts follow the user's language (D59).
   - **"Træning i dag"** (`custom:ha-fitness-today-card`) has a top line with the streak badge, the week ring, then
-    one row per open training day (a two-tap Spring over, and Start), then the upcoming rows within the card's `days_ahead` (0–6, default 0, only in this card's editor; Start, or a reminder when not startable; same order as the add-on), or the session row (the program's name,
-    "I gang · runde 2 af 5" or "Pauset · runde 2 af 5", the people with the planned length, and Fortsæt) while a
-    session runs or is paused. The badge follows `ha_fitness/stats/subscribe`. It is hidden before counting, while
-    the stats are unavailable and with no people. The ring comes from the `today` message's `week`. It is hidden
-    without `week` or with `planned` 0. The card hides itself when nothing is open or upcoming, except in edit mode, and shows
-    one line while the add-on can't be reached.
+    one row per open training day (a two-tap Spring over, and Start), then the upcoming rows within the card's
+    `days_ahead` (0–6, default 0, only in this card's editor; Start, or a reminder when not startable; same order as
+    the add-on), or the session row (the program's name, "I gang · runde 2 af 5" or "Pauset · runde 2 af 5", the
+    people with the planned length, and Fortsæt) while a session runs or is paused. The badge follows
+    `ha_fitness/stats/subscribe`. It is hidden before counting, while the stats are unavailable and with no people.
+    The ring comes from the `today` message's `week`. It is hidden without `week` or with `planned` 0. The card hides
+    itself when nothing is open or upcoming, except in edit mode, and shows one line while the add-on can't be
+    reached.
   - **The workout card** (`custom:ha-fitness-workout-card`) lists the active programs with Start, for a workout on
     any day (an extra session).
   - **The workout flow** is one page-level overlay (D45), a `<dialog>` opened with `showModal()`: details and the
@@ -225,7 +226,8 @@ The integration relays it.
 - **The events** `ha_fitness_session_started`, `_session_completed`, `_session_ended` and `_phase_changed` carry the
   add-on's event `session` as data. The add-on's `done` fires `ha_fitness_training_day_done`, with the training day.
 - **The services.**
-  - `ha_fitness.start_session` takes `program_id`, `participants` (person ids) and an optional `training_day_id` or `date`.
+  - `ha_fitness.start_session` takes `program_id`, `participants` (person ids) and an optional `training_day_id` or
+    `date`.
   - `ha_fitness.end_session` takes no fields.
   - The schema only checks the types. The add-on checks the rest, so its refusal is the one shown.
   - A refusal (`not_found`, `conflict` or `invalid` in the add-on's `detail.code`) raises a translated validation
@@ -234,12 +236,13 @@ The integration relays it.
   - `ha_fitness/session/subscribe` sends `{available, session, music}` at once and after each change. The relay is
     described below; `music` is [described below](#music-in-the-integration).
   - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end` or
-    `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id`, an optional `date` and an optional
-    `speaker` (checked with the add-on's pattern; dropped while the add-on has no music). For `feeling` it
+    `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id`, an optional `date`
+    and an optional `speaker` (checked with the add-on's pattern; dropped while the add-on has no music). For `feeling` it
     takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's view. Its
     error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
     `invalid` before any relay, and so is a `date` while the add-on's last today data has no `upcoming` (key
-    `session_early_unsupported`; the service raises a validation error with that key). A field of the wrong type fails HA's own schema, as `invalid_format`.
+    `session_early_unsupported`; the service raises a validation error with that key). A field of the wrong type fails
+    HA's own schema, as `invalid_format`.
   - `ha_fitness/programs` gives the active programs, in the add-on's order, in the shape of workout spec §4. It is
     built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up. It also relays `total_seconds`,
     `equipment` (left out when an older add-on doesn't send it) and `music` (null for an
