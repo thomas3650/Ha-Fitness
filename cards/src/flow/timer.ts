@@ -179,25 +179,25 @@ function renderPlayer(ctx: TimerContext) {
   const playing = music.state === "playing";
   const waiting = music.state === "waiting";
   return html`
-    <div class="music card" role="group" aria-label=${t("flow.music")}>
-      <span class="music-badge"><ha-icon icon="mdi:music" aria-hidden="true"></ha-icon></span>
-      <span class="music-lines">
-        <span class="music-playlist">${music.playlist_name}</span>
-        <span class="music-speaker"
+    <div class="timer-music card" role="group" aria-label=${t("flow.music")}>
+      <span class="timer-music-badge"><ha-icon icon="mdi:music" aria-hidden="true"></ha-icon></span>
+      <span class="timer-music-lines">
+        <span class="timer-music-playlist">${music.playlist_name}</span>
+        <span class="timer-music-speaker"
           >${music.state === "unavailable" ? t("flow.music_unavailable") : music.speaker_name}</span
         >
       </span>
       ${iconButton({
         icon: playing ? "mdi:pause" : "mdi:play",
         label: t(playing ? "flow.music_pause" : "flow.music_play"),
-        className: "soft music-button",
+        className: "soft timer-music-button",
         disabled: waiting,
         onClick: ctx.onMusicToggle,
       })}
       ${iconButton({
         icon: "mdi:skip-next",
         label: t("flow.music_next"),
-        className: "soft music-button",
+        className: "soft timer-music-button",
         disabled: waiting || music.state === "unavailable",
         onClick: ctx.onMusicNext,
       })}
@@ -346,7 +346,7 @@ export const timerStyles = css`
   }
   /* The music player: a pill-shaped card that takes the room left in the row, up to 400 px, and
      shrinks with ellipsis before the pills or Slut do. */
-  .music {
+  .timer-music {
     display: flex;
     flex: 1 1 0;
     align-items: center;
@@ -358,7 +358,7 @@ export const timerStyles = css`
     border-radius: 999px;
     font-size: 1rem;
   }
-  .music-badge {
+  .timer-music-badge {
     display: flex;
     flex: none;
     align-items: center;
@@ -370,25 +370,25 @@ export const timerStyles = css`
     color: ${unsafeCSS(PHASE_TEXT_COLORS.work)};
     --mdc-icon-size: 20px;
   }
-  .music-lines {
+  .timer-music-lines {
     display: flex;
     flex: 1;
     flex-direction: column;
     min-width: 0;
   }
-  .music-lines > span {
+  .timer-music-lines > span {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .music-playlist {
+  .timer-music-playlist {
     font-weight: 600;
   }
-  .music-speaker {
+  .timer-music-speaker {
     font-size: 0.875rem;
     color: var(--secondary-text-color);
   }
-  button.music-button {
+  button.timer-music-button {
     display: flex;
     flex: none;
     align-items: center;
@@ -677,7 +677,7 @@ export const timerStyles = css`
       flex-basis: 100%;
     }
     /* The break item takes a line of its own, so the gap above the player is its margin. */
-    .timer-top.with-music > .music {
+    .timer-top.with-music > .timer-music {
       order: 2;
       margin-top: 12px;
     }
