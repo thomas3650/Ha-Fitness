@@ -17,6 +17,7 @@ workout, runs it for one or two people and keeps per-person stats; programs are 
 - `.github/` — CI, release workflows, Dependabot, the PR template
 - `.claude/` — project settings and the agents (`implementer`, `task-reviewer`, `full-reviewer`)
 - `docs/` — the docs; the map is `docs/README.md`
+- `screenshots/` — the Chrome check's screenshots, one folder per feature (git-ignored)
 - `repository.yaml`, `hacs.json` — the add-on repository and HACS metadata
 
 ## Commands
@@ -52,9 +53,9 @@ uv run actionlint && uv run zizmor --offline .github/workflows && uv run python 
 1. Never commit on or push to `main`. Every change reaches `main` through a squash-merged PR.
 2. The repo is public. No tokens, hostnames, IPs, entity IDs or data from Thomas's Home Assistant in any file, commit,
    PR, issue or screenshot.
-3. Never committed: exercise-library GIFs, `.env`, `config/`, `local/`, `.superpowers/`, `.DS_Store`, the built cards
-   bundle (`custom_components/ha_fitness/frontend/*.js`), anything from the real Home Assistant. The 12 mockup GIFs in
-   `docs/mockups/gifs/` are the one exception.
+3. Never committed: exercise-library GIFs, `.env`, `config/`, `local/`, `screenshots/`, `.superpowers/`, `.DS_Store`,
+   the built cards bundle (`custom_components/ha_fitness/frontend/*.js`), anything from the real Home Assistant. The 12
+   mockup GIFs in `docs/mockups/gifs/` are the one exception.
 4. No changes to Thomas's real Home Assistant from this project. What the house needs goes to the house assistant as a
    `fitness` issue ([`docs/releasing.md`](docs/releasing.md)).
 5. Tests check behaviour through public interfaces: REST and MCP responses, services, websocket commands, entity

@@ -5,6 +5,7 @@
 
 # Local data (never committed)
 local/
+screenshots/
 
 # Brainstorm and SDD scratch
 .superpowers/

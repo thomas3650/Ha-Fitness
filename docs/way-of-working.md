@@ -24,7 +24,7 @@ rules live in `CLAUDE.md`; decisions in [`decisions.md`](decisions.md). The reas
 6. **Build** with `superpowers:subagent-driven-development`: `implementer` per task (test-first), `task-reviewer` on
    the tasks marked `Review: yes`.
 7. **Branch review:** `full-reviewer` on the whole branch until Ready.
-8. **Test:** the gates, the fast loop, and for UI changes the Chrome check with screenshots in the PR
+8. **Test:** the gates, the fast loop, and for UI changes the Chrome check with screenshots in `screenshots/`
    ([`testing.md`](testing.md)).
 9. **PR:** title per [`releasing.md`](releasing.md#pr-titles), `Closes #n`, links to the spec and plan, the rulings and
    the decisions Claude made alone.
