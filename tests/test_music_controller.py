@@ -5,17 +5,22 @@ The clock is frozen on a whole second before the entry is set up, so the control
 second: a session started before it is adopted, one started at it or later is not.
 """
 
+import asyncio
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
+from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.ha_fitness.const import SIGNAL_UPDATE
 
 from .common import is_open, set_up, unload, wait_for
 from .fake_addon import SESSION_RUNNING, FakeAddon
@@ -85,11 +90,15 @@ class Workout:
         """The plan's speaker: a Music Assistant player that can set its volume."""
         return self.players["media_player.kitchen"]
 
-    async def push(self, view: dict[str, Any] | None) -> None:
-        """Send a session view, and wait until the integration has it and the controller's calls are done."""
+    async def push(self, view: dict[str, Any] | None, settle: bool = True) -> None:
+        """Send a session view, and wait until the integration has it.
+
+        With `settle`, also wait until the controller's calls are done.
+        """
         await self.fake_addon.push({"type": "session", "data": view})
         await wait_for(self.hass, lambda: self.entry.runtime_data.session == view)
-        await self.hass.async_block_till_done()
+        if settle:
+            await self.hass.async_block_till_done()
 
     def music_state(self) -> dict[str, Any] | None:
         """The music state the subscription will send (Task 8 sends it over the ws)."""
@@ -209,8 +218,17 @@ async def test_adopted_session_pauses_but_never_starts(workout: Workout) -> None
     assert _names(workout.kitchen) == ["media_pause", "media_play"]
 
 
-async def test_pause_and_resume(workout: Workout) -> None:
-    """After the start, the workout's Pause pauses the music and its Resume plays it."""
+@pytest.mark.parametrize(
+    "paused_state", [MediaPlayerState.PAUSED, MediaPlayerState.IDLE]
+)
+async def test_pause_and_resume(
+    workout: Workout, paused_state: MediaPlayerState
+) -> None:
+    """After the start, the workout's Pause pauses the music and its Resume plays it.
+
+    A paused speaker reads paused, also when it reports idle, as Music Assistant's web player does.
+    """
+    workout.kitchen.paused_state = paused_state
     started = workout.setup_time + timedelta(seconds=10)
     await workout.push(_view())
     await workout.push(_view(started_at=started))
@@ -219,9 +237,15 @@ async def test_pause_and_resume(workout: Workout) -> None:
     state = workout.music_state()
     assert state is not None
     assert state["state"] == "paused"
+    speaker = workout.hass.states.get("media_player.kitchen")
+    assert speaker is not None
+    assert speaker.state == paused_state
     await workout.push(_view(started_at=started))
 
     assert _names(workout.kitchen) == [*START_CALLS, "media_pause", "media_play"]
+    state = workout.music_state()
+    assert state is not None
+    assert state["state"] == "playing"
 
 
 async def test_annuller_in_countdown_does_nothing(workout: Workout) -> None:
@@ -327,7 +351,7 @@ async def test_start_on_non_music_assistant_speaker_fails(
     hass: HomeAssistant, workout: Workout
 ) -> None:
     """A speaker of another platform gets no call, and the music is unavailable."""
-    other_entry = await async_setup_other_player(hass)
+    other_entry, tv_player = await async_setup_other_player(hass)
     music = {**MUSIC, "speaker": "media_player.tv"}
     await workout.push(_view(music=music))
 
@@ -335,16 +359,91 @@ async def test_start_on_non_music_assistant_speaker_fails(
         _view(music=music, started_at=workout.setup_time + timedelta(seconds=10))
     )
 
-    # A call would have changed the television's state or volume.
-    tv = hass.states.get("media_player.tv")
-    assert tv is not None
-    assert tv.state == "idle"
-    assert tv.attributes["volume_level"] == pytest.approx(0.4)
+    assert tv_player.calls == []
     state = workout.music_state()
     assert state is not None
     assert state["speaker_name"] == "A television"
     assert state["state"] == "unavailable"
     await unload(hass, other_entry)
+
+
+async def test_adopted_session_on_non_music_assistant_speaker_gets_no_calls(
+    hass: HomeAssistant, workout: Workout
+) -> None:
+    """An adopted session's Pause and Resume skip a speaker of another platform."""
+    other_entry, tv_player = await async_setup_other_player(hass)
+    music = {**MUSIC, "speaker": "media_player.tv"}
+    started = workout.setup_time - timedelta(minutes=3)
+    await workout.push(_view(music=music, started_at=started))
+
+    await workout.push(_view(music=music, status="paused", started_at=started))
+    await workout.push(_view(music=music, started_at=started))
+
+    assert tv_player.calls == []
+    await unload(hass, other_entry)
+
+
+async def test_pause_during_start_reads_waiting_then_pauses(
+    workout: Workout,
+) -> None:
+    """While the start is in flight the music is waiting; a Pause then goes out after the start."""
+    started = workout.setup_time + timedelta(seconds=10)
+    gate = asyncio.Event()
+    workout.kitchen.gate = gate
+    await workout.push(_view())
+    await workout.push(_view(started_at=started), settle=False)
+    await wait_for(workout.hass, lambda: "play_media" in _names(workout.kitchen))
+    state = workout.music_state()
+    assert state is not None
+    assert state["state"] == "waiting"
+
+    await workout.push(_view(status="paused", started_at=started), settle=False)
+    state = workout.music_state()
+    assert state is not None
+    assert state["state"] == "waiting"
+    assert _names(workout.kitchen) == ["volume_set", "play_media"]
+    gate.set()
+    await workout.hass.async_block_till_done()
+
+    assert _names(workout.kitchen) == [*START_CALLS, "media_pause"]
+    state = workout.music_state()
+    assert state is not None
+    assert state["state"] == "paused"
+
+
+async def test_new_session_is_followed_afresh(workout: Workout) -> None:
+    """A session with another id after a started one waits for its own start, then starts again."""
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(_view(started_at=started))
+    assert _names(workout.kitchen) == START_CALLS
+
+    await workout.push(_view(id=8))
+    state = workout.music_state()
+    assert state is not None
+    assert state["state"] == "waiting"
+    assert _names(workout.kitchen) == START_CALLS
+    await workout.push(_view(id=8, started_at=started + timedelta(minutes=30)))
+
+    assert _names(workout.kitchen) == [*START_CALLS, *START_CALLS]
+
+
+async def test_unload_stops_following_the_speaker(
+    hass: HomeAssistant, workout: Workout
+) -> None:
+    """After unload, a speaker that comes back sends no update and gets no start."""
+    workout.kitchen.set_available(False)
+    await hass.async_block_till_done()
+    await workout.push(_view(started_at=workout.setup_time + timedelta(seconds=10)))
+    await unload(hass, workout.entry)
+    updates: list[None] = []
+    remove = async_dispatcher_connect(hass, SIGNAL_UPDATE, lambda: updates.append(None))
+
+    workout.kitchen.set_available(True)
+    await hass.async_block_till_done()
+
+    assert updates == []
+    assert workout.kitchen.calls == []
+    remove()
 
 
 async def test_failed_pause_after_start_stays_started(workout: Workout) -> None:

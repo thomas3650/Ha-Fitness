@@ -4,7 +4,7 @@ This module never imports `websocket_api`; the commands import from here.
 """
 
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from datetime import datetime
 import logging
@@ -41,6 +41,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity import entity_sources
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
+import probatio
 
 from .const import DOMAIN, SIGNAL_UPDATE
 
@@ -52,6 +53,8 @@ _LOGGER = logging.getLogger(__name__)
 MUSIC_ASSISTANT = "music_assistant"
 MEDIA_PLAYER_PREFIX = "media_player."
 _NOT_AVAILABLE = frozenset({STATE_UNAVAILABLE, STATE_UNKNOWN})
+# What a failed service call raises: HA's errors, and a schema error for invalid data.
+_CALL_ERRORS = (HomeAssistantError, probatio.Invalid)
 
 # The controller's states per session (the music spec §5.1).
 WAITING = "waiting"
@@ -129,6 +132,13 @@ def _is_available(state: State | None) -> bool:
     return state is not None and state.state not in _NOT_AVAILABLE
 
 
+def _can_play(hass: HomeAssistant, entity_id: str) -> bool:
+    """Return whether the speaker gets calls: it is available and a Music Assistant player."""
+    return _is_available(hass.states.get(entity_id)) and _is_music_assistant_player(
+        hass, entity_id
+    )
+
+
 @dataclass(slots=True)
 class _Followed:
     """The session the controller follows: its id, its frozen music, its last status and the controller's state."""
@@ -138,6 +148,8 @@ class _Followed:
     status: str
     started_at: datetime | None
     state: str
+    # True while a start is queued or running: the music state reads `waiting` until it ends.
+    starting: bool = False
     remove_speaker_listener: CALLBACK_TYPE | None = None
 
     @property
@@ -190,13 +202,9 @@ class MusicController:
             return None
         speaker = self.hass.states.get(followed.speaker)
         name = speaker.attributes.get("friendly_name") if speaker is not None else None
-        if (
-            followed.state == FAILED
-            or not _is_available(speaker)
-            or not _is_music_assistant_player(self.hass, followed.speaker)
-        ):
+        if followed.state == FAILED or not _can_play(self.hass, followed.speaker):
             state = "unavailable"
-        elif followed.state == WAITING:
+        elif followed.state == WAITING or followed.starting:
             state = "waiting"
         elif speaker is not None and speaker.state == STATE_PLAYING:
             state = "playing"
@@ -225,16 +233,22 @@ class MusicController:
                 # The countdown: the music starts when it ends.
                 raise MusicNotFound
             followed.state = STARTED
+            followed.starting = True
             async with self._lock:
+                if self._followed is not followed:
+                    # The session ended while the command waited.
+                    raise MusicNotFound
                 if not await self._async_start_music(followed):
                     raise MusicUnavailable
             return
-        if not _is_available(self.hass.states.get(followed.speaker)):
-            raise MusicUnavailable
         async with self._lock:
+            if self._followed is not followed:
+                raise MusicNotFound
+            if not _can_play(self.hass, followed.speaker):
+                raise MusicUnavailable
             try:
                 await self._async_call(MEDIA_PLAYER_DOMAIN, service, followed.speaker)
-            except HomeAssistantError as err:
+            except _CALL_ERRORS as err:
                 _LOGGER.warning("The music command %s failed: %s", action, err)
                 raise MusicUnavailable from err
 
@@ -269,13 +283,15 @@ class MusicController:
         followed.started_at = started_at
         if status != "running":
             if previous == "running" and followed.state == STARTED:
-                self._queue(self._async_speaker_call(followed, SERVICE_MEDIA_PAUSE))
+                self._queue(
+                    lambda: self._async_speaker_call(followed, SERVICE_MEDIA_PAUSE)
+                )
             return
         if started_at is not None and followed.state == WAITING:
             # The countdown's end, "Start nu", or the Resume after "Start nu" while paused.
             self._queue_start(followed)
         elif previous == "paused" and followed.state == STARTED:
-            self._queue(self._async_speaker_call(followed, SERVICE_MEDIA_PLAY))
+            self._queue(lambda: self._async_speaker_call(followed, SERVICE_MEDIA_PLAY))
         elif previous == "paused" and followed.state == FAILED:
             self._queue_start(followed)
 
@@ -325,30 +341,41 @@ class MusicController:
     def _queue_start(self, followed: _Followed) -> None:
         """Leave `waiting` or `failed` now, so a repeated view doesn't start twice; the start sets `failed`."""
         followed.state = STARTED
-        self._queue(self._async_locked_start(followed))
+        followed.starting = True
+        self._queue(lambda: self._async_locked_start(followed))
 
     @callback
-    def _queue(self, job: Coroutine[Any, Any, None]) -> None:
+    def _queue(self, job: Callable[[], Coroutine[Any, Any, None]]) -> None:
         """Run a speaker job after the ones before it; the entry's unload waits for it."""
         self.coordinator.entry.async_create_task(
             self.hass, self._async_in_turn(job), f"{DOMAIN} music"
         )
 
-    async def _async_in_turn(self, job: Coroutine[Any, Any, None]) -> None:
+    async def _async_in_turn(
+        self, job: Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
+        """Make the job's coroutine only once its turn comes, so a cancelled wait leaves none behind."""
         async with self._lock:
-            await job
+            await job()
 
     async def _async_locked_start(self, followed: _Followed) -> None:
         if self._followed is followed and followed.state == STARTED:
             await self._async_start_music(followed)
+        else:
+            followed.starting = False
 
     async def _async_start_music(self, followed: _Followed) -> bool:
         """The start (the music spec §5.2), under the lock; return whether it succeeded, else set `failed`."""
+        try:
+            return await self._async_try_start(followed)
+        finally:
+            followed.starting = False
+            self._changed()
+
+    async def _async_try_start(self, followed: _Followed) -> bool:
         speaker = followed.speaker
         state = self.hass.states.get(speaker)
-        if not _is_available(state) or not _is_music_assistant_player(
-            self.hass, speaker
-        ):
+        if not _can_play(self.hass, speaker):
             _LOGGER.warning("The speaker %s can't play the workout's music", speaker)
             return self._fail(followed)
         assert state is not None
@@ -380,7 +407,7 @@ class MusicController:
                 speaker,
                 {ATTR_MEDIA_SHUFFLE: bool(music.get("shuffle"))},
             )
-        except HomeAssistantError as err:
+        except _CALL_ERRORS as err:
             _LOGGER.warning("The workout's music didn't start on %s: %s", speaker, err)
             return self._fail(followed)
         return True
@@ -395,9 +422,14 @@ class MusicController:
         """Pause or play the followed session's music after a start; a failure leaves it `started`."""
         if self._followed is not followed or followed.state != STARTED:
             return
+        if not _can_play(self.hass, followed.speaker):
+            _LOGGER.warning(
+                "The speaker %s can't take the music's %s", followed.speaker, service
+            )
+            return
         try:
             await self._async_call(MEDIA_PLAYER_DOMAIN, service, followed.speaker)
-        except HomeAssistantError as err:
+        except _CALL_ERRORS as err:
             _LOGGER.warning(
                 "The music's %s on %s failed: %s", service, followed.speaker, err
             )

@@ -237,7 +237,7 @@ async def test_speakers_lists_music_assistant_players(
     """Music Assistant's media players by name, unavailable ones marked; other entities left out."""
     await set_up(hass, config_entry)
     music_entry, players = await async_setup_music_assistant(hass)
-    other_entry = await async_setup_other_player(hass)
+    other_entry, _ = await async_setup_other_player(hass)
     players["media_player.living_room"].set_available(False)
     await hass.async_block_till_done()
     client = await hass_ws_client(hass)
@@ -276,7 +276,7 @@ async def test_speakers_empty_without_music_assistant(
 ) -> None:
     """Without Music Assistant the list is empty, other platforms' media players left out."""
     await set_up(hass, config_entry)
-    other_entry = await async_setup_other_player(hass)
+    other_entry, _ = await async_setup_other_player(hass)
     client = await hass_ws_client(hass)
 
     assert await _result(client, {"type": "ha_fitness/speakers"}) == {"speakers": []}

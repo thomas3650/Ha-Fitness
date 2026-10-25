@@ -6,6 +6,7 @@ HA core's Music Assistant in what HA Fitness uses: `media_player` entities on th
 of other domains. Each player records the service calls it gets and really changes its state.
 """
 
+import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -84,7 +85,9 @@ class MockPlayer(MediaPlayerEntity):
     `calls` holds each call as `(name, arguments)`: `play_media`, `media_play`, `media_pause`,
     `media_next_track`, `volume_set` and `shuffle_set`. As on a real Music Assistant, pause, play, next and
     shuffle do nothing while the player has no queue; `play_media` gives it one and plays it. A call whose name
-    is in `fail` is recorded, then raises `HomeAssistantError` and changes nothing.
+    is in `fail` is recorded, then raises `HomeAssistantError` and changes nothing. While `gate` is set,
+    `play_media` is recorded, then waits for the event before it plays. `paused_state` is the state a pause
+    leaves: Music Assistant 2.10.8's web player reports `idle` there.
     """
 
     _attr_should_poll = False
@@ -104,6 +107,8 @@ class MockPlayer(MediaPlayerEntity):
         self.has_queue = False
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.fail: set[str] = set()
+        self.gate: asyncio.Event | None = None
+        self.paused_state = MediaPlayerState.PAUSED
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any]:
@@ -136,6 +141,8 @@ class MockPlayer(MediaPlayerEntity):
             "play_media",
             {"media_id": media_id, "media_type": media_type, "enqueue": enqueue},
         )
+        if self.gate is not None:
+            await self.gate.wait()
         self.has_queue = True
         self._attr_media_title = media_id[0]
         self._attr_state = MediaPlayerState.PLAYING
@@ -152,7 +159,7 @@ class MockPlayer(MediaPlayerEntity):
         """Pause; a player with no queue stays idle."""
         self._record("media_pause", {})
         if self.has_queue:
-            self._attr_state = MediaPlayerState.PAUSED
+            self._attr_state = self.paused_state
             self.async_write_ha_state()
 
     async def async_media_next_track(self) -> None:
@@ -266,8 +273,14 @@ async def async_setup_music_assistant(
     return entry, entities
 
 
-async def async_setup_other_player(hass: HomeAssistant) -> MockConfigEntry:
-    """Set up a media player of another platform (`other_audio`): never a Music Assistant speaker."""
+async def async_setup_other_player(
+    hass: HomeAssistant,
+) -> tuple[MockConfigEntry, MockPlayer]:
+    """Set up a media player of another platform (`other_audio`): never a Music Assistant speaker.
+
+    Return its entry and the player, `media_player.tv`.
+    """
+    player = MockPlayer(Player("tv", "A television"))
 
     async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.config_entries.async_forward_entry_setups(
@@ -285,7 +298,7 @@ async def async_setup_other_player(hass: HomeAssistant) -> MockConfigEntry:
         entry: ConfigEntry,
         async_add_entities: AddConfigEntryEntitiesCallback,
     ) -> None:
-        async_add_entities([MockPlayer(Player("tv", "A television"))])
+        async_add_entities([player])
 
     mock_integration(
         hass,
@@ -303,7 +316,7 @@ async def async_setup_other_player(hass: HomeAssistant) -> MockConfigEntry:
     mock_platform(hass, "other_audio.config_flow")
     entry = MockConfigEntry(domain="other_audio", title="Other audio")
     await _async_set_up_entry(hass, entry)
-    return entry
+    return entry, player
 
 
 async def _async_set_up_entry(hass: HomeAssistant, entry: MockConfigEntry) -> None:
