@@ -171,6 +171,11 @@ function button(flow: FlowElement, name: string | RegExp): HTMLButtonElement {
   return getByRole(root(flow), "button", { name }) as HTMLButtonElement;
 }
 
+/** Whether `first` comes before `second` in document order. */
+function before(first: Node, second: Node): boolean {
+  return (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
+
 function sessionCommands(fake: Fake): Message[] {
   return fake.commands.map((command) => command.message);
 }
@@ -190,7 +195,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test("the summary pill in Danish and English", async () => {
+test("the summary card in Danish and English", async () => {
   const { flow } = await resume(fakeHass("da"));
   // 1740 s is 29 min, rounded as the add-on rounds total_minutes.
   expect(queryByText(root(flow), "Onsdag · 2 personer · 5 runder · 29 min")).not.toBeNull();
@@ -252,6 +257,8 @@ test("no Pause button on get ready, in either language", async () => {
   expect(queryByRole(root(english.flow), "button", { name: "Pause" })).toBeNull();
   expect(button(english.flow, "Start now")).toBeTruthy();
   expect(button(english.flow, "Cancel")).toBeTruthy();
+  // Annullér comes after Start nu (#62).
+  expect(before(button(english.flow, "Start now"), button(english.flow, "Cancel"))).toBe(true);
 });
 
 test("a paused countdown shows PAUSET and Fortsæt, which sends resume; no Start nu", async () => {
@@ -260,6 +267,8 @@ test("a paused countdown shows PAUSET and Fortsæt, which sends resume; no Start
 
   expect(queryByText(root(flow), "PAUSET")).not.toBeNull();
   expect(queryByRole(root(flow), "button", { name: "Start nu" })).toBeNull();
+  // Annullér comes after Fortsæt (#62).
+  expect(before(button(flow, "Fortsæt"), button(flow, "Annullér"))).toBe(true);
   // The countdown holds while paused.
   await wait(flow, 5_000);
   expect(text(getByRole(root(flow), "progressbar", { name: "GØR KLAR" }))).toBe("GØR KLAR 7");
