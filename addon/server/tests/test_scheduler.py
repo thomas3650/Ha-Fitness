@@ -41,10 +41,13 @@ def _program(name: str, weekdays: list[str], **fields: Any) -> dict[str, Any]:
 
 @asynccontextmanager
 async def started(
-    make_app: MakeApp, clock: FrozenClock
+    make_app: MakeApp, clock: FrozenClock, late_days: int | None = None
 ) -> AsyncIterator[httpx.AsyncClient]:
-    """Run an app in Copenhagen time on the frozen clock."""
-    app = make_app(settings_overrides={"timezone": ZONE}, clock=clock)
+    """Run an app in Copenhagen time on the frozen clock, with `late_days` if given (else the default)."""
+    overrides: dict[str, Any] = {"timezone": ZONE}
+    if late_days is not None:
+        overrides["late_days"] = late_days
+    app = make_app(settings_overrides=overrides, clock=clock)
     async with running(app) as client:
         yield client
 
@@ -128,29 +131,121 @@ async def test_passed_day_reads_late(make_app: MakeApp) -> None:
         assert _open(view) == [("Onsdag", "2026-10-28", "late")]
 
 
-async def test_next_training_day_closes_late_as_missed(make_app: MakeApp) -> None:
-    """The next training day of any program closes the late day as missed."""
+async def test_other_programs_day_keeps_late_day_open(make_app: MakeApp) -> None:
+    """Another program's training day leaves the late day open; open days sort by date, so late comes first."""
     clock = FrozenClock(local(2026, 10, 28))
-    async with started(make_app, clock) as client:
+    async with started(make_app, clock, late_days=6) as client:
         await _create(client, "Onsdag", ["wed"])
         await _create(client, "Lørdag", ["sat"])
         clock.set(local(2026, 10, 30))
         assert _open(await _today(client)) == [("Onsdag", "2026-10-28", "late")]
         clock.set(local(2026, 10, 31, 0, 5))
-        assert _open(await _today(client)) == [("Lørdag", "2026-10-31", "due")]
-        days = await _days(client, "2026-10-28", "2026-10-31")
-        assert _statuses(days) == [
-            ("2026-10-28", "Onsdag", "missed"),
+        assert _open(await _today(client)) == [
+            ("Onsdag", "2026-10-28", "late"),
+            ("Lørdag", "2026-10-31", "due"),
+        ]
+        assert _statuses(await _days(client, "2026-10-28", "2026-10-31")) == [
+            ("2026-10-28", "Onsdag", "open"),
             ("2026-10-31", "Lørdag", "open"),
         ]
+
+
+async def test_own_program_closes_late_day(make_app: MakeApp) -> None:
+    """The program's next training day closes its late day as missed, before its days are up."""
+    clock = FrozenClock(local(2026, 10, 26))  # a Monday
+    async with started(make_app, clock, late_days=2) as client:
+        await _create(client, "Mandag", ["mon", "wed"])
+        assert _open(await _today(client)) == [("Mandag", "2026-10-26", "due")]
+        clock.set(local(2026, 10, 27))
+        assert _open(await _today(client)) == [("Mandag", "2026-10-26", "late")]
+        clock.set(local(2026, 10, 28, 0, 5))
+        assert _open(await _today(client)) == [("Mandag", "2026-10-28", "due")]
+        days = await _days(client, "2026-10-26", "2026-10-28")
+        assert _statuses(days) == [
+            ("2026-10-26", "Mandag", "missed"),
+            ("2026-10-28", "Mandag", "open"),
+        ]
         assert days[0]["closed_at"] is not None
-        assert days[1]["closed_at"] is None
+
+
+async def test_late_days_up_closes_late_day(make_app: MakeApp) -> None:
+    """With no own training day in between, a late day closes at the start of the date `late_days + 1` after it."""
+    clock = FrozenClock(local(2026, 10, 26))  # a Monday
+    async with started(make_app, clock, late_days=2) as client:
+        await _create(client, "Mandag", ["mon", "fri"])
+        clock.set(local(2026, 10, 28, 23, 59))
+        assert _open(await _today(client)) == [("Mandag", "2026-10-26", "late")]
+        clock.set(local(2026, 10, 29, 0, 5))
+        assert (await _today(client))["open"] == []
+        days = await _days(client, "2026-10-26", "2026-10-29")
+        assert _statuses(days) == [("2026-10-26", "Mandag", "missed")]
+        assert days[0]["closed_at"] is not None
+
+
+async def test_late_days_zero_never_late(make_app: MakeApp) -> None:
+    """With `late_days` 0 a day closes as missed at the midnight after its date."""
+    clock = FrozenClock(local(2026, 10, 28))
+    async with started(make_app, clock, late_days=0) as client:
+        await _create(client, "Onsdag", ["wed"])
+        clock.set(local(2026, 10, 29, 0, 5))
+        assert (await _today(client))["open"] == []
+        assert _statuses(await _days(client, "2026-10-28", "2026-10-29")) == [
+            ("2026-10-28", "Onsdag", "missed"),
+        ]
+
+
+async def test_default_late_days_is_two(make_app: MakeApp) -> None:
+    """Without the setting a late day stays open two days after its date."""
+    clock = FrozenClock(local(2026, 10, 26))  # a Monday
+    async with started(make_app, clock) as client:
+        await _create(client, "Mandag", ["mon", "fri"])
+        clock.set(local(2026, 10, 28))
+        assert _open(await _today(client)) == [("Mandag", "2026-10-26", "late")]
+        clock.set(local(2026, 10, 29))
+        assert (await _today(client))["open"] == []
+        assert _statuses(await _days(client, "2026-10-26", "2026-10-29")) == [
+            ("2026-10-26", "Mandag", "missed"),
+        ]
+
+
+async def test_lowered_late_days_closes_at_start(make_app: MakeApp) -> None:
+    """A late day past a lowered limit closes as missed at the first read after the restart."""
+    clock = FrozenClock(local(2026, 10, 26))  # a Monday
+    async with started(make_app, clock, late_days=6) as client:
+        await _create(client, "Mandag", ["mon"])
+        clock.set(local(2026, 10, 30))  # Friday
+        assert _open(await _today(client)) == [("Mandag", "2026-10-26", "late")]
+    async with started(make_app, clock, late_days=2) as client:
+        assert (await _today(client))["open"] == []
+        assert _statuses(await _days(client, "2026-10-26", "2026-10-30")) == [
+            ("2026-10-26", "Mandag", "missed"),
+        ]
+
+
+async def test_weekday_edit_adding_today_closes_late_day_at_once(
+    make_app: MakeApp,
+) -> None:
+    """An edit that makes today a training day of the program closes its late day at once (D34)."""
+    clock = FrozenClock(local(2026, 10, 26))  # a Monday
+    async with started(make_app, clock) as client:
+        program_id = await _create(client, "Mandag", ["mon"])
+        clock.set(local(2026, 10, 27, 10))
+        assert _open(await _today(client)) == [("Mandag", "2026-10-26", "late")]
+        response = await client.put(
+            f"{PROGRAMS}/{program_id}", json=_program("Mandag", ["mon", "tue"])
+        )
+        assert response.status_code == 200, response.text
+        assert _open(await _today(client)) == [("Mandag", "2026-10-27", "due")]
+        assert _statuses(await _days(client, "2026-10-26", "2026-10-27")) == [
+            ("2026-10-26", "Mandag", "missed"),
+            ("2026-10-27", "Mandag", "open"),
+        ]
 
 
 async def test_date_without_days_closes_nothing(make_app: MakeApp) -> None:
     """Dates with no training day leave the late day open, for a whole week."""
     clock = FrozenClock(local(2026, 10, 28))
-    async with started(make_app, clock) as client:
+    async with started(make_app, clock, late_days=6) as client:
         await _create(client, "Onsdag", ["wed"])
         for day in range(29, 32):
             clock.set(local(2026, 10, day))
@@ -207,30 +302,39 @@ async def test_first_run_makes_up_nothing(make_app: MakeApp, tmp_path: Path) -> 
         ]
 
 
-async def test_create_on_training_day_makes_today_and_closes_late(
+async def test_create_on_training_day_makes_today_and_keeps_late_open(
     make_app: MakeApp,
 ) -> None:
-    """Creating, or switching on, a program on its weekday makes today's day and closes the late one."""
+    """Creating, or switching on, a program on its weekday makes today's day; another program's late day stays open."""
     clock = FrozenClock(local(2026, 10, 28))
     async with started(make_app, clock) as client:
         await _create(client, "Onsdag", ["wed"])
         clock.set(local(2026, 10, 29))
         assert _open(await _today(client)) == [("Onsdag", "2026-10-28", "late")]
         await _create(client, "Torsdag", ["thu"])
-        assert _open(await _today(client)) == [("Torsdag", "2026-10-29", "due")]
-        assert _statuses(await _days(client, "2026-10-28", "2026-10-28")) == [
-            ("2026-10-28", "Onsdag", "missed"),
+        assert _open(await _today(client)) == [
+            ("Onsdag", "2026-10-28", "late"),
+            ("Torsdag", "2026-10-29", "due"),
         ]
         sleeper = await _create(client, "Fredag", ["fri"], active=False)
         clock.set(local(2026, 10, 30))
-        assert _open(await _today(client)) == [("Torsdag", "2026-10-29", "late")]
+        assert _open(await _today(client)) == [
+            ("Onsdag", "2026-10-28", "late"),
+            ("Torsdag", "2026-10-29", "late"),
+        ]
         response = await client.put(
             f"{PROGRAMS}/{sleeper}/active", json={"active": True}
         )
         assert response.status_code == 200
-        assert _open(await _today(client)) == [("Fredag", "2026-10-30", "due")]
-        assert _statuses(await _days(client, "2026-10-29", "2026-10-29")) == [
-            ("2026-10-29", "Torsdag", "missed"),
+        assert _open(await _today(client)) == [
+            ("Onsdag", "2026-10-28", "late"),
+            ("Torsdag", "2026-10-29", "late"),
+            ("Fredag", "2026-10-30", "due"),
+        ]
+        assert _statuses(await _days(client, "2026-10-28", "2026-10-30")) == [
+            ("2026-10-28", "Onsdag", "open"),
+            ("2026-10-29", "Torsdag", "open"),
+            ("2026-10-30", "Fredag", "open"),
         ]
 
 
@@ -428,7 +532,7 @@ async def test_dst_sundays_one_rollover_each(make_app: MakeApp) -> None:
 async def test_training_days_range_is_inclusive_by_date(make_app: MakeApp) -> None:
     """`/training-days` returns the days from `from` to `to`, both included, by date, then name ignoring case."""
     clock = FrozenClock(local(2026, 10, 28))
-    async with started(make_app, clock) as client:
+    async with started(make_app, clock, late_days=0) as client:
         await _create(client, "Onsdag", ["wed"])
         await _create(client, "Torsdag", ["thu"])
         await _create(client, "aften", ["thu"])

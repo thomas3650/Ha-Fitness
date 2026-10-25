@@ -7,8 +7,8 @@ import threading
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Engine, delete, exists, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, delete, exists, or_, select, update
+from sqlalchemy.orm import Session, aliased
 
 from . import changes
 from .clock import Clock
@@ -32,6 +32,7 @@ from .schemas import (
     TrainingDayOut,
     Week,
 )
+from .settings import DEFAULT_LATE_DAYS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,10 +91,19 @@ class TrainingDays:
     """
 
     def __init__(
-        self, engine: Engine, clock: Clock, timezone: ZoneInfo, publish: Publish
+        self,
+        engine: Engine,
+        clock: Clock,
+        timezone: ZoneInfo,
+        publish: Publish,
+        late_days: int = DEFAULT_LATE_DAYS,
     ) -> None:
-        """Use `engine`, the local dates of `timezone` at `clock`'s time, and `publish` for push messages."""
+        """Use `engine`, the local dates of `timezone` at `clock`'s time, and `publish` for push messages.
+
+        A late day stays open at most `late_days` days after its date (spec §2.1 of the today-ahead spec).
+        """
         self._engine = engine
+        self._late_days = late_days
         self._clock = clock
         self._timezone = timezone
         self._publish = publish
@@ -145,7 +155,11 @@ class TrainingDays:
     def _handle(
         self, db_session: Session, programs: list[ProgramRow], day: date, today: date
     ) -> list[dict[str, Any]]:
-        """Apply rules 1 and 2 of spec §3.3 to one date; return the events, `due` only for a day made for today."""
+        """Make one date's training days and close the late days that are over; return the events.
+
+        Rule 1 of spec §3.3 makes the days; today-ahead spec §2.1 closes them. `due` goes out only for a day made for
+        today.
+        """
         events: list[dict[str, Any]] = []
         now = self._clock.now()
         for program in programs:
@@ -171,14 +185,21 @@ class TrainingDays:
             db_session.flush()
             if day == today:
                 events.append(_event("due", created))
-        if not db_session.scalar(select(exists().where(TrainingDay.date == day))):
-            return events
-        # A day whose session is running or paused stays open (step 5 spec §3.4).
+        # A late day closes once its program has a training day after it, up to `day`, or once its days are up
+        # (today-ahead spec §2.1.1). A day whose session is running or paused stays open (step 5 spec §3.4).
+        later = aliased(TrainingDay)
+        trains_again = exists().where(
+            later.program_id == TrainingDay.program_id,
+            later.date > TrainingDay.date,
+            later.date <= day,
+        )
+        days_up = TrainingDay.date < day - timedelta(days=self._late_days)
         earlier = db_session.scalars(
             select(TrainingDay)
             .where(
                 TrainingDay.status == TrainingDayStatus.OPEN,
                 TrainingDay.date < day,
+                or_(trains_again, days_up),
                 ~_in_session(TrainingDay.id),
             )
             .order_by(TrainingDay.date, TrainingDay.id)
@@ -233,7 +254,10 @@ class TrainingDays:
             self._publish(batch)
 
     def _build_view(self, today: date) -> TodayView:
-        """Build the body of `GET /today` for `today` (spec §3.5), without reconciling."""
+        """Build the body of `GET /today` for `today` (spec §3.5), without reconciling.
+
+        `open` is sorted by date, then program name ignoring case, then id.
+        """
         with session(self._engine) as db_session:
             rows = db_session.execute(
                 select(TrainingDay, ProgramRow)
@@ -245,7 +269,7 @@ class TrainingDays:
             )
             week = self._week(db_session, active, today)
         open_days = [self._open_day(day, program, today) for day, program in rows]
-        open_days.sort(key=lambda day: (day.program_name.casefold(), day.id))
+        open_days.sort(key=lambda day: (day.date, day.program_name.casefold(), day.id))
         return TodayView(
             date=today, open=open_days, next=self._next(active, today), week=week
         )
@@ -363,13 +387,15 @@ class TrainingDays:
     def upsert_open(self, program_id: int, day: date) -> TrainingDayOut:
         """Dev only: make an open day for a program on today or a past date, or reopen the one there is.
 
-        Raise `NotFound` for an unknown program, and `Invalid` for a date after today: an open day there would break
-        "open days share one date".
+        Raise `NotFound` for an unknown program, and `Invalid` for a date after today: an open day there would show
+        as due (today-ahead spec §2.1.7).
         """
         with self.lock:
             self.reconcile_now()
             if day > self.local_today():
-                raise Invalid(f"{day.isoformat()} is after today")
+                raise Invalid(
+                    f"{day.isoformat()} is after today; an open day there would show as due"
+                )
             with session(self._engine) as db_session:
                 program = db_session.get(ProgramRow, program_id)
                 if program is None:

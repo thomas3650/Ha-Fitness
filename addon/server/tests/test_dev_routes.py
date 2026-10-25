@@ -108,7 +108,7 @@ async def test_dev_post_creates_late_day_and_reopens_closed(make_app: MakeApp) -
 
 
 async def test_dev_post_rejects_a_date_after_today(make_app: MakeApp) -> None:
-    """`POST` for a date after today is a 422 and makes nothing, so open days keep sharing one date."""
+    """`POST` for a date after today is a 422 and makes nothing: an open day there would show as due."""
     clock = FrozenClock(local(2026, 10, 29, 9))  # a Thursday
     async with dev_app(make_app, clock) as client:
         program_id = await _create(client, "Sample", ["mon"])
@@ -131,11 +131,13 @@ async def test_dev_delete_removes_open_and_closed(make_app: MakeApp) -> None:
     async with dev_app(make_app, clock) as client:
         onsdag = await _create(client, "Onsdag", ["wed"])
         sample = await _create(client, "Sample", ["mon"])
+        # Its own program: a later day of the same program would close it as missed (today-ahead spec §2.1.1).
+        tirsdag = await _create(client, "Tirsdag", ["tue"])
         made = {}
         for program_id, day in (
             (onsdag, "2026-10-28"),
             (sample, "2026-10-28"),
-            (sample, "2026-10-27"),
+            (tirsdag, "2026-10-27"),
         ):
             response = await client.post(
                 DEV, json={"program_id": program_id, "date": day}
@@ -147,7 +149,7 @@ async def test_dev_delete_removes_open_and_closed(make_app: MakeApp) -> None:
         response = await client.delete(DEV, params={"date": "2026-10-28"})
         assert response.status_code == 204, response.text
         assert await _days(client, "2026-10-27", "2026-10-28") == [
-            ("2026-10-27", "Sample", "open")
+            ("2026-10-27", "Tirsdag", "open")
         ]
 
 

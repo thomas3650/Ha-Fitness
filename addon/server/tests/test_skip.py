@@ -101,7 +101,7 @@ async def test_skipped_day_is_not_made_again(make_app: MakeApp) -> None:
 async def test_skip_closed_day_is_409(make_app: MakeApp) -> None:
     """Skipping a day that is already closed, skipped or missed, is a 409 and logs nothing."""
     clock = FrozenClock(local(2026, 10, 28, 9))
-    async with started(make_app, clock) as client:
+    async with started(make_app, clock, late_days=0) as client:
         await _create(client, "Onsdag", ["wed"])
         await _create(client, "Torsdag", ["thu"])
         [wednesday] = await _open_ids(client)

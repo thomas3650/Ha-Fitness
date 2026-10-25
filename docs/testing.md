@@ -17,7 +17,9 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    - the cards watch build (log `local/cards-watch.log`);
    - the add-on server on `http://localhost:8765`, data in `local/addon-data/` (log `local/addon-server.log`). It
      reaches the dev HA with the token in `local/dev-ha-token` (D32), which it reads at each call. It runs with
-     `HA_FITNESS_DEV=1` (the dev routes, below) and `HA_FITNESS_TIMEZONE=Europe/Copenhagen` (D36);
+     `HA_FITNESS_DEV=1` (the dev routes, below) and `HA_FITNESS_TIMEZONE=Europe/Copenhagen` (D36). It takes the
+     `late_days` option from `options.json` in its data folder, or from `HA_FITNESS_LATE_DAYS` in the environment
+     `scripts/develop` is started from (that wins); without either it is 2;
    - dev Home Assistant on `http://localhost:8123`, config in `config/` (git-ignored), with
      `config/custom_components/ha_fitness` linked to the repo. `config/custom_components/music_assistant` links the
      [fake Music Assistant](#the-fake-music-assistant).

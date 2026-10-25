@@ -1,9 +1,9 @@
 """Tests for the stats (stats spec §3, §4), through `GET /api/v1/stats` on a frozen clock in Copenhagen time.
 
-The sessions start through REST and finish by moving the clock past their end. An earlier open day turns missed only
-on a date with a day of its own, so a test that wants a missed day gives the next date a day; a test that wants a day
-still open (late) gives the next date none. October 2026: Mon 12, Tue 13, Wed 14, Thu 15, Fri 16, Sat 17, Sun 18,
-Mon 26, Tue 27, Wed 28, Sat 31; Sun 1 November.
+The sessions start through REST and finish by moving the clock past their end. An open day turns missed at the start
+of its own program's next training day, or of the third date after its own (`late_days` 2, the default); before
+then it is still open (late). Another program's day doesn't close it. October 2026: Mon 12, Tue 13, Wed 14, Thu 15,
+Fri 16, Sat 17, Sun 18, Mon 26, Tue 27, Wed 28, Sat 31; Sun 1 November.
 """
 
 from datetime import timedelta
