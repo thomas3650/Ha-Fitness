@@ -440,6 +440,23 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Source:** [UI polish spec](superpowers/specs/2026-10-24-ui-polish-design.md) §2, §3.1 and §3.2; Thomas (§2, his
   screen review); Claude (§3), for Thomas's review on the PR, 2026-10-24
 
+### D53: The integration plays the music, following the session
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** The add-on only freezes a session's music choice. The integration starts the music at a running view
+  with `started_at` set, while no start was tried (including the first view of a session that started after the
+  controller's start). A session already running at a restart or reload is adopted, not restarted. A failed start is
+  retried.
+- **Why:** Music Assistant and its speakers belong to Home Assistant, which the integration reaches directly.
+  Restarting the playlist on every reload would be wrong in the middle of a workout.
+- **Source:** [music spec](superpowers/specs/2026-10-24-music-design.md) §5.1 and §9
+
+### D54: The fade restores the volume after pausing
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** The fade lowers the volume, pauses, and then sets the volume back to the starting level. It also does
+  so when the integration unloads.
+- **Why:** The next playback must not start silent.
+- **Source:** [music spec](superpowers/specs/2026-10-24-music-design.md) §5.3 and §9
+
 ### D55: A dev-only fake Music Assistant stands in for the real one in the loops
 - **Date:** 2026-10-25 · **Status:** active
 - **Decision:** The fast loop and the full loop use a fake Music Assistant: a custom integration with the domain

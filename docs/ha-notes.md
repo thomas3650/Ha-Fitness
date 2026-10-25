@@ -90,6 +90,14 @@ From HA core's `music_assistant` integration and HA's REST API (HA 2026.10). The
   takes `favorite`, `search`, `limit` (default 25; no maximum in the schema, though `services.yaml` caps the UI at
   500), `offset` and `order_by`. It answers `{items: [{media_type, uri, name, version, image, favorite, explicit}],
   limit, offset, order_by, media_type}`.
+- **A web player is hidden from HA by default.** Music Assistant's browser player (Sendspin) registers once per
+  browser tab. "Expose this player to Home Assistant" is off for it, and HA core skips players that aren't exposed. So
+  it shows up as a `media_player` only after the switch is turned on in Music Assistant's player settings.
+- **A paused web player is `idle`.** After `media_pause` its state is `idle`, not `paused`. `media_play` resumes the
+  same track. So treat `idle` as paused.
+- **`get_library` returns 25 items by default**, ordered by name. Music Assistant's 8 built-in playlists (for example
+  "500 Random" and "Infinite Mix") are in the list with the user's own.
+- **An item's `image` is an internal URL** of the Music Assistant add-on (its image proxy). Another host can't load it.
 - **An entity service skips unavailable entities.** HA leaves an unavailable entity out of an entity service call,
   with a warning and no error. So the fake's `fake_set_available` is a plain service: an entity service couldn't make
   a player available again (checked in HA's `helpers/service.py`).

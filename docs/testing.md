@@ -161,6 +161,23 @@ HA Fitness uses ([the facts](ha-notes.md#music-assistant)).
 
 The integration's tests won't use this fake. They will register their own fakes in the test HA, after the same facts.
 
+## Real Music Assistant (full loop)
+
+The fake can't show how the real Music Assistant behaves, so the full loop can run the real add-on. This is for a
+check before the music goes to the house, not for every change.
+
+1. Install the Music Assistant add-on in the full loop's Supervisor. Its repository is built in.
+2. Confirm the discovered integration in HA ("Discovered").
+3. Add music. In Music Assistant, add the Filesystem provider at `/media/test-music`. Make a few test tones with
+   ffmpeg and copy them into the Supervisor's media folder, in `test-music`.
+4. Make a playlist from the tones.
+5. Turn on "Expose this player to Home Assistant" for the browser's web player, in Music Assistant's player settings
+   ([why](ha-notes.md#music-assistant)). Without it, HA has no speaker.
+6. Check the add-on's `GET /api/v1/music/speakers` and `/music/playlists`, then run a workout with that speaker.
+
+The fast loop and the full loop both use port 8765. `127.0.0.1` reaches the fast loop and `[::1]` the full loop.
+Music Assistant's data is part of the full loop, so `scripts/full-loop down` removes it.
+
 ## Chrome check
 
 For every UI change, in the fast loop (and in the full loop before a release):
