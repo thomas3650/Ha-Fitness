@@ -34,9 +34,10 @@ export interface Program {
 /** A program's music, as `ha_fitness/programs` returns it (music spec §5.4). */
 export interface ProgramMusic {
   playlist: string;
-  playlist_name: string;
+  /** The playlist's name; null without, and the screens show `playlist` instead (music spec §4.1). */
+  playlist_name: string | null;
   speaker: string;
-  volume: number;
+  volume: number | null;
   shuffle: boolean;
 }
 
@@ -201,7 +202,7 @@ function renderMusic(ctx: DetailsContext, program: Program): TemplateResult | ty
   return html`
     <div class="row music">
       <dt>${t("flow.music")}</dt>
-      <dd><ha-icon icon="mdi:music" aria-hidden="true"></ha-icon>${program.music.playlist_name}</dd>
+      <dd><ha-icon icon="mdi:music" aria-hidden="true"></ha-icon>${program.music.playlist_name ?? program.music.playlist}</dd>
     </div>
     <div class="row speaker">
       <dt><label for="speaker">${t("flow.speaker")}</label></dt>

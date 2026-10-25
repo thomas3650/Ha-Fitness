@@ -34,7 +34,13 @@ interface Program {
   total_seconds?: number;
   equipment?: string[];
   stations: { exercise_id: string; name: string }[];
-  music?: { playlist: string; playlist_name: string; speaker: string; volume: number; shuffle: boolean } | null;
+  music?: {
+    playlist: string;
+    playlist_name: string | null;
+    speaker: string;
+    volume: number | null;
+    shuffle: boolean;
+  } | null;
 }
 
 interface Speaker {
@@ -751,6 +757,14 @@ test("music row in English", async () => {
 
   expect(facts(flow)).toContainEqual(["Music", "Workout Mix"]);
   expect(getAllByRole(speakerSelect(flow, "Speaker"), "option").map(text)).toEqual(["Køkken", "Stue (unavailable)"]);
+});
+
+test("music row shows the playlist when it has no name", async () => {
+  const unnamed: Program = { ...onsdag, music: { ...mix, playlist_name: null, volume: null } };
+  const fake = fakeHass("da", [thomas, maria], [unnamed], [kitchen, stue]);
+  const { flow } = await mount(fake, details);
+
+  expect(facts(flow)).toContainEqual(["Musik", "library://playlist/1"]);
 });
 
 test("no music row without music or without speakers", async () => {
