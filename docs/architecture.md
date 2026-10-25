@@ -453,11 +453,16 @@ The design is the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3
   `people` in the people's order). Each person has `streak`, `all_time` and `this_month`; the totals are `done`,
   `extra`, `missed`, `skipped` and `time_trained` (whole seconds). `Stats` in `schemas.py` is the shape.
 - **MCP:** `get_stats`, read-only, returns the same `Stats`.
+- **When the stats fail.** If the stats can't be computed, `GET /api/v1/stats` answers 503 with a `detail` text and
+  `get_stats` a tool error with the same text. The failure is logged with its exception.
 
 ### Stats on the push channel
 
-- `{"type": "stats", "data": <Stats>}`. On connect it follows `hello`, `today` and `session`, and it is always sent.
-  Like those, a newer `stats` queued while the snapshot was read replaces it.
+- `{"type": "stats", "data": <Stats>}`. On connect it follows `hello`, `today` and `session`. Like those, a newer
+  `stats` queued while the snapshot was read replaces it.
+- **When the stats fail.** If the stats can't be computed, the add-on logs it and the snapshot leaves `stats` out.
+  It sends no `data: null`, which the integration would read as malformed. The rest of the snapshot and the channel go
+  on, and a later `stats` fills the gap.
 - **When it is sent.** Every reconcile, and so every training-day change, ends by calling the stats hook
   (`TrainingDays.on_change`) after `today`. So on the stream the order is the events, then `today` if it changed,
   then `stats`, all in one batch. A finished session (completed or ended) also runs it, with or without a `done` event, so an extra

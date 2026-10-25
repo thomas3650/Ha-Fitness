@@ -10,6 +10,7 @@ Sat 31; Sun 1 and Mon 2 November.
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -30,6 +31,7 @@ from tests.session_helpers import (
 )
 from tests.test_people import THOMAS
 from tests.test_scheduler import ZONE, local
+from tests.test_stats import break_the_stats
 
 WS = "/api/v1/ws"
 STATS = "/api/v1/stats"
@@ -465,3 +467,19 @@ def test_minute_loop_pushes_stats_on_a_new_month_only(make_app: MakeApp) -> None
     assert november["data"]["date"] == "2026-11-01"
     assert stats["data"]["month"] == "2026-11"
     assert monday["data"]["date"] == "2026-11-02"
+
+
+def test_connect_without_stats_when_they_fail(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """With the stats broken, a connect sends `hello`, `today` and `session` but no `stats`, and pushes go on (#50)."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas = _thomas(tc)
+        program_id = _program(tc, "Lille", ["wed"])
+        _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
+        break_the_stats(tmp_path)
+        with tc.websocket_connect(WS) as ws:
+            _hello(ws)
+            _known(tc, program_id, thomas)
+            _next(ws, *KNOWN)

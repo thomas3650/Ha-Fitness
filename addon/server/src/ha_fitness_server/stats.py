@@ -7,11 +7,13 @@ from the logs on each call.
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
+import logging
 from typing import Any
 
 from sqlalchemy import Engine, select
 
 from .db import session
+from .errors import Unavailable
 from .models import (
     AppState,
     Person as PersonRow,
@@ -23,6 +25,8 @@ from .models import (
 from .schemas import PersonStats, Stats, Totals
 from .sessions import Sessions, time_trained
 from .training_days import TrainingDays
+
+_LOGGER = logging.getLogger(__name__)
 
 # The app's one row in `app_state` (migration 0003).
 _APP_STATE_ID = 1
@@ -116,11 +120,21 @@ class StatsService:
             return [{"type": "stats", "data": stats.model_dump(mode="json")}]
 
     def view(self) -> Stats:
-        """Tick the session, then reconcile, then compute: the lifespan's order, under the lock (stats spec §4)."""
+        """Tick the session, then reconcile, then compute: the lifespan's order, under the lock (stats spec §4).
+
+        A failed computation is logged here, with its exception, and raised as `Unavailable`: REST answers 503, MCP a
+        tool error, and the connect snapshot leaves the stats out.
+        """
         with self._training_days.lock:
             self._sessions.current()
             self._training_days.reconcile_now()
-            return self.compute()
+            try:
+                return self.compute()
+            except Exception as error:
+                _LOGGER.exception("Computing the stats failed")
+                raise Unavailable(
+                    "The stats are unavailable: they can't be computed right now"
+                ) from error
 
     def compute(self) -> Stats:
         """Compute the stats from what is stored now, without ticking or reconciling."""
