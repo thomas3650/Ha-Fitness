@@ -373,6 +373,68 @@ async def test_failed_pause_after_start_stays_started(workout: Workout) -> None:
     assert names(workout.kitchen) == [*START_CALLS, "media_pause", "media_play"]
 
 
+async def test_queued_start_of_ended_session_does_not_start(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A start that waits behind a held Pause, for a session that ends meanwhile, makes no call."""
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(view(started_at=started))
+    held = asyncio.Event()
+    workout.kitchen.hold["media_pause"] = held
+    await workout.push(view(status="paused", started_at=started), settle=False)
+    await workout.push(view(id=8), settle=False)
+    await workout.push(
+        view(id=8, started_at=started + timedelta(minutes=30)), settle=False
+    )
+    await workout.push(None, settle=False)
+
+    held.set()
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, 6)
+
+    assert names(workout.kitchen) == [*START_CALLS, "media_pause"]
+
+
+async def test_queued_pause_of_changed_session_makes_no_call(
+    workout: Workout,
+) -> None:
+    """A Pause that waits behind a start in flight, for a session followed by another, makes no call."""
+    started = workout.setup_time + timedelta(seconds=10)
+    gate = asyncio.Event()
+    workout.kitchen.gate = gate
+    await workout.push(view())
+    await workout.push(view(started_at=started), settle=False)
+    await wait_for(workout.hass, lambda: "play_media" in names(workout.kitchen))
+    await workout.push(view(status="paused", started_at=started), settle=False)
+    await workout.push(view(id=8), settle=False)
+
+    gate.set()
+    await workout.hass.async_block_till_done()
+
+    assert names(workout.kitchen) == START_CALLS
+    assert await workout.state() == "waiting"
+
+
+async def test_queued_play_of_changed_session_makes_no_call(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A Play that waits behind a held Pause, for a session followed by another, makes no call."""
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(view(started_at=started))
+    held = asyncio.Event()
+    workout.kitchen.hold["media_pause"] = held
+    await workout.push(view(status="paused", started_at=started), settle=False)
+    await workout.push(view(started_at=started), settle=False)
+    await workout.push(view(id=8), settle=False)
+
+    held.set()
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, 6)
+
+    assert names(workout.kitchen) == [*START_CALLS, "media_pause"]
+    assert await workout.state() == "waiting"
+
+
 @pytest.mark.usefixtures("cards_bundle")
 async def test_no_start_without_music_supported(
     hass: HomeAssistant,
