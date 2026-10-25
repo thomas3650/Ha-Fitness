@@ -6,7 +6,7 @@ time from the shared clock, so sessions, training days and program writes never 
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import math
 import re
 from typing import Any, cast, get_args
@@ -64,8 +64,10 @@ PAUSE_LIMIT = timedelta(minutes=30)
 MAX_HISTORY = 100
 # The app's one row in `app_state` (migration 0003).
 _APP_STATE_ID = 1
-# The events of a finish; any of them may change `today` or the stats.
-_FINISH_EVENTS = frozenset({"done", "session_completed", "session_ended"})
+# The events after which `today` or the stats may change: a finish, and a start, which can make a day early.
+_TODAY_EVENTS = frozenset(
+    {"done", "session_completed", "session_ended", "session_started"}
+)
 
 
 class PlanStation(BaseModel):
@@ -273,18 +275,25 @@ class Sessions:
         training_day_id: int | None,
         client: str,
         speaker: str | None = None,
+        date: date | None = None,
     ) -> SessionView:
         """Freeze the plan and start at phase 0; log it (spec §3.3).
 
-        `speaker` replaces the program's speaker in the frozen music; a program without music ignores it.
+        `speaker` replaces the program's speaker in the frozen music; a program without music ignores it. `date`
+        starts the program's next training early (today-ahead spec §2.2.3): the start makes that date's day, open,
+        and the session is for it.
 
         Raise `SessionError`: 404 `not_found` for an unknown program, person or day; 409 `conflict` while a session
-        is running or paused, for an inactive program, or a day that isn't open or is another program's; 422
-        `invalid` for a speaker that isn't `media_player.<name>`, an empty list, more than two, duplicates, or more
-        people than stations.
+        is running or paused, for an inactive program, a day that isn't open or is another program's, or a date that
+        isn't the program's upcoming date or isn't startable; 422 `invalid` for both a day and a date, a speaker that
+        isn't `media_player.<name>`, an empty list, more than two, duplicates, or more people than stations.
         """
         with self._training_days.lock:
             self._training_days.reconcile_now()
+            if training_day_id is not None and date is not None:
+                raise SessionError(
+                    422, "invalid", "Give a training day or a date, not both"
+                )
             self._check_speaker(speaker)
             self._check_list(participants)
             program = self._program(program_id)
@@ -304,6 +313,8 @@ class Sessions:
                     raise SessionError(409, "conflict", "A session is already running")
                 if training_day_id is not None:
                     self._check_day(db_session, training_day_id, program_id)
+                if date is not None:
+                    training_day_id = self._open_early(db_session, program_id, date)
                 plan = build_plan(program, people, speaker)
                 first = phases(plan)[0]
                 row = WorkoutSession(
@@ -540,14 +551,15 @@ class Sessions:
         self._send(messages)
 
     def _send(self, messages: list[dict[str, Any]]) -> None:
-        """Publish the messages of a committed change, then `today` and the stats if a session finished.
+        """Publish the messages of a committed change, then `today` and the stats if a session started or finished.
 
-        A finish can close a day (`done`), count an extra session or set `counting_from`, so each finish goes through
-        `publish_today`, which also checks the stats.
+        A finish can close a day (`done`), count an extra session or set `counting_from`, and an early start makes a
+        day (today-ahead spec §2.2.4), so each start and finish goes through `publish_today`, which also checks the
+        stats.
         """
         if messages:
             self._publish(messages)
-        if any(message.get("event") in _FINISH_EVENTS for message in messages):
+        if any(message.get("event") in _TODAY_EVENTS for message in messages):
             self._training_days.publish_today()
 
     def _tick(self, db_session: Session, now: datetime) -> list[dict[str, Any]]:
@@ -674,7 +686,8 @@ class Sessions:
         """Complete or end a session at `at` (spec §3.4) and log it; return its messages.
 
         An open pause is closed first. It stores the participants, sets `counting_from` once, and a counted session
-        with a training day closes the day as done.
+        with a training day closes the day as done. An uncounted one settles a day made early (today-ahead spec
+        §2.2.6), after its messages are built, so `session_ended` still carries the day's id.
         """
         plan = Plan.model_validate(row.plan)
         plan_phases = phases(plan)
@@ -731,6 +744,10 @@ class Sessions:
             messages.append(_event("session_ended", view, counted=row.counted))
         if done is not None:
             messages.append(done)
+        if not row.counted and row.training_day_id is not None:
+            due = self._training_days.settle_uncounted(db_session, row.training_day_id)
+            if due is not None:
+                messages.append(due)
         return messages
 
     @staticmethod
@@ -779,6 +796,19 @@ class Sessions:
         return [
             (person.id, person.name) for person in stored if person.id in participants
         ]
+
+    def _open_early(self, db_session: Session, program_id: int, day: date) -> int:
+        """Make the program's day on its upcoming date `day`, open, and return its id; 409 unless it is startable."""
+        entry = TrainingDays.upcoming_for(
+            db_session, program_id, self._training_days.local_today()
+        )
+        if entry is None or entry.date != day or not entry.startable:
+            raise SessionError(
+                409,
+                "conflict",
+                f"{day.isoformat()} isn't the program's next training, or it can't be started yet",
+            )
+        return self._training_days.open_early(db_session, program_id, day)
 
     @staticmethod
     def _check_day(db_session: Session, day_id: int, program_id: int) -> None:

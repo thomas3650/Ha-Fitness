@@ -358,6 +358,9 @@ class NewSession(BaseModel):
     program_id: int
     participants: list[int]
     training_day_id: int | None = None
+    # Starts the program's next training early, from its upcoming date (today-ahead spec §2.2.3); the service refuses
+    # it together with `training_day_id`, so that error has the session shape too.
+    date: dt.date | None = None
     # Overrides the program's speaker for this session (music spec §4.2); the service checks the pattern.
     speaker: str | None = None
 
