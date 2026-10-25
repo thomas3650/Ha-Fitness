@@ -29,8 +29,7 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    the user `dev` / `dev`, sets that user's language to Danish and sets the dev HA's timezone to Europe/Copenhagen (the
    server's zone). It also writes a long-lived token for the dev user to `local/dev-ha-token` (mode 600), or keeps the
    one there when HA still accepts it. It is safe to run again, and the server needs no restart after it.
-   - Run it with `.venv/bin/python`, not `uv run`: `uv run` syncs `.venv` first, and that can uninstall packages the
-     running dev HA installed there.
+   - Run it with `.venv/bin/python`, not `uv run` ([why](ha-notes.md#testing)).
    - It adds the HA Fitness entry through the user step, with the URL `http://localhost:8765`. The integration checks
      that the server answers there; if it doesn't, the script stops and says so.
    - It then adds the fake Music Assistant's entry, "Fake Music Assistant", when HA has no `music_assistant` entry. It

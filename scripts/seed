@@ -10,4 +10,4 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 # As a module from the repo root, so it can import scripts.dev_onboard.
-exec uv run python -m scripts.seed "$@"
+exec .venv/bin/python -m scripts.seed "$@"

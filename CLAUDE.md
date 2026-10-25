@@ -25,13 +25,13 @@ workout, runs it for one or two people and keeps per-person stats; programs are 
 Set up and run (not gates):
 
 ```bash
-scripts/setup                         # once per clone, and after a dependency change: uv, npm and the git hooks
-scripts/develop                       # fast loop: dev HA on :8123, add-on server on :8765, cards watch
-scripts/develop stop                  # stop the fast loop (from another shell)
+scripts/setup                            # once per clone, and after a dependency change: uv, npm and the git hooks
+scripts/develop                          # fast loop: dev HA on :8123, add-on server on :8765, cards watch
+scripts/develop stop                     # stop the fast loop (from another shell)
 .venv/bin/python scripts/dev_onboard.py  # onboard the dev HA (user dev / dev, Danish), add the HA Fitness entry, write local/dev-ha-token
-scripts/seed                          # dev data: HA persons Thomas and Elin, the people, a Sample program (localhost only)
-scripts/smoke                         # start the dev HA once and fail on integration errors
-scripts/full-loop up|install|check|down   # full loop: the add-on under a real Supervisor on :7123
+scripts/seed                             # dev data: HA persons Thomas and Elin, the people, a Sample program (localhost only)
+scripts/smoke                            # start the dev HA once and fail on integration errors
+scripts/full-loop up|install|check|down  # full loop: the add-on under a real Supervisor on :7123
 ```
 
 The gates (as CI runs them; all pass before every commit):
