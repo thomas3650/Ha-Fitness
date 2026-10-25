@@ -88,7 +88,9 @@ class MockPlayer(MediaPlayerEntity):
     is in `fail` is recorded, then raises `HomeAssistantError` and changes nothing. While `gate` is set,
     `play_media` is recorded, then waits for the event before it plays. `paused_state` is the state a pause
     leaves: Music Assistant 2.10.8's web player reports `idle` there. `on_volume_set`, when set, runs inside
-    each `volume_set` call, after it is recorded (a test moves the clock there, as a slow call would).
+    each `volume_set` call, after it is recorded (a test moves the clock there, as a slow call would). A call
+    whose name is in `hold` first waits for that event, and is recorded only once it is released: `calls`
+    then shows the order in which the calls land.
     """
 
     _attr_should_poll = False
@@ -111,11 +113,24 @@ class MockPlayer(MediaPlayerEntity):
         self.gate: asyncio.Event | None = None
         self.paused_state = MediaPlayerState.PAUSED
         self.on_volume_set: Callable[[], object] | None = None
+        self.hold: dict[str, asyncio.Event] = {}
+        self._held: list[asyncio.Event] = []
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any]:
         """Return `mass_player_type`; HA leaves it out while the player is unavailable."""
         return {"mass_player_type": "player"}
+
+    async def _async_hold(self, name: str) -> None:
+        """Wait while the call is held."""
+        if (hold := self.hold.get(name)) is not None:
+            self._held.append(hold)
+            await hold.wait()
+
+    def release(self) -> None:
+        """Release every held call, so a failed test doesn't leave one waiting."""
+        for hold in self._held:
+            hold.set()
 
     def _record(self, name: str, arguments: dict[str, Any]) -> None:
         """Record a call; raise when the call is set to fail."""
@@ -164,6 +179,7 @@ class MockPlayer(MediaPlayerEntity):
 
     async def async_media_pause(self) -> None:
         """Pause; a player with no queue stays idle."""
+        await self._async_hold("media_pause")
         self._record("media_pause", {})
         if self.has_queue:
             self._attr_state = self.paused_state
@@ -175,6 +191,7 @@ class MockPlayer(MediaPlayerEntity):
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set the volume (only the players with `VOLUME_SET`)."""
+        await self._async_hold("volume_set")
         self._record("volume_set", {"volume_level": volume})
         if self.on_volume_set is not None:
             self.on_volume_set()

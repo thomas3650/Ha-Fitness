@@ -166,13 +166,17 @@ class _Followed:
 
 @dataclass(slots=True)
 class _Fade:
-    """A running fade on a speaker: its starting level, its step timers and the step running now."""
+    """A running fade on a speaker: its starting level, its step timers and the steps in flight.
+
+    It stays in the controller's fades until its last step has set the starting level back (`restored`).
+    """
 
     speaker: str
     level: float
     cancel_timers: list[CALLBACK_TYPE] = field(default_factory=list)
+    tasks: set[asyncio.Task[None]] = field(default_factory=set)
     cancelled: bool = False
-    task: asyncio.Task[None] | None = None
+    restored: bool = False
 
 
 class MusicController:
@@ -212,8 +216,9 @@ class MusicController:
         async with self._lock:
             for fade in list(self._fades.values()):
                 await self._async_cancel_fade(fade)
-                await self._async_fade_call(fade.speaker, SERVICE_MEDIA_PAUSE)
-                await self._async_restore(fade)
+                if not fade.restored:
+                    await self._async_fade_call(fade.speaker, SERVICE_MEDIA_PAUSE)
+                    await self._async_restore(fade)
 
     @callback
     def music_state(self) -> dict[str, Any] | None:
@@ -405,7 +410,8 @@ class MusicController:
         if (fade := self._fades.get(speaker)) is not None:
             # A start on a fading speaker: stop the fade and set its level back first.
             await self._async_cancel_fade(fade)
-            await self._async_restore(fade)
+            if not fade.restored:
+                await self._async_restore(fade)
         state = self.hass.states.get(speaker)
         if not _can_play(self.hass, speaker):
             _LOGGER.warning("The speaker %s can't play the workout's music", speaker)
@@ -470,26 +476,34 @@ class MusicController:
         """The fade (the music spec §5.3), under the lock: schedule its ten steps, or only pause.
 
         It runs after the jobs before it, so a Pause queued just before the end has landed: a speaker that
-        isn't playing then gets nothing.
+        isn't playing then gets nothing. A fade still running on the speaker (an adopted session's end, say)
+        is replaced, and its starting level kept: the speaker's level is part way down.
         """
+        previous = self._fades.get(speaker)
+        if previous is not None:
+            await self._async_cancel_fade(previous)
         state = self.hass.states.get(speaker)
+        playing = (
+            _can_play(self.hass, speaker)
+            and state is not None
+            and state.state == STATE_PLAYING
+        )
+        level = previous.level if previous is not None else None
+        if state is not None and level is None:
+            level = state.attributes.get(ATTR_MEDIA_VOLUME_LEVEL)
+        features = state.attributes.get(ATTR_SUPPORTED_FEATURES, 0) if state else 0
         if (
-            not _can_play(self.hass, speaker)
-            or state is None
-            or state.state != STATE_PLAYING
-        ):
-            return
-        level = state.attributes.get(ATTR_MEDIA_VOLUME_LEVEL)
-        features = state.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
-        if (
-            self._stopped
+            not playing
+            or self._stopped
             or level is None
             or not features & MediaPlayerEntityFeature.VOLUME_SET
         ):
-            # No volume to lower, or the entry is unloading: only the pause.
-            await self._async_fade_call(speaker, SERVICE_MEDIA_PAUSE)
+            if playing:
+                # No volume to lower, or the entry is unloading: only the pause.
+                await self._async_fade_call(speaker, SERVICE_MEDIA_PAUSE)
+            if previous is not None and not previous.restored:
+                await self._async_restore(previous)
             return
-        # A start on the speaker stops its fade, and a fade needs a start before it, so there is none here.
         fade = _Fade(speaker=speaker, level=float(level))
         self._fades[speaker] = fade
         # Every step is scheduled now, from the same moment, so a slow call doesn't push the next back.
@@ -505,12 +519,21 @@ class MusicController:
     @callback
     def _handle_fade_step(self, fade: _Fade, step: int, _now: datetime) -> None:
         """Run a step when its time comes (a cancelled fade has no timers left); the entry's unload waits for it."""
-        fade.task = self.coordinator.entry.async_create_task(
+        task = self.coordinator.entry.async_create_task(
             self.hass, self._async_fade_step(fade, step), f"{DOMAIN} music fade"
         )
+        fade.tasks.add(task)
+        task.add_done_callback(fade.tasks.discard)
 
     async def _async_fade_step(self, fade: _Fade, step: int) -> None:
-        """Set the step's level; the last step (level 0) then pauses and sets the starting level back."""
+        """Set the step's level; the last step (level 0) then pauses and sets the starting level back.
+
+        The last step first waits for the earlier steps still in flight, so none of them lands after it.
+        """
+        if step == FADE_STEPS:
+            await self._async_wait_for_steps(fade)
+            if fade.cancelled:
+                return
         await self._async_fade_call(
             fade.speaker,
             SERVICE_VOLUME_SET,
@@ -518,27 +541,34 @@ class MusicController:
         )
         if step < FADE_STEPS or fade.cancelled:
             return
-        if self._fades.get(fade.speaker) is fade:
-            del self._fades[fade.speaker]
         await self._async_fade_call(fade.speaker, SERVICE_MEDIA_PAUSE)
         await self._async_restore(fade)
+        if self._fades.get(fade.speaker) is fade:
+            del self._fades[fade.speaker]
 
     async def _async_cancel_fade(self, fade: _Fade) -> None:
-        """Stop a fade: no later step runs, and the step running now has finished."""
+        """Stop a fade: no later step starts, and every step in flight has finished."""
         fade.cancelled = True
         for cancel in fade.cancel_timers:
             cancel()
+        await self._async_wait_for_steps(fade)
         if self._fades.get(fade.speaker) is fade:
             del self._fades[fade.speaker]
-        if fade.task is not None:
-            # asyncio.wait doesn't raise if the step's task was cancelled at shutdown.
-            await asyncio.wait({fade.task})
+
+    @staticmethod
+    async def _async_wait_for_steps(fade: _Fade) -> None:
+        """Wait for the fade's steps in flight, other than the current task."""
+        steps = fade.tasks - {asyncio.current_task()}
+        if steps:
+            # asyncio.wait doesn't raise if a step's task was cancelled at shutdown.
+            await asyncio.wait(steps)
 
     async def _async_restore(self, fade: _Fade) -> None:
         """Set the fade's starting level back, so the next playback isn't silent."""
         await self._async_fade_call(
             fade.speaker, SERVICE_VOLUME_SET, {ATTR_MEDIA_VOLUME_LEVEL: fade.level}
         )
+        fade.restored = True
 
     async def _async_fade_call(
         self, speaker: str, service: str, data: dict[str, Any] | None = None
