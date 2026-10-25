@@ -145,6 +145,11 @@ async def async_stats_missing(session: aiohttp.ClientSession, url: str) -> bool:
     return await _async_missing(session, url, "/api/v1/stats")
 
 
+async def async_music_missing(session: aiohttp.ClientSession, url: str) -> bool:
+    """Return whether `GET <url>/api/v1/music` gives 404, as on an add-on from before music."""
+    return await _async_missing(session, url, "/api/v1/music")
+
+
 async def async_skip(
     session: aiohttp.ClientSession,
     url: str,
@@ -224,11 +229,17 @@ async def async_start_session(
     participants: list[int],
     training_day_id: int | None,
     integration_version: str,
+    speaker: str | None = None,
 ) -> dict[str, Any]:
-    """Start a session (`POST /api/v1/session`); return its view."""
+    """Start a session (`POST /api/v1/session`); return its view.
+
+    `speaker` replaces the program's speaker for this session; it is sent only when given.
+    """
     body: dict[str, Any] = {"program_id": program_id, "participants": participants}
     if training_day_id is not None:
         body["training_day_id"] = training_day_id
+    if speaker is not None:
+        body["speaker"] = speaker
     return await _async_session_post(
         session, url, "/api/v1/session", integration_version, body
     )

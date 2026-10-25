@@ -1,7 +1,7 @@
 import { type TemplateResult, css, html, nothing, unsafeCSS } from "lit";
 
 import { iconButton } from "../icon-button";
-import type { SessionStation, SessionView } from "../overlay";
+import type { MusicState, SessionStation, SessionView } from "../overlay";
 import { personTextColor } from "../people";
 import { ring } from "../ring";
 import {
@@ -35,6 +35,8 @@ export interface TimerContext {
   reach: ReachNote;
   sound: SoundButton;
   error: string | undefined;
+  /** The session's music; null without, and then no player shows. */
+  music: MusicState | null;
   /** Slut's question shows. */
   asking: boolean;
   onRingTap: () => void;
@@ -48,6 +50,10 @@ export interface TimerContext {
   onConfirmEnd: () => void;
   /** The question's Nej. */
   onKeepGoing: () => void;
+  /** The player's Pause music or Play music. */
+  onMusicToggle: () => void;
+  /** The player's Next track. */
+  onMusicNext: () => void;
 }
 
 export function renderTimer(ctx: TimerContext): TemplateResult {
@@ -133,10 +139,11 @@ function renderHeader(
 ) {
   const { t, view } = ctx;
   return html`
-    <header class="timer-top">
+    <header class="timer-top ${ctx.music ? "with-music" : ""}">
       ${renderPill(t("flow.round_label"), round, view.totals.rounds)}
       ${renderPill(t(one ? "flow.station_label" : "flow.interval_label"), interval, view.totals.stations)}
       ${view.status === "paused" ? html`<span class="timer-pill paused">${t("flow.paused")}</span>` : nothing}
+      ${renderPlayer(ctx)}
       <span class="elapsed"
         ><strong>${clock(ctx.elapsed)}</strong> <span class="planned">/ ${clock(view.totals.planned)}</span></span
       >
@@ -158,6 +165,43 @@ function renderHeader(
         }
       </span>
     </header>
+  `;
+}
+
+/**
+ * The music player after the pills (music spec §6.2): the music badge, the playlist over the
+ * speaker, and Pause or Play with Next. While waiting for the first work phase both are disabled;
+ * while unavailable only Play works, so a failed start can be tried again.
+ */
+function renderPlayer(ctx: TimerContext) {
+  const { t, music } = ctx;
+  if (!music) return nothing;
+  const playing = music.state === "playing";
+  const waiting = music.state === "waiting";
+  return html`
+    <div class="timer-music card" role="group" aria-label=${t("flow.music")}>
+      <span class="timer-music-badge"><ha-icon icon="mdi:music" aria-hidden="true"></ha-icon></span>
+      <span class="timer-music-lines">
+        <span class="timer-music-playlist">${music.playlist_name}</span>
+        <span class="timer-music-speaker"
+          >${music.state === "unavailable" ? t("flow.music_unavailable") : music.speaker_name}</span
+        >
+      </span>
+      ${iconButton({
+        icon: playing ? "mdi:pause" : "mdi:play",
+        label: t(playing ? "flow.music_pause" : "flow.music_play"),
+        className: "soft timer-music-button",
+        disabled: waiting,
+        onClick: ctx.onMusicToggle,
+      })}
+      ${iconButton({
+        icon: "mdi:skip-next",
+        label: t("flow.music_next"),
+        className: "soft timer-music-button",
+        disabled: waiting || music.state === "unavailable",
+        onClick: ctx.onMusicNext,
+      })}
+    </div>
   `;
 }
 
@@ -299,6 +343,63 @@ export const timerStyles = css`
   }
   button.slot {
     min-width: 120px;
+  }
+  /* The music player: a pill-shaped card that takes the room left in the row, up to 400 px, and
+     shrinks with ellipsis before the pills or Slut do. */
+  .timer-music {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    max-width: 400px;
+    height: 56px;
+    padding: 0 8px 0 9px;
+    border-radius: 999px;
+    font-size: 1rem;
+  }
+  .timer-music-badge {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: color-mix(in srgb, ${unsafeCSS(RING_COLORS.work)} 18%, transparent);
+    color: ${unsafeCSS(PHASE_TEXT_COLORS.work)};
+    --mdc-icon-size: 20px;
+  }
+  .timer-music-lines {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .timer-music-lines > span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .timer-music-playlist {
+    font-weight: 600;
+  }
+  .timer-music-speaker {
+    font-size: 0.875rem;
+    color: var(--secondary-text-color);
+  }
+  button.timer-music-button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 50%;
+    --mdc-icon-size: 20px;
   }
   /* One person: three columns whose sides keep their widths, so the ring stays centred with or
      without the NÆSTE card (#36). */
@@ -558,6 +659,27 @@ export const timerStyles = css`
     }
     .timer-top > .elapsed {
       flex: none;
+    }
+    /* With the player, the row wraps after Slut and the player takes its own line under the
+       pills: the ::after item fills the first line's rest. The pills keep shrinking as without
+       it, since they grow from 0 up to their text's width. */
+    .timer-top.with-music {
+      flex-wrap: wrap;
+      row-gap: 0;
+    }
+    .timer-top.with-music > .timer-pill {
+      flex: 1 1 0;
+      max-width: max-content;
+    }
+    .timer-top.with-music::after {
+      content: "";
+      order: 1;
+      flex-basis: 100%;
+    }
+    /* The break item takes a line of its own, so the gap above the player is its margin. */
+    .timer-top.with-music > .timer-music {
+      order: 2;
+      margin-top: 12px;
     }
     /* Two people: both cards side by side, the ring below them. */
     .timer-duo {

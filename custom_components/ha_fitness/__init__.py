@@ -13,6 +13,7 @@ from .cards import async_register_cards, async_unregister_cards
 from .const import DEFAULT_URL, DEVICE_NAME, DOMAIN, SIGNAL_UPDATE, UNIQUE_ID
 from .coordinator import FitnessCoordinator
 from .media import MediaView
+from .music import MusicController
 from .services import async_setup_services
 from .websocket_api import async_setup_websocket_api
 
@@ -58,6 +59,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: HaFitnessConfigEntry) ->
         hass, entry, async_get_clientsession(hass), entry.data[CONF_URL], version
     )
     entry.runtime_data = coordinator
+    # Its start time is set, and its listener added, before the first view can come.
+    coordinator.music = MusicController(hass, coordinator)
+    await coordinator.music.async_start()
     # The device exists before the first hello, which sets its software version.
     dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -76,6 +80,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: HaFitnessConfigEntry) -
         # The entry stays up, so the connection does too.
         return False
     coordinator = entry.runtime_data
+    await coordinator.music.async_stop()
     coordinator.async_stop()
     async_unregister_cards(hass, coordinator.integration_version)
     # The entry is no longer loaded (it is being unloaded), so the card's subscription sends null.

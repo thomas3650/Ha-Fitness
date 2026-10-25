@@ -166,6 +166,12 @@
     },
     "session_invalid": {
       "message": "Vælg en eller to forskellige personer, og ikke flere personer, end programmet har stationer."
+    },
+    "music_not_found": {
+      "message": "Der kører ingen træning med musik."
+    },
+    "music_unavailable": {
+      "message": "Højttaleren kan ikke nås."
     }
   }
 }

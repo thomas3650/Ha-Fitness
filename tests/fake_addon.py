@@ -2,7 +2,8 @@
 
 Step 5 adds the session routes, the session message (the workout spec §3.5), and the programs,
 people and exercise media routes the integration relays (the workout spec §4). Step 6 adds
-`GET /stats` and the stats message (the stats spec §3.4 and §4).
+`GET /stats` and the stats message (the stats spec §3.4 and §4). Step 7 adds `GET /music`, the route the
+integration probes for music (the music spec §5.6), and programs' music.
 """
 
 import asyncio
@@ -103,7 +104,8 @@ PROGRAMS: list[dict[str, Any]] = [
             "round_rest_seconds": 60,
             "countdown_seconds": 5,
             "music": {
-                "playlist": "Workout",
+                "playlist": "library://playlist/1",
+                "playlist_name": "Workout Mix",
                 "speaker": "media_player.speaker",
                 "volume": 40,
                 "shuffle": False,
@@ -204,6 +206,10 @@ class FakeAddon:
         self.send_stats = True
         # How many times GET /stats was asked.
         self.stats_requests = 0
+        # True: an add-on from before music; /music gives 404 (so does an old_addon's).
+        self.no_music = False
+        # How many times GET /music was asked.
+        self.music_requests = 0
         # False: accept the ws but send nothing (no hello, no today).
         self.send_hello = True
         # False: never answer the client's pings, as a half-open connection wouldn't.
@@ -236,6 +242,7 @@ class FakeAddon:
         self.app.router.add_post("/api/v1/session", self._start_session)
         self.app.router.add_post("/api/v1/session/{command}", self._session_command)
         self.app.router.add_get("/api/v1/stats", self._stats)
+        self.app.router.add_get("/api/v1/music", self._music)
         self.app.router.add_get("/api/v1/programs", self._programs)
         self.app.router.add_get("/api/v1/people", self._people)
         self.app.router.add_get("/api/v1/exercises/{id}/{kind}", self._media)
@@ -262,6 +269,17 @@ class FakeAddon:
         if self.no_stats:
             return web.json_response({"detail": "Not Found"}, status=404)
         return web.json_response(self.stats)
+
+    async def _music(self, request: web.Request) -> web.Response:
+        self.music_requests += 1
+        if self.no_music or self.old_addon:
+            return web.json_response({"detail": "Not Found"}, status=404)
+        return web.json_response(
+            {
+                "speakers": "/api/v1/music/speakers",
+                "playlists": "/api/v1/music/playlists",
+            }
+        )
 
     async def _start_session(self, request: web.Request) -> web.Response:
         body = await request.json()

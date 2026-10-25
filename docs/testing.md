@@ -117,8 +117,11 @@ Desktop must run.
 8. The backup check (below).
 9. `scripts/full-loop down` removes the container and its volumes. The next `up` downloads HA Core again.
 
-The fast loop and the full loop both use port 8765: stop one before starting the other. The Supervisor's log is
-`/tmp/supervisor_run.log` inside the container.
+Both loops use port 8765. They can run at the same time only when the fast loop starts first. The full loop's
+container holds `*:8765`, so a fast loop started after it can't bind its server. With the fast loop first, its server
+answers on `127.0.0.1:8765` and the full loop's on `[::1]:8765`. `scripts/seed` takes only `localhost` or `127.0.0.1`,
+so stop the fast loop before seeding the full loop. The Supervisor's log is `/tmp/supervisor_run.log` inside the
+container.
 
 ### Backup check
 
@@ -159,7 +162,27 @@ HA Fitness uses ([the facts](ha-notes.md#music-assistant)).
     http://localhost:8123/api/services/music_assistant/fake_set_available
   ```
 
-The integration's tests won't use this fake. They will register their own fakes in the test HA, after the same facts.
+The integration's tests don't use this fake. They register their own fakes in the test HA, after the same facts, in
+`tests/music_fakes.py`.
+
+## Real Music Assistant (full loop)
+
+The fake can't show how the real Music Assistant behaves, so the full loop can run the real add-on. This is for a
+check before the music goes to the house, not for every change.
+`scripts/full-loop music` installs the fake under the same domain (`music_assistant`), so don't run it while the real
+Music Assistant is installed.
+
+1. Install the Music Assistant add-on in the full loop's Supervisor. Its repository is built in.
+2. Confirm the discovered integration in HA ("Discovered").
+3. Add music. In Music Assistant, add the Filesystem provider at `/media/test-music`. Make a few test tones with
+   ffmpeg and copy them into the Supervisor's media folder, in `test-music`.
+4. Make a playlist from the tones.
+5. Turn on "Expose this player to Home Assistant" for the browser's web player, in Music Assistant's player settings
+   ([why](ha-notes.md#music-assistant)). Without it, HA has no speaker.
+6. Check the add-on's `GET /api/v1/music/speakers` and `/music/playlists`, then run a workout with that speaker.
+
+Both loops use port 8765 ([when they can run together](#full-loop)).
+Music Assistant's data is part of the full loop, so `scripts/full-loop down` removes it.
 
 ## Chrome check
 
@@ -216,7 +239,26 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
    dashboard (Settings → Dashboards) and run `dev_onboard.py` again.
 10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at
     5, 4, 3, 2 and 1 s line up with the numbers, and that the change tones and the chime at the end come.
-11. The console is clean throughout.
+11. **Music, with the fake Music Assistant** (music spec §8). `scripts/seed` gives Sample the playlist "Workout Mix" on
+    the living-room speaker. Start Sample as in step 1.
+    - **Details:** the row "Musik" with "Workout Mix", and the "Højttaler" dropdown with the fake's three speakers,
+      the living-room speaker chosen.
+    - **The player:** when the countdown ends, the player shows after the pills: "Workout Mix" over the speaker's
+      name. The fake's speaker is `playing`, with the playlist as its `media_title`.
+    - **Pause and Play:** Pause musik pauses the speaker and the workout goes on; Afspil musik plays it again.
+    - **Next:** Næste nummer moves the speaker to "Track 2".
+    - **The fade at Slut:** Slut, then Ja. The speaker's volume steps down over about 5 s, the speaker pauses, and
+      the volume is set back.
+    - **Unavailable:** start again. Before the countdown ends (on the details screen or during Get ready), call
+      `fake_set_available` with `available: false` for the chosen speaker ([how](#the-fake-music-assistant)), so the
+      start fails. The player reads "Musik utilgængelig", Afspil musik is enabled and Næste nummer is disabled.
+      The fake only flips availability and keeps the player's state, so the order matters: a speaker that drops after
+      the start reads `playing` again when it comes back.
+    - **Recovery:** call `fake_set_available` with `available: true` while the workout runs. The speaker gets
+      `play_media` (its `media_title` becomes the playlist), and the player shows Pause musik.
+    - **Long names in portrait** (800×1280): give the program a long `playlist_name` and the speaker a long name
+      (its name in HA's entity settings). Both lines end in an ellipsis; the pills and Slut keep their place.
+12. The console is clean throughout.
 
 ### The refreshed screens
 

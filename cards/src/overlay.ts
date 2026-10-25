@@ -53,10 +53,22 @@ export interface SessionView {
 /** The answers to "How did it feel?" (UI refresh spec §3.3). */
 export type Feeling = "too_easy" | "just_right" | "too_hard";
 
-/** What `ha_fitness/session/subscribe` sends: the add-on's reachability and the session view. */
+/** The music of the session, as `ha_fitness/session/subscribe` sends it (music spec §5.4). */
+export interface MusicState {
+  playlist_name: string;
+  speaker: string;
+  speaker_name: string;
+  state: "waiting" | "playing" | "paused" | "unavailable";
+}
+
+/**
+ * What `ha_fitness/session/subscribe` sends: the add-on's reachability, the session view and its
+ * music. `music` is null without music; an integration older than music leaves it out.
+ */
 export interface SessionState {
   available: boolean;
   session: SessionView | null;
+  music?: MusicState | null;
 }
 
 /** A session is active while it runs or is paused; a finished view (kept 5 minutes) is not. */
@@ -115,7 +127,7 @@ const DIALOG_STYLE = [
 // The page-wide controller (spec §5.1). Cards hand it `hass` and ask it to open or close; the
 // overlay outlives the card that opened it.
 let hass: OverlayHass | undefined;
-let current: SessionState = { available: false, session: null };
+let current: SessionState = { available: false, session: null, music: null };
 const listeners = new Set<(state: SessionState) => void>();
 let dialog: HTMLDialogElement | undefined;
 let flow: FlowElement | undefined;
@@ -127,8 +139,8 @@ const losses = new WeakMap<SessionState, number>();
 
 const subscription = new WsSubscription<SessionState>("ha_fitness/session/subscribe", (message) => {
   // A refused subscription counts as unreachable; like the integration, it keeps the last view so
-  // the flow can keep counting down.
-  receive(message ?? { available: false, session: current.session });
+  // the flow can keep counting down. The music's state is unknown then, so it shows no player.
+  receive(message ?? { available: false, session: current.session, music: null });
 });
 
 function receive(next: SessionState): void {
@@ -149,7 +161,7 @@ let watched: Connection | undefined;
  * does, with the last view, until the integration's first message after `ready` (spec §5.3).
  */
 function onDisconnected(): void {
-  if (current.available) receive({ available: false, session: current.session });
+  if (current.available) receive({ available: false, session: current.session, music: null });
 }
 
 function watch(connection: Connection | undefined): void {

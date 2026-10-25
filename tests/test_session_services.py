@@ -272,6 +272,8 @@ async def test_ws_programs_shape_active_only(
     fredag["equipment"] = []
     fake_addon.programs = [*copy.deepcopy(PROGRAMS), fredag]
     await _connected(hass, config_entry)
+    # The music probe runs after the hello; Onsdag's music shows once it has answered.
+    await wait_for(hass, lambda: config_entry.runtime_data.music_supported)
     client = await hass_ws_client(hass)
 
     await client.send_json_auto_id({"type": "ha_fitness/programs"})
@@ -294,6 +296,7 @@ async def test_ws_programs_shape_active_only(
                 {"exercise_id": "0001", "name": "Squat"},
                 {"exercise_id": "custom-2", "name": "Wall sit"},
             ],
+            "music": PROGRAMS[1]["program"]["music"],
         },
         {
             "id": 5,
@@ -306,6 +309,7 @@ async def test_ws_programs_shape_active_only(
             "total_minutes": 30,
             "total_seconds": 1770,
             "stations": [{"exercise_id": "0002", "name": "Push-up"}],
+            "music": None,
         },
         {
             "id": 6,
@@ -319,6 +323,7 @@ async def test_ws_programs_shape_active_only(
             "total_seconds": 1770,
             "equipment": [],
             "stations": [{"exercise_id": "0002", "name": "Push-up"}],
+            "music": None,
         },
     ]
     await unload(hass, config_entry)
@@ -364,6 +369,7 @@ async def test_non_admin_can_use_commands(
         {"type": COMMAND, "command": "pause"},
         {"type": "ha_fitness/programs"},
         {"type": "ha_fitness/people"},
+        {"type": "ha_fitness/speakers"},
     ):
         await client.send_json_auto_id(message)
         assert (await client.receive_json())["success"]

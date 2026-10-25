@@ -13,6 +13,7 @@ from custom_components.ha_fitness import cards
 from custom_components.ha_fitness.const import CARDS_FILE, DOMAIN
 
 from .fake_addon import FakeAddon
+from .music_workout import workout  # noqa: F401 (the fixture, for the music tests)
 
 # A stand-in for the bundle Task 5 builds; the real frontend/ folder is never used in tests.
 FAKE_BUNDLE = (

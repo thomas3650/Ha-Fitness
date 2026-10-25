@@ -188,11 +188,12 @@ The cards are built into the integration: one bundle, released and versioned wit
   - `addon_too_old`: the ws handshake is refused with an HTTP status, `GET /api/v1/health` answers and
     `GET /api/v1/today` gives 404. That is an add-on from before step 4 (D37). It says to update the add-on, and the
     client keeps retrying.
-    - It is also raised for an add-on from before sessions or before stats. After each supported `hello`, one
-      background route probe gets `GET /api/v1/session`, then `GET /api/v1/stats`. A 404 on either while `/health`
-      answers raises the issue. The connection stays up, so `today` still works. Each `hello` deletes the issue first,
-      and the probe raises it again on such an add-on. A probe that can't reach the add-on does nothing; the next
-      `hello` probes again.
+    - It is also raised for an add-on from before sessions, stats or music. After each supported `hello`, one
+      background route probe gets `GET /api/v1/music`, then `GET /api/v1/session`, then `GET /api/v1/stats`. The
+      answer from `/music` sets whether the add-on supports music ([music](#music-in-the-integration)). A 404 on
+      any of them while `/health` answers raises the issue. The connection stays up, so `today` still works. Each
+      `hello` deletes the issue first, and the probe raises it again on such an add-on. A probe that can't reach the
+      add-on does nothing; the next `hello` probes again.
 
 ### Sessions in the integration
 
@@ -216,30 +217,60 @@ The integration relays it.
   - A refusal (`not_found`, `conflict` or `invalid` in the add-on's `detail.code`) raises a translated validation
     error with the key `session_<code>`. Anything else that fails is `unavailable`.
 - **The websocket commands.** None needs an admin, because the tablet's user isn't one.
-  - `ha_fitness/session/subscribe` sends `{available, session}` at once and after each change. The relay is described
-    below.
+  - `ha_fitness/session/subscribe` sends `{available, session, music}` at once and after each change. The relay is
+    described below; `music` is [described below](#music-in-the-integration).
   - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end` or
-    `feeling`), and for `start` also `program_id`, `participants` and an optional `training_day_id`. For `feeling` it
+    `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id` and an optional
+    `speaker` (checked with the add-on's pattern; dropped while the add-on has no music). For `feeling` it
     takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's view. Its
     error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
     `invalid` before any relay. A field of the wrong type fails HA's own schema, as `invalid_format`.
   - `ha_fitness/programs` gives the active programs, in the add-on's order, in the shape of workout spec §4. It is
-    built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up. It also relays `total_seconds` and
-    `equipment` (left out when an older add-on doesn't send it).
+    built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up. It also relays `total_seconds`,
+    `equipment` (left out when an older add-on doesn't send it) and `music` (null for an
+    [older add-on](#music-in-the-integration)).
   - `ha_fitness/people` gives `[{id, name}]` from `GET /api/v1/people`.
+  - `ha_fitness/speakers` gives `{speakers: [{entity_id, name, available}]}`, sorted by name. It reads HA only, so it
+    needs no add-on. It is empty without Music Assistant.
+  - `ha_fitness/music` takes `action` (`pause`, `play` or `next`) for the active session's speaker. It changes
+    the music, not the workout. Its errors are `not_found` with the key `music_not_found` (no active session with
+    music) and `unavailable` with the key `music_unavailable` (the speaker can't play, or the call failed).
   - The lists answer `unavailable` when the add-on can't be used, or sends an item they can't read.
 
 #### The session relay
 
-- **What counts as a change** is the pair (available, the add-on's view without `server_time`). A message from the
-  add-on that changes only `server_time` sends nothing.
+- **What counts as a change** is the triple (available, the add-on's view without `server_time`, the music state). A
+  message from the add-on that changes only `server_time` sends nothing.
 - **Every send** copies the view and sets `server_time` to HA's current time (UTC ISO with milliseconds).
 - **`time_trained` moves on** by HA's now minus the add-on's `server_time`, in whole seconds. That happens only while
   the status is `running` and the phase isn't the countdown. So a card that subscribes in the middle of a phase gets
   the right elapsed time. HA and the add-on share the host's clock.
 - **While the add-on can't be used** it sends `available: false` with the last view, not `null`. With no loaded entry
-  it sends `{available: false, session: null}`.
+  it sends `{available: false, session: null, music: null}`.
 - It follows the dispatcher, not one coordinator, so it survives an entry reload.
+
+#### Music in the integration
+
+The design is the [music spec](superpowers/specs/2026-10-24-music-design.md) §5; the code is
+`custom_components/ha_fitness/music.py` (D53, D54). The add-on only freezes a session's music choice. The integration
+plays it, because Music Assistant is HA's.
+
+- **The controller** follows the coordinator's session view. Per session it is `waiting`, `started` or `failed`.
+  - It starts the music when a running view has `started_at` set: the countdown's end, or "Start nu".
+  - It pauses and resumes the music with the workout.
+  - It fades the music out when the workout ends.
+  - A failed start is retried on Resume, when the speaker comes back and on the music player's Play.
+  - A session already started before the controller (an HA restart, an entry reload) is adopted: no restart, so the
+    playlist isn't played again from the top.
+- **The fade** lowers the volume in steps over a few seconds, then pauses, then sets the volume back. The next playback
+  isn't silent. Unloading the integration does the same for fades in flight.
+- **The music state** is `{playlist_name, speaker, speaker_name, state} | null`. `state` is `waiting`, `playing`,
+  `paused` or `unavailable`. HA's `idle` counts as `paused`. It is `null` without an active session, a session without
+  music, Music Assistant or an add-on that supports music.
+- **An older add-on** (no `GET /api/v1/music`) is flagged by the coordinator's route probe, which also raises
+  `addon_too_old` ([above](#the-integrations-side)). The programs then carry no music, a start drops the speaker and
+  the controller does nothing.
+- **A failure never stops the workout.** It is logged and shown on the card as the state `unavailable`.
 
 ### Stats in the integration
 
