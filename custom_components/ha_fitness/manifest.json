@@ -13,5 +13,5 @@
   "integration_type": "service",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/thomas3650/Ha-Fitness/issues",
-  "version": "0.1.0"
+  "version": "1.0.0"
 }
