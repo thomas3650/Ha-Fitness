@@ -1,6 +1,6 @@
 # Card editors: set up the cards in Home Assistant's dashboard editor
 
-**Status:** draft, for Thomas's approval. Issue #65.
+**Status:** approved by Thomas in chat on 2026-10-25. Issue #65. The today-card options he asked for after (days ahead, missed days) are #70.
 
 **Real Home Assistant:** no update needed beyond the next release of the integration (cards only). After the update
 the house's cards open in the visual editor, and a today card without its own `rows` takes its content's height
