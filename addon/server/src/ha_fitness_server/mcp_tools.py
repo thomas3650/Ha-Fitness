@@ -54,7 +54,7 @@ The program document:
 - rounds: 1-10, default 5.
 - work_seconds: 10-120, default 45. switch_seconds: 0-60, default 15. round_rest_seconds: 0-180, default 60.
 - countdown_seconds: 0, 5 or 10, default 5.
-- Keep these defaults (work 45 s, the break between stations 15 s, the rest between rounds 60 s, the countdown 5 s)
+- When creating: keep these defaults (work 45 s, the break between stations 15 s, the rest between rounds 60 s, the countdown 5 s)
   unless the user asks for another value. "The break" means switch_seconds. Never make up timings. When updating,
   leave the timing fields the user didn't mention as they are in get_program.
 - music: optional {"playlist", "playlist_name", "speaker": "media_player.<name>", "volume": 0-100, "shuffle": false}.

@@ -133,10 +133,13 @@ async def test_program_descriptions_keep_timings_and_ask_for_music(
     assert "switch_seconds" in description
     assert "15" in description
     assert "unless the user asks" in description
+    assert "never make up timings" in description.lower()
+    assert "When creating: keep" in description
+    assert "didn't mention" in description
     # The playlist and the speaker are asked for; no music is an answer.
     assert "list_playlists" in description
     assert "list_speakers" in description
-    assert "ask" in description
+    assert "always ask" in description
     assert "no music" in description.lower()
     # The summary before the yes names the timings and the music.
     summary = description[description.index("Before the yes") :]
