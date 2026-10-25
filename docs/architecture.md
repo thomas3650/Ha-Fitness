@@ -168,7 +168,8 @@ The cards are built into the integration: one bundle, released and versioned wit
   `stats` if they changed. A batch reaches each subscriber whole, so a long catch-up can't drop a client that keeps up
   (D58).
 - Not every change is one batch. A write that reconciles first publishes two: the reconcile's, then its own. A
-  finished session publishes its session messages, then `today` and `stats`.
+  finished session publishes its session messages, then `today` and `stats`. Right after a catch-up of more than 100
+  events, such a second batch can still drop the client (#61).
 - A subscriber whose backlog is already 100 messages or more when a batch arrives has fallen behind. It is dropped
   with close code 1013 and reconnects. So a queue holds at most 100 messages plus one batch.
 
