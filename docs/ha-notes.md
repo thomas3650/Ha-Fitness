@@ -48,6 +48,10 @@ fit no doc stay in [`notes.md`](notes.md).
 
 ## The integration
 
+- **`categories` in `manifest.json`.** HA added the key in October 2026 (one to three values, such as
+  `health_wellbeing`). It is optional for a custom integration, and hassfest only warns on an unknown value. The HACS
+  action warns when the key is missing and fails on an unknown value. The list:
+  [integration categories](https://contributors.home-assistant.io/core/integrations/categories/).
 - **`single_config_entry` blocks discovery updates.** With `"single_config_entry": true` in `manifest.json`, HA
   aborts every new flow with `single_instance_allowed` once an entry exists, before the flow's first step runs
   (checked in HA's `config_entries.py`). A Supervisor discovery for the existing entry then never reaches

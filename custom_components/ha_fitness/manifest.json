@@ -1,6 +1,9 @@
 {
   "domain": "ha_fitness",
   "name": "HA Fitness",
+  "categories": [
+    "health_wellbeing"
+  ],
   "codeowners": [
     "@thomas3650"
   ],
