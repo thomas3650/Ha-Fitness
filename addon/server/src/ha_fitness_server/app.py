@@ -39,15 +39,17 @@ __all__ = ["API_VERSION", "create_app"]
 _ALL_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
 
-def _publisher(hub: Hub, loop: asyncio.AbstractEventLoop) -> Callable[[Message], None]:
-    """Return a `publish` for any thread: it hands each message to `hub` on `loop`.
+def _publisher(
+    hub: Hub, loop: asyncio.AbstractEventLoop
+) -> Callable[[list[Message]], None]:
+    """Return a `publish` for any thread: it hands each batch of messages to `hub` on `loop`, in one callback.
 
     Once the loop is closed (a worker thread still running at shutdown), the message is dropped.
     """
 
-    def publish(message: Message) -> None:
+    def publish(messages: list[Message]) -> None:
         with suppress(RuntimeError):
-            loop.call_soon_threadsafe(hub.broadcast, message)
+            loop.call_soon_threadsafe(hub.broadcast, messages)
 
     return publish
 
@@ -136,7 +138,7 @@ def create_app(
         people = People(engine, ha, training_days, the_clock)
         programs = Programs(engine, library, training_days)
         sessions = Sessions(engine, the_clock, training_days, programs, people, publish)
-        stats = StatsService(engine, training_days, sessions, publish)
+        stats = StatsService(engine, training_days, sessions)
         holder.set(
             Services(
                 engine=engine,
@@ -151,7 +153,7 @@ def create_app(
             )
         )
         # Before recover and the reconcile, so the stats' memory of what was published starts filled.
-        training_days.on_change = stats.publish_if_changed
+        training_days.on_change = stats.messages_if_changed
         # Before reconcile: a session ended by the pause limit leaves its day to reconcile like any other.
         sessions.recover()
         training_days.reconcile_now()

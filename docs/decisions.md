@@ -481,3 +481,13 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   (blue), whatever the phase. The ring keeps the phase word.
 - **Why:** Orange means work. A paused work phase in orange looked like work going on.
 - **Source:** Thomas, screen review on 2026-10-25
+
+### D58: Push messages go out in batches; a subscriber is dropped only when it is already 100 behind
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** The add-on publishes one change's push messages as one batch: a reconcile's events, then `today`,
+  then `stats`. A batch reaches each subscriber whole. A subscriber is dropped (close code 1013) only when its backlog
+  is already 100 messages or more when a batch arrives.
+- **Why:** A catch-up after a long downtime can bring over 100 events at once. With a queue capped at 100 it dropped
+  even a client that kept up, and that burst's events were lost. The check keeps the memory bounded by 100 messages
+  plus one batch.
+- **Source:** Claude, 2026-10-25, issue #49

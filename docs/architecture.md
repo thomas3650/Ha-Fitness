@@ -164,8 +164,11 @@ The cards are built into the integration: one bundle, released and versioned wit
 - The stats add `stats` ([below](#stats-on-the-push-channel)): it follows `session` on connect, and comes again when
   the numbers change. A new message type isn't a breaking change, so `api_version` stays 1.
 - Events are fire-and-forget: a client that isn't connected misses them. The `today` state is what counts.
-- Each subscriber's queue holds 100 messages. A subscriber that falls behind is dropped with close code 1013 and
-  reconnects.
+- The add-on publishes in batches. One change's messages are one batch: a reconcile's events, then `today` if it
+  changed, then `stats` if they changed. A batch reaches each subscriber whole, so a long catch-up can't drop a client
+  that keeps up (D58).
+- A subscriber whose backlog is already 100 messages or more when a batch arrives has fallen behind. It is dropped
+  with close code 1013 and reconnects. So a queue holds at most 100 messages plus one batch.
 
 ```json
 {"type": "event", "event": "skipped", "training_day": {"id": 12, "program_id": 3, "program_name": "Onsdag", "date": "2026-10-28"}}
@@ -457,7 +460,7 @@ The design is the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3
   Like those, a newer `stats` queued while the snapshot was read replaces it.
 - **When it is sent.** Every reconcile, and so every training-day change, ends by calling the stats hook
   (`TrainingDays.on_change`) after `today`. So on the stream the order is the events, then `today` if it changed,
-  then `stats`. A finished session (completed or ended) also runs it, with or without a `done` event, so an extra
+  then `stats`, all in one batch. A finished session (completed or ended) also runs it, with or without a `done` event, so an extra
   session counts at once. A people write runs it through its reconcile.
 - **Only when changed.** Outside the connect snapshot, `stats` goes out only when it differs from the last one the hub
   published: one memory for the whole hub. The minute loop reconciles every minute, so it runs the hook too, but it
