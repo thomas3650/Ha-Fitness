@@ -164,9 +164,11 @@ The cards are built into the integration: one bundle, released and versioned wit
 - The stats add `stats` ([below](#stats-on-the-push-channel)): it follows `session` on connect, and comes again when
   the numbers change. A new message type isn't a breaking change, so `api_version` stays 1.
 - Events are fire-and-forget: a client that isn't connected misses them. The `today` state is what counts.
-- The add-on publishes in batches. One change's messages are one batch: a reconcile's events, then `today` if it
-  changed, then `stats` if they changed. A batch reaches each subscriber whole, so a long catch-up can't drop a client
-  that keeps up (D58).
+- The add-on publishes in batches. A reconcile's messages are one batch: its events, then `today` if it changed, then
+  `stats` if they changed. A batch reaches each subscriber whole, so a long catch-up can't drop a client that keeps up
+  (D58).
+- Not every change is one batch. A write that reconciles first publishes two: the reconcile's, then its own. A
+  finished session publishes its session messages, then `today` and `stats`.
 - A subscriber whose backlog is already 100 messages or more when a batch arrives has fallen behind. It is dropped
   with close code 1013 and reconnects. So a queue holds at most 100 messages plus one batch.
 
@@ -462,11 +464,12 @@ The design is the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3
   `stats` queued while the snapshot was read replaces it.
 - **When the stats fail.** If the stats can't be computed, the add-on logs it and the snapshot leaves `stats` out.
   It sends no `data: null`, which the integration would read as malformed. The rest of the snapshot and the channel go
-  on, and a later `stats` fills the gap.
+  on. A failure makes the add-on forget the last `stats` it published, so the next change after the stats recover
+  sends them, even with the same numbers.
 - **When it is sent.** Every reconcile, and so every training-day change, ends by calling the stats hook
   (`TrainingDays.on_change`) after `today`. So on the stream the order is the events, then `today` if it changed,
-  then `stats`, all in one batch. A finished session (completed or ended) also runs it, with or without a `done` event, so an extra
-  session counts at once. A people write runs it through its reconcile.
+  then `stats`, all in one batch. A finished session (completed or ended) also runs it, with or without a `done`
+  event, so an extra session counts at once. A people write runs it through its reconcile.
 - **Only when changed.** Outside the connect snapshot, `stats` goes out only when it differs from the last one the hub
   published: one memory for the whole hub. The minute loop reconciles every minute, so it runs the hook too, but it
   sends nothing while the numbers stay the same.

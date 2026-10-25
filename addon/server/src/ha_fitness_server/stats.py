@@ -110,10 +110,16 @@ class StatsService:
         """Return a `stats` message when they differ from the last ones published, else none; it counts as published.
 
         The training days call it after each change and publish what it returns in their batch, after `today`. It is
-        the one memory of what was published. The connect snapshot (`view()`) leaves it alone.
+        the one memory of what was published. The connect snapshot (`view()`) leaves it alone, except that any failed
+        computation forgets it: a client that connected during the failure got no `stats`, so the first good
+        computation after it is published even when the numbers are the same. An error is raised for the caller to log.
         """
         with self._training_days.lock:
-            stats = self.compute()
+            try:
+                stats = self.compute()
+            except Exception:
+                self._published = None
+                raise
             if stats == self._published:
                 return []
             self._published = stats
@@ -122,8 +128,9 @@ class StatsService:
     def view(self) -> Stats:
         """Tick the session, then reconcile, then compute: the lifespan's order, under the lock (stats spec §4).
 
-        A failed computation is logged here, with its exception, and raised as `Unavailable`: REST answers 503, MCP a
-        tool error, and the connect snapshot leaves the stats out.
+        A failed computation is logged with its exception, forgets what was published (see `messages_if_changed`) and
+        is raised as `Unavailable`: REST answers 503, MCP a tool error, and the connect snapshot leaves the stats out.
+        The reconcile's stats hook has usually failed and logged just before, so a failed read logs twice.
         """
         with self._training_days.lock:
             self._sessions.current()
@@ -131,6 +138,7 @@ class StatsService:
             try:
                 return self.compute()
             except Exception as error:
+                self._published = None
                 _LOGGER.exception("Computing the stats failed")
                 raise Unavailable(
                     "The stats are unavailable: they can't be computed right now"

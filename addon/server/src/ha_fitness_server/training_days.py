@@ -191,7 +191,10 @@ class TrainingDays:
         return events
 
     def publish_today(self) -> None:
-        """Publish `today` if it changed; for writes elsewhere that close a day, after their commit."""
+        """Publish `today` if it changed, then the stats if they changed, as one batch.
+
+        For writes elsewhere that close a day, after their commit.
+        """
         with self.lock:
             self._publish_today()
 

@@ -67,7 +67,7 @@ async def push_channel(websocket: WebSocket) -> None:
 
 
 async def _stats(services: Services) -> Message | None:
-    """Build the snapshot's `stats`; `None` when they can't be computed (the stats service has logged why).
+    """Build the snapshot's `stats`; `None` when they can't be computed (the stats service logs why).
 
     No `data: null` is sent: the integration reads that as malformed, and a later `stats` fills the gap.
     """
