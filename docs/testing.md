@@ -170,7 +170,10 @@ For every UI change, in the fast loop (and in the full loop before a release):
   user's profile.
 - Touch only: don't rely on hover.
 - No errors in the console.
-- Screenshots of the changed screens go in the PR description. They show the dev HA only, never the real one.
+- Screenshots of the changed screens go in `screenshots/<YYYY-MM-DD>-<topic>/` in the repo root, named
+  `<screen>-<landscape|portrait>.png` (for example `screenshots/2026-10-25-paused-blue/timer-paused-landscape.png`).
+  The folder is git-ignored: screenshots show exercise-library pictures, which stay out of the public repo. The PR
+  description lists the screens checked and the folder. Screenshots show the dev HA only, never the real one.
 
 ### The today card
 
