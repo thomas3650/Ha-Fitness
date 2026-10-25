@@ -140,6 +140,10 @@
         "training_day_id": {
           "name": "Træningsdagens ID",
           "description": "Den åbne træningsdag, træningen er til. Udelad den for en ekstra træning."
+        },
+        "date": {
+          "name": "Dato",
+          "description": "Den kommende dato for programmets næste træning, for at starte den før tid. Udelad den ellers."
         }
       }
     },
@@ -166,6 +170,9 @@
     },
     "session_invalid": {
       "message": "Vælg en eller to forskellige personer, og ikke flere personer, end programmet har stationer."
+    },
+    "session_early_unsupported": {
+      "message": "HA Fitness-appen er for gammel til at starte en træning før tid. Opdater appen."
     },
     "music_not_found": {
       "message": "Der kører ingen træning med musik."

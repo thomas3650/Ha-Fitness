@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import datetime as dt
 from http import HTTPStatus
 import logging
 from typing import Any
@@ -230,14 +231,19 @@ async def async_start_session(
     training_day_id: int | None,
     integration_version: str,
     speaker: str | None = None,
+    date: dt.date | None = None,
 ) -> dict[str, Any]:
     """Start a session (`POST /api/v1/session`); return its view.
 
-    `speaker` replaces the program's speaker for this session; it is sent only when given.
+    `speaker` replaces the program's speaker for this session; it is sent only when given. `date` starts the
+    program's next training early from that upcoming date (the today-ahead spec §6); it is sent only when given,
+    as YYYY-MM-DD.
     """
     body: dict[str, Any] = {"program_id": program_id, "participants": participants}
     if training_day_id is not None:
         body["training_day_id"] = training_day_id
+    if date is not None:
+        body["date"] = date.isoformat()
     if speaker is not None:
         body["speaker"] = speaker
     return await _async_session_post(
