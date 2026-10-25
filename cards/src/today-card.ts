@@ -313,9 +313,9 @@ export class TodayCard extends LitElement {
     this.config = config;
   }
 
-  /** One row of HA's grid for the top line, then three per open day (or for the session row). */
-  getGridOptions(): { columns: "full"; rows: number } {
-    return { columns: "full", rows: 1 + 3 * this.rowCount };
+  /** Full width. The height follows the content, so a width set in HA's Layout tab doesn't fix it. */
+  getGridOptions(): { columns: "full"; rows: "auto" } {
+    return { columns: "full", rows: "auto" };
   }
 
   getCardSize(): number {

@@ -686,24 +686,24 @@ test("language option wins", async () => {
   expect(text(getByRole(root(card), "alert"))).toBe("Træningsdagen er allerede afsluttet.");
 });
 
-test("the grid rows follow the days", async () => {
-  // One row for the top line, then three per day (or for the session row).
+test("full width, the height follows the content", async () => {
+  // getCardSize still counts one for the top line, then three per day (or for the session row).
   const fake = fakeHass();
   const card = await mount(fake);
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: "auto" });
   expect(card.getCardSize()).toBe(4);
 
   await push(card, fake, today([wednesday]));
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: "auto" });
   expect(card.getCardSize()).toBe(4);
 
   await push(card, fake, today([wednesday, strength]));
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 7 });
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: "auto" });
   expect(card.getCardSize()).toBe(7);
 
   fake.pushSession({ available: true, session: sessionView("running") });
   await card.updateComplete;
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: "auto" });
   expect(card.getCardSize()).toBe(4);
 });
 
@@ -953,7 +953,7 @@ test("today card visible during extra session with nothing open", async () => {
   expect(card.hidden).toBe(false);
   expect(card.style.display).toBe("");
   expect(text(root(card))).toBe("TRÆNING Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt");
-  expect(card.getGridOptions()).toEqual({ columns: "full", rows: 4 });
+  expect(card.getGridOptions()).toEqual({ columns: "full", rows: "auto" });
 
   // The add-on unreachable: the last view still counts as active, so the card stays.
   fake.pushSession({ available: false, session: sessionView("paused", null) });
