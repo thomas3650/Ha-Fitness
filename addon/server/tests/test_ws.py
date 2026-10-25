@@ -6,11 +6,13 @@ wrong one. The scheduler runs every 0.05 s, so a test that only moves the clock 
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import date, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
 from ha_fitness_server import __version__
 from ha_fitness_server.push import Hub
+from starlette.websockets import WebSocketDisconnect
 
 from tests.conftest import FrozenClock, MakeApp
 from tests.test_scheduler import FIVE, ZONE, local
@@ -215,7 +217,7 @@ def test_messages_from_the_client_are_ignored(make_app: MakeApp) -> None:
 
 
 async def test_hub_drops_a_subscriber_that_falls_behind() -> None:
-    """A subscriber that never reads is dropped once its queue is full; one that reads gets every message.
+    """A subscriber that never reads is dropped once it is 100 behind; one that reads gets every message.
 
     The hub is tested directly: the test transport has no backpressure, so a slow websocket can't be made.
     """
@@ -229,13 +231,92 @@ async def test_hub_drops_a_subscriber_that_falls_behind() -> None:
             if number == 100:
                 assert not slow_dropped.is_set()
                 assert slow.qsize() == 100
-            hub.broadcast({"type": "event", "number": number})
+            hub.broadcast([{"type": "event", "number": number}])
             while not reader.empty():
                 received.append(reader.get_nowait())
         assert slow_dropped.is_set()
         assert not reader_dropped.is_set()
         assert received == [{"type": "event", "number": n} for n in range(101)]
         held = slow.qsize()
-        hub.broadcast({"type": "event", "number": 101})
+        hub.broadcast([{"type": "event", "number": 101}])
         assert slow.qsize() == held
         assert reader.get_nowait() == {"type": "event", "number": 101}
+
+
+EVERY_DAY = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def test_catch_up_burst_reaches_the_client_in_order(make_app: MakeApp) -> None:
+    """A catch-up over 250 days pushes every `missed`, then `due`, `today` and `stats`, in order, without a drop.
+
+    The 251 events are far more than a subscriber's backlog limit, but they come as one batch.
+    """
+    clock = FrozenClock(local(2026, 1, 5, 9))  # a Monday
+    with _client(make_app, clock) as tc, tc.websocket_connect(WS) as ws:
+        _connect_expect(ws, "2026-01-05")
+        _create(tc, "Hver dag", EVERY_DAY)
+        assert _event(ws.receive_json()) == ("due", "Hver dag", "2026-01-05")
+        _today(ws.receive_json())
+        clock.set(local(2026, 9, 12, 9))  # 250 days on
+        start = date(2026, 1, 5)
+        expected = [
+            ("missed", "Hver dag", (start + timedelta(days=n)).isoformat())
+            for n in range(249)
+        ]
+        expected += [
+            ("due", "Hver dag", "2026-09-12"),
+            ("missed", "Hver dag", "2026-09-11"),
+        ]
+        received = [_event(ws.receive_json()) for _ in expected]
+        assert received == expected
+        assert _today(ws.receive_json()) == (
+            "2026-09-12",
+            [("Hver dag", "2026-09-12", "due")],
+        )
+        assert ws.receive_json()["type"] == "stats"
+
+
+async def test_hub_queues_a_whole_batch_unless_already_behind() -> None:
+    """A batch longer than the backlog limit is queued whole; a subscriber already 100 behind is dropped on the next.
+
+    The hub is tested directly, like the test above.
+    """
+    hub = Hub()
+    async with hub.subscribe() as (queue, dropped):
+        hub.broadcast([])
+        hub.broadcast([{"type": "event", "number": n} for n in range(250)])
+        assert not dropped.is_set()
+        assert queue.qsize() == 250
+        hub.broadcast([])
+        assert not dropped.is_set()
+        hub.broadcast([{"type": "event", "number": 250}])
+        assert dropped.is_set()
+        assert queue.qsize() == 250
+
+
+def test_a_client_100_behind_is_closed_with_1013(make_app: MakeApp) -> None:
+    """A client still 100 messages behind when the next publish comes is closed with 1013 ("try again later").
+
+    Setup only: the hub gets 101 single publishes in one loop callback, so the websocket can't send any in between.
+    """
+    clock = FrozenClock(local(2026, 10, 26, 9))
+    with _client(make_app, clock) as tc, tc.websocket_connect(WS) as ws:
+        _connect_expect(ws, "2026-10-26")
+        hub: Hub = tc.app.state.hub  # type: ignore[attr-defined]
+
+        def burst() -> None:
+            for number in range(101):
+                hub.broadcast([{"type": "event", "number": number}])
+
+        tc.portal.call(burst)  # type: ignore[union-attr]
+        assert _close_code(ws, limit=102) == 1013
+
+
+def _close_code(ws: Any, limit: int) -> int:
+    """Read up to `limit` messages until the add-on closes the websocket; return the close code."""
+    for _ in range(limit):
+        try:
+            ws.receive_json()
+        except WebSocketDisconnect as closed:
+            return closed.code
+    raise AssertionError(f"still open after {limit} messages")

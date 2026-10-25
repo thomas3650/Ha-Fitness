@@ -47,7 +47,8 @@ from .schemas import (
 )
 from .training_days import TrainingDays
 
-type Publish = Callable[[dict[str, Any]], None]
+# Publishes one batch of push messages, in order (training_days.py).
+type Publish = Callable[[list[dict[str, Any]]], None]
 
 COMMANDS = ("pause", "resume", "next", "previous", "end")
 # How a completed session can feel (UI refresh spec §3.3), from the `Feeling` type so the two match.
@@ -544,8 +545,8 @@ class Sessions:
         A finish can close a day (`done`), count an extra session or set `counting_from`, so each finish goes through
         `publish_today`, which also checks the stats.
         """
-        for message in messages:
-            self._publish(message)
+        if messages:
+            self._publish(messages)
         if any(message.get("event") in _FINISH_EVENTS for message in messages):
             self._training_days.publish_today()
 

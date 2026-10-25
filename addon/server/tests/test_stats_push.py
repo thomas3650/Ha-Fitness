@@ -10,6 +10,8 @@ Sat 31; Sun 1 and Mon 2 November.
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
+import sqlite3
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -30,6 +32,7 @@ from tests.session_helpers import (
 )
 from tests.test_people import THOMAS
 from tests.test_scheduler import ZONE, local
+from tests.test_stats import break_the_stats
 
 WS = "/api/v1/ws"
 STATS = "/api/v1/stats"
@@ -465,3 +468,79 @@ def test_minute_loop_pushes_stats_on_a_new_month_only(make_app: MakeApp) -> None
     assert november["data"]["date"] == "2026-11-01"
     assert stats["data"]["month"] == "2026-11"
     assert monday["data"]["date"] == "2026-11-02"
+
+
+def test_connect_without_stats_when_they_fail(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """With the stats broken, a connect sends `hello`, `today` and `session` but no `stats`, and pushes go on (#50)."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas = _thomas(tc)
+        program_id = _program(tc, "Lille", ["wed"])
+        _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
+        break_the_stats(tmp_path)
+        with tc.websocket_connect(WS) as ws:
+            _hello(ws)
+            _known(tc, program_id, thomas)
+            _next(ws, *KNOWN)
+
+
+def test_skip_with_stats_broken_still_pushes_its_batch(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """With the stats broken, a skip still pushes `skipped` and `today`; only its `stats` is left out (#50)."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas = _thomas(tc)
+        program_id = _program(tc, "Lille", ["wed", "thu"])
+        _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
+        clock.set(local(2026, 10, 29, 9))
+        day_id = _open_day(tc, program_id)
+        break_the_stats(tmp_path)
+        with tc.websocket_connect(WS) as ws:
+            _hello(ws)
+            _skip(tc, day_id)
+            _known(tc, program_id, thomas)
+            _next(ws, "event:skipped", "today", *KNOWN)
+
+
+def _starts(tmp_path: Path) -> list[tuple[int, str]]:
+    """Setup only: read each counted session's id and `started_at`, so `_restore_starts` can put them back."""
+    with sqlite3.connect(tmp_path / "ha_fitness.db") as connection:
+        rows = connection.execute(
+            "SELECT id, started_at FROM sessions WHERE counted"
+        ).fetchall()
+    connection.close()
+    return [(int(row[0]), str(row[1])) for row in rows]
+
+
+def _restore_starts(tmp_path: Path, starts: list[tuple[int, str]]) -> None:
+    """Setup only: put back the starts `break_the_stats` removed, which mends the stats."""
+    with sqlite3.connect(tmp_path / "ha_fitness.db") as connection:
+        connection.executemany(
+            "UPDATE sessions SET started_at = ? WHERE id = ?",
+            [(started_at, session_id) for session_id, started_at in starts],
+        )
+    connection.close()
+
+
+def test_recovered_stats_reach_a_client_that_connected_during_the_failure(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """Once the stats mend, the next change pushes them, though the numbers equal the last ones published (#50)."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas = _thomas(tc)
+        program_id = _program(tc, "Lille", ["wed"])
+        _train_before(tc, clock, program_id, thomas, WEDNESDAY_9)
+        good = tc.get(STATS).json()
+        starts = _starts(tmp_path)
+        break_the_stats(tmp_path)
+        with tc.websocket_connect(WS) as ws:
+            _hello(ws)
+            _restore_starts(tmp_path, starts)
+            # A session start reconciles first, so the stats hook runs before the start's own messages.
+            _known(tc, program_id, thomas)
+            [stats, *_] = _next(ws, "stats", *KNOWN)
+    assert stats == {"type": "stats", "data": good}

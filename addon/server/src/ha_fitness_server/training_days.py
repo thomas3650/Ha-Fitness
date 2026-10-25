@@ -35,7 +35,8 @@ from .schemas import (
 
 _LOGGER = logging.getLogger(__name__)
 
-type Publish = Callable[[dict[str, Any]], None]
+# Publishes one batch of push messages, in order; a batch reaches each subscriber whole (push.py).
+type Publish = Callable[[list[dict[str, Any]]], None]
 
 # The scheduler's one row in `scheduler_state` (migration 0002).
 _STATE_ID = 1
@@ -99,7 +100,8 @@ class TrainingDays:
         self.lock = threading.RLock()
         self._published: TodayView | None = None
         # Called after every `today` check, changed or not: a people change leaves `today` alone but not the stats.
-        self.on_change: Callable[[], None] = lambda: None
+        # It returns the messages to publish after `today` in the same batch (the stats, if they changed).
+        self.on_change: Callable[[], list[dict[str, Any]]] = list
 
     def local_date(self, moment: datetime) -> date:
         """Return the local date of an aware `moment`."""
@@ -117,7 +119,8 @@ class TrainingDays:
     def reconcile(self, today: date) -> None:
         """Handle each date from the day after the last handled one up to today, and today again (spec §3.3).
 
-        The first run starts at today. The events go out after the commit, then `today` if it changed.
+        The first run starts at today. The events go out after the commit, then `today` if it changed, as one batch:
+        a long catch-up can't drop a subscriber that keeps up (push.py).
         """
         with self.lock:
             events: list[dict[str, Any]] = []
@@ -137,9 +140,7 @@ class TrainingDays:
                     day += timedelta(days=1)
                 if state.last_date is None or state.last_date < today:
                     state.last_date = today
-            for message in events:
-                self._publish(message)
-            self._publish_today()
+            self._publish_today(events)
 
     def _handle(
         self, db_session: Session, programs: list[ProgramRow], day: date, today: date
@@ -190,7 +191,10 @@ class TrainingDays:
         return events
 
     def publish_today(self) -> None:
-        """Publish `today` if it changed; for writes elsewhere that close a day, after their commit."""
+        """Publish `today` if it changed, then the stats if they changed, as one batch.
+
+        For writes elsewhere that close a day, after their commit.
+        """
         with self.lock:
             self._publish_today()
 
@@ -209,20 +213,24 @@ class TrainingDays:
         db_session.flush()
         return _event("done", day)
 
-    def _publish_today(self) -> None:
-        """Publish `today` when what `/today` returns differs from what was published last, then call `on_change`.
+    def _publish_today(self, events: list[dict[str, Any]] | None = None) -> None:
+        """Publish `events`, then `today` if it changed, then what `on_change` returns, as one batch.
 
-        The write has committed by now, so an error in `on_change` (the stats) is logged and swallowed: it never
-        turns the write into a failure.
+        `today` goes out when what `/today` returns differs from what was published last. The write has committed by
+        now, so an error in `on_change` (the stats) is logged and swallowed: it never turns the write into a failure,
+        and the rest of the batch still goes out.
         """
+        batch = list(events or [])
         view = self._build_view(self.local_today())
         if view != self._published:
             self._published = view
-            self._publish({"type": "today", "data": view.model_dump(mode="json")})
+            batch.append({"type": "today", "data": view.model_dump(mode="json")})
         try:
-            self.on_change()
+            batch += self.on_change()
         except Exception:
             _LOGGER.exception("Updating the stats after a change failed")
+        if batch:
+            self._publish(batch)
 
     def _build_view(self, today: date) -> TodayView:
         """Build the body of `GET /today` for `today` (spec §3.5), without reconciling."""
@@ -349,8 +357,7 @@ class TrainingDays:
                 db_session.flush()
                 event = _event("skipped", day)
                 out = _out(day)
-            self._publish(event)
-            self._publish_today()
+            self._publish_today([event])
             return out
 
     def upsert_open(self, program_id: int, day: date) -> TrainingDayOut:

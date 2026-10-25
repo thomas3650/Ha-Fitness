@@ -7,10 +7,13 @@ from the logs on each call.
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
+import logging
+from typing import Any
 
 from sqlalchemy import Engine, select
 
 from .db import session
+from .errors import Unavailable
 from .models import (
     AppState,
     Person as PersonRow,
@@ -21,7 +24,9 @@ from .models import (
 )
 from .schemas import PersonStats, Stats, Totals
 from .sessions import Sessions, time_trained
-from .training_days import Publish, TrainingDays
+from .training_days import TrainingDays
+
+_LOGGER = logging.getLogger(__name__)
 
 # The app's one row in `app_state` (migration 0003).
 _APP_STATE_ID = 1
@@ -90,39 +95,54 @@ def _streak(outcomes: dict[date, list[str]]) -> int:
 
 
 class StatsService:
-    """Computes `Stats` (stats spec §3) under the training days' lock, and publishes them when they change (§4)."""
+    """Computes `Stats` (stats spec §3) under the training days' lock; the training days publish them on a change (§4)."""
 
     def __init__(
-        self,
-        engine: Engine,
-        training_days: TrainingDays,
-        sessions: Sessions,
-        publish: Publish,
+        self, engine: Engine, training_days: TrainingDays, sessions: Sessions
     ) -> None:
-        """Use `engine`, the training days (their lock and local dates), the sessions (for the tick) and `publish`."""
+        """Use `engine`, the training days (their lock and local dates) and the sessions (for the tick)."""
         self._engine = engine
         self._training_days = training_days
         self._sessions = sessions
-        self._publish = publish
         self._published: Stats | None = None
 
-    def publish_if_changed(self) -> None:
-        """Publish `stats` when they differ from the last ones published; the training days call it after each change.
+    def messages_if_changed(self) -> list[dict[str, Any]]:
+        """Return a `stats` message when they differ from the last ones published, else none; it counts as published.
 
-        It is the one memory of what was published. The connect snapshot (`view()`) leaves it alone.
+        The training days call it after each change and publish what it returns in their batch, after `today`. It is
+        the one memory of what was published. The connect snapshot (`view()`) leaves it alone, except that any failed
+        computation forgets it: a client that connected during the failure got no `stats`, so the first good
+        computation after it is published even when the numbers are the same. An error is raised for the caller to log.
         """
         with self._training_days.lock:
-            stats = self.compute()
-            if stats != self._published:
-                self._published = stats
-                self._publish({"type": "stats", "data": stats.model_dump(mode="json")})
+            try:
+                stats = self.compute()
+            except Exception:
+                self._published = None
+                raise
+            if stats == self._published:
+                return []
+            self._published = stats
+            return [{"type": "stats", "data": stats.model_dump(mode="json")}]
 
     def view(self) -> Stats:
-        """Tick the session, then reconcile, then compute: the lifespan's order, under the lock (stats spec §4)."""
+        """Tick the session, then reconcile, then compute: the lifespan's order, under the lock (stats spec §4).
+
+        A failed computation is logged with its exception, forgets what was published (see `messages_if_changed`) and
+        is raised as `Unavailable`: REST answers 503, MCP a tool error, and the connect snapshot leaves the stats out.
+        The reconcile's stats hook has usually failed and logged just before, so a failed read logs twice.
+        """
         with self._training_days.lock:
             self._sessions.current()
             self._training_days.reconcile_now()
-            return self.compute()
+            try:
+                return self.compute()
+            except Exception as error:
+                self._published = None
+                _LOGGER.exception("Computing the stats failed")
+                raise Unavailable(
+                    "The stats are unavailable: they can't be computed right now"
+                ) from error
 
     def compute(self) -> Stats:
         """Compute the stats from what is stored now, without ticking or reconciling."""

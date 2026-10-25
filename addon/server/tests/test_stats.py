@@ -12,6 +12,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
+from fastmcp.exceptions import ToolError
 from ha_fitness_server import db
 import httpx
 import pytest
@@ -36,6 +37,7 @@ from tests.session_helpers import (
     set_people,
     start,
     started,
+    started_with_mcp,
 )
 from tests.test_people import ELIN, THOMAS
 from tests.test_scheduler import ZONE, local
@@ -698,7 +700,7 @@ async def test_people_order(make_app: MakeApp) -> None:
     assert [person["id"] for person in second["people"]] == [thomas, elin]
 
 
-def _break_the_stats(tmp_path: Path) -> None:
+def break_the_stats(tmp_path: Path) -> None:
     """Set each counted session's `started_at` to NULL, which trips the stats and nothing else (review backlog §2.1).
 
     Setup only: no public interface stores a counted session without a start.
@@ -718,10 +720,9 @@ async def test_stats_failure_never_breaks_a_write(
         program = await create_small(client, "Lille", weekdays=EVERY_DAY)
         day_id = await open_day(client, program["id"])
         await train(client, clock, program["id"], [thomas], day_id)
-        _break_the_stats(tmp_path)
+        break_the_stats(tmp_path)
         # The setup broke the stats: reading them fails.
-        with pytest.raises(AssertionError):
-            await client.get(STATS)
+        assert (await client.get(STATS)).status_code == 503
         clock.set(local(2026, 10, 15, 9))
         today = await client.get(TODAY)
         assert today.status_code == 200, today.text
@@ -744,8 +745,26 @@ async def test_stats_failure_during_session_finish(
         clock.advance(timedelta(minutes=10))
         await start(client, program["id"], [thomas])
         # Only the first session is counted, so only it loses its start.
-        _break_the_stats(tmp_path)
+        break_the_stats(tmp_path)
         clock.advance(timedelta(minutes=5))
         response = await client.get(SESSION, headers=AGENT)
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "completed"
+
+
+async def test_stats_failure_answers_503_and_a_tool_error(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """With the stats broken, `GET /stats` answers 503 with a detail and `get_stats` a tool error (issue #50)."""
+    clock = FrozenClock(local(2026, 10, 14, 9))
+    async with started_with_mcp(clock, make_app) as (client, mcp_client):
+        [thomas] = await set_people(client, THOMAS)
+        program = await create_small(client, "Lille", weekdays=EVERY_DAY)
+        day_id = await open_day(client, program["id"])
+        await train(client, clock, program["id"], [thomas], day_id)
+        break_the_stats(tmp_path)
+        response = await client.get(STATS)
+        with pytest.raises(ToolError, match="unavailable"):
+            await mcp_client.call_tool("get_stats", {})
+    assert response.status_code == 503, response.text
+    assert "unavailable" in response.json()["detail"]
