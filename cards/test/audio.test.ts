@@ -162,3 +162,17 @@ test("work is higher than switch and rest, and the chime is three rising tones",
   expect(chime.every((tone) => tone.cancelled)).toBe(true);
   expect(work.cancelled).toBe(false);
 });
+
+test("work is one long beep of about a second; the short beep stays short", () => {
+  const fake = installFakeAudio();
+  audio.unlockAudio();
+  const now = 1_761_300_000_000;
+
+  audio.scheduleTone("work", now + 1_000, now);
+  audio.scheduleTone("beep", now + 1_000, now);
+  const [work, beep] = fake.tones();
+  expect(fake.tones()).toHaveLength(2);
+  // Each oscillator is planned to stop at its end: the work tone lasts at least 0.9 s.
+  expect(work.stops[0]! - work.start!).toBeGreaterThanOrEqual(0.9);
+  expect(beep.stops[0]! - beep.start!).toBeCloseTo(0.12, 6);
+});
