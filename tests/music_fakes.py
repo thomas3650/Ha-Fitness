@@ -7,7 +7,7 @@ of other domains. Each player records the service calls it gets and really chang
 """
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -87,7 +87,8 @@ class MockPlayer(MediaPlayerEntity):
     shuffle do nothing while the player has no queue; `play_media` gives it one and plays it. A call whose name
     is in `fail` is recorded, then raises `HomeAssistantError` and changes nothing. While `gate` is set,
     `play_media` is recorded, then waits for the event before it plays. `paused_state` is the state a pause
-    leaves: Music Assistant 2.10.8's web player reports `idle` there.
+    leaves: Music Assistant 2.10.8's web player reports `idle` there. `on_volume_set`, when set, runs inside
+    each `volume_set` call, after it is recorded (a test moves the clock there, as a slow call would).
     """
 
     _attr_should_poll = False
@@ -109,6 +110,7 @@ class MockPlayer(MediaPlayerEntity):
         self.fail: set[str] = set()
         self.gate: asyncio.Event | None = None
         self.paused_state = MediaPlayerState.PAUSED
+        self.on_volume_set: Callable[[], object] | None = None
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any]:
@@ -120,6 +122,11 @@ class MockPlayer(MediaPlayerEntity):
         self.calls.append((name, arguments))
         if name in self.fail:
             raise HomeAssistantError(f"{name} failed on {self.entity_id}")
+
+    def set_volume_level(self, volume: float | None) -> None:
+        """Report another volume level, or none, without a call."""
+        self._attr_volume_level = volume
+        self.async_write_ha_state()
 
     def set_available(self, available: bool) -> None:
         """Make the player available or unavailable."""
@@ -169,6 +176,8 @@ class MockPlayer(MediaPlayerEntity):
     async def async_set_volume_level(self, volume: float) -> None:
         """Set the volume (only the players with `VOLUME_SET`)."""
         self._record("volume_set", {"volume_level": volume})
+        if self.on_volume_set is not None:
+            self.on_volume_set()
         self._attr_volume_level = volume
         self.async_write_ha_state()
 

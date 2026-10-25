@@ -5,8 +5,9 @@ This module never imports `websocket_api`; the commands import from here.
 
 import asyncio
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -39,7 +40,7 @@ from homeassistant.core import (
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity import entity_sources
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.util import dt as dt_util
 import probatio
 
@@ -60,6 +61,10 @@ _CALL_ERRORS = (HomeAssistantError, probatio.Invalid)
 WAITING = "waiting"
 STARTED = "started"
 FAILED = "failed"
+
+# The fade (the music spec §5.3): ten steps, one every half second, so 5 s.
+FADE_STEPS = 10
+FADE_STEP_SECONDS = 0.5
 
 # The session statuses of an active session; the others are finished.
 _ACTIVE = frozenset({"running", "paused"})
@@ -159,13 +164,24 @@ class _Followed:
         return speaker
 
 
+@dataclass(slots=True)
+class _Fade:
+    """A running fade on a speaker: its starting level, its step timers and the step running now."""
+
+    speaker: str
+    level: float
+    cancel_timers: list[CALLBACK_TYPE] = field(default_factory=list)
+    cancelled: bool = False
+    task: asyncio.Task[None] | None = None
+
+
 class MusicController:
     """Play, pause and resume the session's music on its speaker (the music spec §5.1 and §5.2).
 
     It takes the session views from the coordinator's listener. Per session it is `waiting`, `started` or
     `failed`. Its decisions are made in the listener, in the order of the views; the speaker calls run one after
     another, so a Pause during the start goes out after it. Each change of the music state, a speaker's state
-    included, is sent on the dispatcher.
+    included, is sent on the dispatcher. When a started session ends, its music fades out (§5.3).
     """
 
     def __init__(self, hass: HomeAssistant, coordinator: FitnessCoordinator) -> None:
@@ -176,6 +192,9 @@ class MusicController:
         self._followed: _Followed | None = None
         self._remove_listener: CALLBACK_TYPE | None = None
         self._lock = asyncio.Lock()
+        # The running fades by speaker: at most one per speaker.
+        self._fades: dict[str, _Fade] = {}
+        self._stopped = False
 
     async def async_start(self) -> None:
         """Note the controller's own start time and follow the session's views."""
@@ -184,11 +203,17 @@ class MusicController:
         self._handle_update()
 
     async def async_stop(self) -> None:
-        """Stop following the session and its speaker."""
+        """Stop following the session and its speaker; pause each fading speaker, then set its level back."""
+        self._stopped = True
         if self._remove_listener is not None:
             self._remove_listener()
             self._remove_listener = None
         self._forget()
+        async with self._lock:
+            for fade in list(self._fades.values()):
+                await self._async_cancel_fade(fade)
+                await self._async_fade_call(fade.speaker, SERVICE_MEDIA_PAUSE)
+                await self._async_restore(fade)
 
     @callback
     def music_state(self) -> dict[str, Any] | None:
@@ -262,8 +287,11 @@ class MusicController:
             or view.get("id") != followed.session_id
             or view.get("status") not in _ACTIVE
         ):
-            # The session completed, ended or disappeared.
+            # The session completed, ended or disappeared: once forgotten, it can't fade twice.
             self._forget()
+            if followed.state == STARTED:
+                speaker = followed.speaker
+                self._queue(lambda: self._async_begin_fade(speaker))
             followed = None
         if view is None or view.get("status") not in _ACTIVE or not view.get("music"):
             return
@@ -374,6 +402,10 @@ class MusicController:
 
     async def _async_try_start(self, followed: _Followed) -> bool:
         speaker = followed.speaker
+        if (fade := self._fades.get(speaker)) is not None:
+            # A start on a fading speaker: stop the fade and set its level back first.
+            await self._async_cancel_fade(fade)
+            await self._async_restore(fade)
         state = self.hass.states.get(speaker)
         if not _can_play(self.hass, speaker):
             _LOGGER.warning("The speaker %s can't play the workout's music", speaker)
@@ -433,6 +465,92 @@ class MusicController:
             _LOGGER.warning(
                 "The music's %s on %s failed: %s", service, followed.speaker, err
             )
+
+    async def _async_begin_fade(self, speaker: str) -> None:
+        """The fade (the music spec §5.3), under the lock: schedule its ten steps, or only pause.
+
+        It runs after the jobs before it, so a Pause queued just before the end has landed: a speaker that
+        isn't playing then gets nothing.
+        """
+        state = self.hass.states.get(speaker)
+        if (
+            not _can_play(self.hass, speaker)
+            or state is None
+            or state.state != STATE_PLAYING
+        ):
+            return
+        level = state.attributes.get(ATTR_MEDIA_VOLUME_LEVEL)
+        features = state.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
+        if (
+            self._stopped
+            or level is None
+            or not features & MediaPlayerEntityFeature.VOLUME_SET
+        ):
+            # No volume to lower, or the entry is unloading: only the pause.
+            await self._async_fade_call(speaker, SERVICE_MEDIA_PAUSE)
+            return
+        # A start on the speaker stops its fade, and a fade needs a start before it, so there is none here.
+        fade = _Fade(speaker=speaker, level=float(level))
+        self._fades[speaker] = fade
+        # Every step is scheduled now, from the same moment, so a slow call doesn't push the next back.
+        fade.cancel_timers = [
+            async_call_later(
+                self.hass,
+                step * FADE_STEP_SECONDS,
+                partial(self._handle_fade_step, fade, step),
+            )
+            for step in range(1, FADE_STEPS + 1)
+        ]
+
+    @callback
+    def _handle_fade_step(self, fade: _Fade, step: int, _now: datetime) -> None:
+        """Run a step when its time comes (a cancelled fade has no timers left); the entry's unload waits for it."""
+        fade.task = self.coordinator.entry.async_create_task(
+            self.hass, self._async_fade_step(fade, step), f"{DOMAIN} music fade"
+        )
+
+    async def _async_fade_step(self, fade: _Fade, step: int) -> None:
+        """Set the step's level; the last step (level 0) then pauses and sets the starting level back."""
+        await self._async_fade_call(
+            fade.speaker,
+            SERVICE_VOLUME_SET,
+            {ATTR_MEDIA_VOLUME_LEVEL: fade.level * (FADE_STEPS - step) / FADE_STEPS},
+        )
+        if step < FADE_STEPS or fade.cancelled:
+            return
+        if self._fades.get(fade.speaker) is fade:
+            del self._fades[fade.speaker]
+        await self._async_fade_call(fade.speaker, SERVICE_MEDIA_PAUSE)
+        await self._async_restore(fade)
+
+    async def _async_cancel_fade(self, fade: _Fade) -> None:
+        """Stop a fade: no later step runs, and the step running now has finished."""
+        fade.cancelled = True
+        for cancel in fade.cancel_timers:
+            cancel()
+        if self._fades.get(fade.speaker) is fade:
+            del self._fades[fade.speaker]
+        if fade.task is not None:
+            # asyncio.wait doesn't raise if the step's task was cancelled at shutdown.
+            await asyncio.wait({fade.task})
+
+    async def _async_restore(self, fade: _Fade) -> None:
+        """Set the fade's starting level back, so the next playback isn't silent."""
+        await self._async_fade_call(
+            fade.speaker, SERVICE_VOLUME_SET, {ATTR_MEDIA_VOLUME_LEVEL: fade.level}
+        )
+
+    async def _async_fade_call(
+        self, speaker: str, service: str, data: dict[str, Any] | None = None
+    ) -> None:
+        """Call the speaker for the fade; a failure, or a speaker that can't play, is a warning."""
+        if not _can_play(self.hass, speaker):
+            _LOGGER.warning("The speaker %s can't take the fade's %s", speaker, service)
+            return
+        try:
+            await self._async_call(MEDIA_PLAYER_DOMAIN, service, speaker, data)
+        except _CALL_ERRORS as err:
+            _LOGGER.warning("The fade's %s on %s failed: %s", service, speaker, err)
 
     async def _async_call(
         self,

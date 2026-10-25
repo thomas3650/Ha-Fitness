@@ -1,8 +1,11 @@
-"""Tests for the music controller: the music follows the session (the music spec §5.1 and §5.2).
+"""Tests for the music controller: the music follows the session (the music spec §5.1 to §5.3).
 
 The views come from the fake add-on's push channel; the calls and states are the mock Music Assistant's.
 The clock is frozen on a whole second before the entry is set up, so the controller's own start time is that
 second: a session started before it is adopted, one started at it or later is not.
+
+The fade's steps are driven by `freezer.tick` and `async_fire_time_changed_exact`: the plain
+`async_fire_time_changed` reaches 0.5 s past the time it is given, one step too far.
 """
 
 import asyncio
@@ -18,7 +21,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed_exact,
+)
 
 from custom_components.ha_fitness.const import SIGNAL_UPDATE
 
@@ -40,6 +46,9 @@ MUSIC: dict[str, Any] = {
     "shuffle": True,
 }
 START_CALLS = ["volume_set", "play_media", "shuffle_set"]
+# The kitchen's level after the start (the plan's volume 70), and the fade's ten steps from it down to 0.
+START_LEVEL = 0.7
+FADE_LEVELS = [START_LEVEL * (10 - step) / 10 for step in range(1, 11)]
 
 
 def _iso(moment: datetime) -> str:
@@ -65,6 +74,22 @@ def _view(
 
 def _names(player: MockPlayer) -> list[str]:
     return [name for name, _ in player.calls]
+
+
+def _levels(calls: list[tuple[str, dict[str, Any]]]) -> list[float]:
+    """Return the levels of the `volume_set` calls."""
+    return [
+        arguments["volume_level"] for name, arguments in calls if name == "volume_set"
+    ]
+
+
+async def _tick(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: float
+) -> None:
+    """Move the clock on, fire what is due by then, and let its calls finish."""
+    freezer.tick(timedelta(seconds=seconds))
+    async_fire_time_changed_exact(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
 
 
 class Workout:
@@ -412,7 +437,10 @@ async def test_pause_during_start_reads_waiting_then_pauses(
 
 
 async def test_new_session_is_followed_afresh(workout: Workout) -> None:
-    """A session with another id after a started one waits for its own start, then starts again."""
+    """A session with another id after a started one waits for its own start, then starts again.
+
+    The first session's end began a fade; the new start stops it and sets the level back first.
+    """
     started = workout.setup_time + timedelta(seconds=10)
     await workout.push(_view(started_at=started))
     assert _names(workout.kitchen) == START_CALLS
@@ -424,7 +452,7 @@ async def test_new_session_is_followed_afresh(workout: Workout) -> None:
     assert _names(workout.kitchen) == START_CALLS
     await workout.push(_view(id=8, started_at=started + timedelta(minutes=30)))
 
-    assert _names(workout.kitchen) == [*START_CALLS, *START_CALLS]
+    assert _names(workout.kitchen) == [*START_CALLS, "volume_set", *START_CALLS]
 
 
 async def test_unload_stops_following_the_speaker(
@@ -483,3 +511,236 @@ async def test_no_start_without_music_supported(
     assert workout.music_state() is None
     await unload(hass, config_entry)
     await unload(hass, music_entry)
+
+
+async def _start_then_end(workout: Workout) -> int:
+    """Start the music, then end the session; return the number of calls before the end."""
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(_view(started_at=started))
+    before = len(workout.kitchen.calls)
+    await workout.push(_view(status="ended", started_at=started))
+    return before
+
+
+async def test_fade_steps_then_pause_then_restore(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """The end lowers the volume in ten steps over 5 s, then pauses, then sets the starting level back."""
+    before = await _start_then_end(workout)
+    assert workout.kitchen.calls[before:] == []
+    assert workout.music_state() is None
+
+    for step in range(1, 11):
+        await _tick(hass, freezer, 0.4)
+        assert len(workout.kitchen.calls) == before + step - 1
+        await _tick(hass, freezer, 0.1)
+        assert len(workout.kitchen.calls) >= before + step
+
+    fade = workout.kitchen.calls[before:]
+    assert [name for name, _ in fade] == [
+        *["volume_set"] * 10,
+        "media_pause",
+        "volume_set",
+    ]
+    assert _levels(fade) == pytest.approx([*FADE_LEVELS, START_LEVEL])
+    speaker = hass.states.get("media_player.kitchen")
+    assert speaker is not None
+    assert speaker.state == MediaPlayerState.PAUSED
+    assert speaker.attributes["volume_level"] == pytest.approx(START_LEVEL)
+    await _tick(hass, freezer, 5)
+    assert len(workout.kitchen.calls) == before + 12
+
+
+async def test_fade_steps_keep_absolute_times(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A slow step doesn't push the next one back: each step runs at 0.5 s times its number."""
+    before = await _start_then_end(workout)
+    workout.kitchen.on_volume_set = lambda: freezer.tick(timedelta(seconds=0.3))
+
+    await _tick(hass, freezer, 0.5)
+    assert len(workout.kitchen.calls) == before + 1
+    # The step's call took 0.3 s, so the clock is at 0.8 s; the second step is due at 1.0 s.
+    await _tick(hass, freezer, 0.1)
+    assert len(workout.kitchen.calls) == before + 1
+    await _tick(hass, freezer, 0.1)
+
+    assert _levels(workout.kitchen.calls[before:]) == pytest.approx(FADE_LEVELS[:2])
+
+
+async def test_fade_on_other_speaker_runs_on(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A new session on another speaker starts there, and the kitchen's fade goes on to its end."""
+    before = await _start_then_end(workout)
+    await _tick(hass, freezer, 1)
+    living_room = workout.players["media_player.living_room"]
+    music = {**MUSIC, "speaker": "media_player.living_room"}
+
+    await workout.push(
+        _view(id=8, music=music, started_at=workout.setup_time + timedelta(minutes=30))
+    )
+    for _ in range(8):
+        await _tick(hass, freezer, 0.5)
+
+    assert _names(living_room) == START_CALLS
+    fade = workout.kitchen.calls[before:]
+    assert [name for name, _ in fade][-2:] == ["media_pause", "volume_set"]
+    assert _levels(fade) == pytest.approx([*FADE_LEVELS, START_LEVEL])
+
+
+@pytest.mark.parametrize("speaker", ["media_player.garage", "media_player.kitchen"])
+async def test_fade_without_volume_set_only_pauses(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    workout: Workout,
+    speaker: str,
+) -> None:
+    """A speaker without VOLUME_SET (the garage), or without a volume level, is only paused."""
+    player = workout.players[speaker]
+    music = {**MUSIC, "speaker": speaker}
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(_view(music=music, started_at=started))
+    player.set_volume_level(None)
+    before = len(player.calls)
+
+    await workout.push(_view(status="ended", music=music, started_at=started))
+    await _tick(hass, freezer, 6)
+
+    assert _names(player)[before:] == ["media_pause"]
+
+
+@pytest.mark.parametrize(
+    "paused_state", [MediaPlayerState.PAUSED, MediaPlayerState.IDLE]
+)
+async def test_no_fade_when_not_playing(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    workout: Workout,
+    paused_state: MediaPlayerState,
+) -> None:
+    """A workout that ends while paused gets no fade and no second pause, also when a pause reads idle."""
+    workout.kitchen.paused_state = paused_state
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(_view(started_at=started))
+    await workout.push(_view(status="paused", started_at=started))
+
+    await workout.push(_view(status="ended", started_at=started))
+    await _tick(hass, freezer, 6)
+
+    assert _names(workout.kitchen) == [*START_CALLS, "media_pause"]
+
+
+async def test_fade_on_disappearance(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A running session whose view goes straight to none fades out."""
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(_view(started_at=started))
+    before = len(workout.kitchen.calls)
+
+    await workout.push(None)
+    for _ in range(10):
+        await _tick(hass, freezer, 0.5)
+
+    fade = workout.kitchen.calls[before:]
+    assert [name for name, _ in fade][-2:] == ["media_pause", "volume_set"]
+    assert _levels(fade) == pytest.approx([*FADE_LEVELS, START_LEVEL])
+
+
+async def test_fade_cancelled_by_start_on_same_speaker(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A start on the fading speaker stops the fade, sets the starting level back, then starts."""
+    before = await _start_then_end(workout)
+    await _tick(hass, freezer, 0.5)
+    await _tick(hass, freezer, 0.5)
+    await _tick(hass, freezer, 0.5)
+
+    await workout.push(
+        _view(
+            id=8,
+            music={**MUSIC, "volume": 50},
+            started_at=workout.setup_time + timedelta(minutes=30),
+        )
+    )
+    await _tick(hass, freezer, 5)
+
+    fade = workout.kitchen.calls[before:]
+    assert [name for name, _ in fade] == [
+        *["volume_set"] * 3,
+        "volume_set",
+        *START_CALLS,
+    ]
+    assert _levels(fade) == pytest.approx([*FADE_LEVELS[:3], START_LEVEL, 0.5])
+    state = workout.music_state()
+    assert state is not None
+    assert state["state"] == "playing"
+
+
+async def test_fade_at_unload_pauses_then_restores(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """Unloading during a fade stops it: the speaker is paused, then gets its starting level back."""
+    before = await _start_then_end(workout)
+    await _tick(hass, freezer, 0.5)
+    await _tick(hass, freezer, 0.5)
+
+    await unload(hass, workout.entry)
+    await _tick(hass, freezer, 5)
+
+    fade = workout.kitchen.calls[before:]
+    assert [name for name, _ in fade] == [
+        "volume_set",
+        "volume_set",
+        "media_pause",
+        "volume_set",
+    ]
+    assert _levels(fade) == pytest.approx([*FADE_LEVELS[:2], START_LEVEL])
+
+
+async def test_fade_once_per_session(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """The ended view, a repeat of it, then no view: one fade."""
+    started = workout.setup_time + timedelta(seconds=10)
+    before = await _start_then_end(workout)
+    await _tick(hass, freezer, 0.5)
+    await workout.push(_view(status="ended", started_at=started))
+    await workout.push(None)
+
+    await _tick(hass, freezer, 5)
+
+    assert len(workout.kitchen.calls) == before + 12
+
+
+async def test_failed_fade_step_goes_on(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A step whose call raises doesn't stop the fade: the steps, the pause and the restore still go out."""
+    before = await _start_then_end(workout)
+    workout.kitchen.fail = {"volume_set"}
+
+    for _ in range(10):
+        await _tick(hass, freezer, 0.5)
+
+    assert _names(workout.kitchen)[before:] == [
+        *["volume_set"] * 10,
+        "media_pause",
+        "volume_set",
+    ]
+
+
+async def test_fade_on_speaker_gone_unavailable_makes_no_calls(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A speaker that goes unavailable during the fade gets no more calls."""
+    before = await _start_then_end(workout)
+    await _tick(hass, freezer, 0.5)
+    workout.kitchen.set_available(False)
+
+    for _ in range(9):
+        await _tick(hass, freezer, 0.5)
+
+    assert _levels(workout.kitchen.calls[before:]) == pytest.approx(FADE_LEVELS[:1])
+    assert len(workout.kitchen.calls) == before + 1
