@@ -54,6 +54,12 @@ The cards are built into the integration: one bundle, released and versioned wit
     program (REST and MCP) carries `equipment`, the distinct equipment of its stations without "body weight". A
     completed session can be rated with `POST /api/v1/session/feeling` ([below](#the-session-routes)). A card hides
     what a missing field would feed, so there is no `addon_too_old` for these and `api_version` stays 1.
+  - **Trainings ahead** ([spec](superpowers/specs/2026-10-25-today-ahead-and-start-beep-design.md) §2). `GET /api/v1/today`
+    and the `today` message carry `upcoming`: one entry per active program, its next training after today, with the
+    program's id and name, the date, stations, rounds, total minutes and `startable` (D61). `open` is sorted by date,
+    then by name ignoring case. `late_days` (0–6, default 2) is an add-on option that decides when a late day closes
+    (D60). It comes from `HA_FITNESS_LATE_DAYS`, else `<data folder>/options.json`, else 2
+    ([`addon/DOCS.md`](../addon/DOCS.md), [`testing.md`](testing.md)).
   - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5,
     the read-only `get_session` and `list_sessions` from step 5 spec §3.5, the read-only `get_stats` from the
     stats spec §4, and the read-only `list_speakers` and `list_playlists` from the
@@ -105,11 +111,11 @@ The cards are built into the integration: one bundle, released and versioned wit
   from `cards/src/i18n/` (`en.json` is the base, `da.json` Danish) and follow the card's `language` option, else the
   HA user's language (D11, D38). The editors' texts follow the user's language (D59).
   - **"Træning i dag"** (`custom:ha-fitness-today-card`) has a top line with the streak badge, the week ring, then
-    one row per open training day (a two-tap Spring over, and Start), or the session row (the program's name,
+    one row per open training day (a two-tap Spring over, and Start), then the upcoming rows within the card's `days_ahead` (0–6, default 0, only in this card's editor; Start, or a reminder when not startable; same order as the add-on), or the session row (the program's name,
     "I gang · runde 2 af 5" or "Pauset · runde 2 af 5", the people with the planned length, and Fortsæt) while a
     session runs or is paused. The badge follows `ha_fitness/stats/subscribe`. It is hidden before counting, while
     the stats are unavailable and with no people. The ring comes from the `today` message's `week`. It is hidden
-    without `week` or with `planned` 0. The card hides itself when nothing is open, except in edit mode, and shows
+    without `week` or with `planned` 0. The card hides itself when nothing is open or upcoming, except in edit mode, and shows
     one line while the add-on can't be reached.
   - **The workout card** (`custom:ha-fitness-workout-card`) lists the active programs with Start, for a workout on
     any day (an extra session).
@@ -219,7 +225,7 @@ The integration relays it.
 - **The events** `ha_fitness_session_started`, `_session_completed`, `_session_ended` and `_phase_changed` carry the
   add-on's event `session` as data. The add-on's `done` fires `ha_fitness_training_day_done`, with the training day.
 - **The services.**
-  - `ha_fitness.start_session` takes `program_id`, `participants` (person ids) and an optional `training_day_id`.
+  - `ha_fitness.start_session` takes `program_id`, `participants` (person ids) and an optional `training_day_id` or `date`.
   - `ha_fitness.end_session` takes no fields.
   - The schema only checks the types. The add-on checks the rest, so its refusal is the one shown.
   - A refusal (`not_found`, `conflict` or `invalid` in the add-on's `detail.code`) raises a translated validation
@@ -228,11 +234,12 @@ The integration relays it.
   - `ha_fitness/session/subscribe` sends `{available, session, music}` at once and after each change. The relay is
     described below; `music` is [described below](#music-in-the-integration).
   - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end` or
-    `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id` and an optional
+    `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id`, an optional `date` and an optional
     `speaker` (checked with the add-on's pattern; dropped while the add-on has no music). For `feeling` it
     takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's view. Its
     error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
-    `invalid` before any relay. A field of the wrong type fails HA's own schema, as `invalid_format`.
+    `invalid` before any relay, and so is a `date` while the add-on's last today data has no `upcoming` (key
+    `session_early_unsupported`; the service raises a validation error with that key). A field of the wrong type fails HA's own schema, as `invalid_format`.
   - `ha_fitness/programs` gives the active programs, in the add-on's order, in the shape of workout spec §4. It is
     built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up. It also relays `total_seconds`,
     `equipment` (left out when an older add-on doesn't send it) and `music` (null for an
@@ -403,15 +410,22 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 - **The day under a session** (D42). Reconcile leaves an open day alone while a session for it is running or paused.
   Skipping that day gives a 409. Switching off or deleting the program of a running or paused session gives a 409 with
   "A session for this program is running"; this holds for extra sessions too.
-- **Due and late can mix.** Step 4's rule that a new training day closes a late one waits while a session runs for the
-  late day. A session that crosses midnight into another training day keeps its late day open next to the new due day.
+- **An early session** (D61). A start with `date` makes the training day at once, open, dated on its future date, and the
+  session carries its id from the start. While the date is still ahead, the day is not in `open`, and the program's
+  `upcoming` entry stays on that date, not startable. A counted session closes the day as done for its own date. An
+  uncounted one removes the day while its date is still ahead. The finish's `session` message and `session_ended` event
+  carry the day's id, but later `GET /api/v1/session` and `GET /api/v1/sessions` show `training_day_id: null`
+  (the foreign key is `SET NULL`).
+- **Due and late can mix.** Late and due days of different programs are open at once (D60). A late day also stays
+  open while a session runs for it. A session that crosses midnight into the program's next training day keeps its
+  late day open next to the new due day.
 
 ### The session routes
 
 | Method and path | Does |
 | --- | --- |
 | `GET /api/v1/session` | The running or paused session; else the last finished one for 5 minutes after it finished; else `null`. |
-| `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?, "speaker"?}` → the session view (201). `speaker` (`media_player.<name>`) replaces the program's speaker for this session; a program without music ignores it. A speaker that doesn't match `^media_player\.[a-z0-9_]+$` gives 422 `invalid`. |
+| `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?, "date"?, "speaker"?}` → the session view (201). `date` starts the program's upcoming training early (D61): the add-on accepts only the program's current `upcoming` entry with `startable` true, else 409 `conflict`. With both `training_day_id` and `date`, 422 `invalid`. `speaker` (`media_player.<name>`) replaces the program's speaker for this session; a program without music ignores it. A speaker that doesn't match `^media_player\.[a-z0-9_]+$` gives 422 `invalid`. |
 | `POST /api/v1/session/{command}` | `pause`, `resume`, `next`, `previous` or `end` → the session view. |
 | `POST /api/v1/session/feeling` | `{"feeling": "too_easy" \| "just_right" \| "too_hard"}` on a completed session within its 5-minute finished view → the session view. It is declared before `{command}`. A later call changes the rating. Any other current view gives 409 `conflict`; an unknown value gives 422 `invalid`. |
 | `GET /api/v1/sessions?limit=` | `{"counting_from", "sessions": [finished views, newest first]}`; `limit` 1–100, default 20. |
