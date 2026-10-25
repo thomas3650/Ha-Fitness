@@ -39,6 +39,15 @@ Thomas, 2026-10-25, in chat:
   work start after a switch or rest, but **not at the first work start after the 10 s countdown**. So there is a bug
   as well. The tone tests (`cards/test/workout-flow-pings.test.ts`, "work and switch/rest tones at local zero") pass,
   so the cause lies in something those tests don't model.
+
+  Claude reproduced it in Chrome in the fast loop (2026-10-25), logging every oscillator. The countdown's change tone
+  was planned for audio time 79.89. The add-on's view of the first work phase arrived at 79.88, 10 ms earlier.
+  `plan()` then cancelled every tone still ahead (`silence()`) and planned the work phase's tones. A tone that was
+  waiting is planned again only when the new view's `tonesOf()` lists it, and that list holds the phase's own beeps
+  and its *end* tone, never the tone of the phase that just began. So the tone was lost. `playSkipTone` doesn't help,
+  because the clock says the old phase had ended. At later phase changes the view arrived about 10 ms *after* the
+  tone had started, so it survived. The race is decided by the clock offset, which right after the start still
+  carries the start's latency.
 - **The language fix (#72).** A card config with a non-string `language` (for example `language: 1` in YAML) makes
   `cardLanguage()` pass a number to `localize()`, which throws, and the card doesn't render. Found by reading the code
   in the branch review of #65.
@@ -146,8 +155,9 @@ Thomas, 2026-10-25, in chat:
    each switch and rest, and the change tone of Næste and Forrige into a work phase. A program without a countdown
    plays it when its first work phase starts at Start, in the flow that tapped Start (its audio was unlocked in that
    tap). Resuming into a work phase plays none. (Claude's calls.)
-2. **The bug:** the start tone after the opening countdown is missing (§1). Its cause is found (systematic debugging,
-   in the fast loop) and fixed, with a test that fails before the fix and models what the existing tests missed.
+2. **The bug:** the start tone after the opening countdown is missing (§1). It is fixed so that a change tone still
+   waiting when the next phase's view arrives plays (at once if its time has passed), and is never planned twice. The
+   test that fails before the fix delivers the next phase's view a few ms *before* local zero.
 3. The short beeps in the last 5 s of every phase, the switch/rest tone and the chime stay as they are.
 4. No short beep overlaps the long beep, also in a short work phase: the quiet time after a work phase's start is at
    least the long beep's length. Switch and rest phases keep today's quiet time (`QUIET_MS`, 0.3 s, in
@@ -244,7 +254,6 @@ In the same PR:
   or shown, an older add-on without `upcoming`; the today editor's `days_ahead`; the language fix; the long beep
   scheduled at every work start and no beep overlapping it; the new test for the start tone after the opening
   countdown (§2.4.2), failing before the fix.
-- If the countdown bug's cause is a browser or Web Audio fact, it gets a line in `docs/notes.md` (way of working §5).
 - The fast loop and the Chrome check with screenshots of the today card with upcoming rows and a late day, reviewed
   with Thomas.
 - The long beep in Chrome on the Mac, with Thomas listening (§2.4.5).
