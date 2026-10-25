@@ -165,6 +165,8 @@ The integration's tests won't use this fake. They will register their own fakes 
 
 The fake can't show how the real Music Assistant behaves, so the full loop can run the real add-on. This is for a
 check before the music goes to the house, not for every change.
+`scripts/full-loop music` installs the fake under the same domain (`music_assistant`), so don't run it while the real
+Music Assistant is installed.
 
 1. Install the Music Assistant add-on in the full loop's Supervisor. Its repository is built in.
 2. Confirm the discovered integration in HA ("Discovered").
