@@ -321,11 +321,15 @@ From step 3 on the add-on serves MCP at `/mcp`; [`architecture.md`](architecture
 2. List the tools and call one from a headless session, for example `claude -p "List the ha-fitness-dev tools and
    call <tool>" --allowedTools "mcp__ha-fitness-dev__<tool>"`.
 3. Ask in plain words for a program, for example "Make a program for Wednesday with five body-weight exercises, five
-   rounds, 45 s work". Claude searches the library and creates it.
-4. Ask for music on it, for example "Play a workout playlist on the kitchen speaker". Claude calls `list_speakers` and
-   `list_playlists` and puts the speaker's entity id, the playlist's uri and its name in the program's `music`. With
-   [the fake Music Assistant](#the-fake-music-assistant) installed, the fake's three speakers and four playlists are
-   listed; without Music Assistant both lists are empty.
+   rounds, 45 s work". Claude searches the library, then asks which playlist and speaker to use ("no music" is a valid
+   answer). It keeps the default timings, with the 15 s break between stations, unless you ask for another value. Its
+   summary before the yes names the stations, rounds, timings and music, or that there is none. Say yes, and it
+   creates the program.
+4. Answer the music question with a playlist and a speaker, for example "The workout playlist on the kitchen speaker".
+   Claude calls `list_speakers` and `list_playlists` and puts the speaker's entity id, the playlist's uri and its name
+   in the program's `music`. With [the fake Music Assistant](#the-fake-music-assistant) installed, the fake's three
+   speakers and four playlists are listed; without Music Assistant both lists are empty. Answering "no music" leaves
+   `music` out.
 5. `list_programs` shows it, and so does the add-on's page at `http://localhost:8765/`. On a day the program
    trains, it is also on the today card on the dev dashboard (`http://localhost:8123/ha-fitness-dev`).
 6. Delete the test programs again, then `claude mcp remove ha-fitness-dev -s local`.

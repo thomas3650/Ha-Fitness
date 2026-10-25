@@ -121,6 +121,32 @@ async def test_write_descriptions_ask_for_a_yes(make_app: MakeApp) -> None:
         assert "get a yes before calling" in description, name
 
 
+@pytest.mark.parametrize("name", ["create_program", "update_program"])
+async def test_program_descriptions_keep_timings_and_ask_for_music(
+    make_app: MakeApp, name: str
+) -> None:
+    """The program tools keep the default timings and always ask about music."""
+    async with mcp_client(make_app()) as session:
+        tools = {tool.name: tool for tool in await session.list_tools()}
+    description = tools[name].description or ""
+    # The break between stations stays 15 s unless the user asks otherwise.
+    assert "switch_seconds" in description
+    assert "15" in description
+    assert "unless the user asks" in description
+    assert "never make up timings" in description.lower()
+    assert "When creating: keep" in description
+    assert "didn't mention" in description
+    # The playlist and the speaker are asked for; no music is an answer.
+    assert "list_playlists" in description
+    assert "list_speakers" in description
+    assert "always ask" in description
+    assert "no music" in description.lower()
+    # The summary before the yes names the timings and the music.
+    summary = description[description.index("Before the yes") :]
+    for word in ("timings", "break", "rest", "music"):
+        assert word in summary, word
+
+
 async def test_argument_schema_is_the_apis(make_app: MakeApp) -> None:
     """`create_program` takes the API's program document, ranges included."""
     async with mcp_client(make_app()) as session:
