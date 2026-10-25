@@ -30,6 +30,7 @@ from .schemas import (
     ProgramDocument,
     TodayView,
     TrainingDayOut,
+    UpcomingTraining,
     Week,
 )
 from .settings import DEFAULT_LATE_DAYS
@@ -41,6 +42,9 @@ type Publish = Callable[[list[dict[str, Any]]], None]
 
 # The scheduler's one row in `scheduler_state` (migration 0002).
 _STATE_ID = 1
+
+# How many days after today `upcoming` and `next` look (today-ahead spec §2.2.1, §2.2.9).
+_DAYS_AHEAD = 14
 
 
 def _trains_on(program: ProgramRow, day: date) -> bool:
@@ -268,11 +272,66 @@ class TrainingDays:
                 db_session.scalars(select(ProgramRow).where(ProgramRow.active))
             )
             week = self._week(db_session, active, today)
+            upcoming = [
+                entry
+                for program in active
+                if (entry := self.upcoming_for(db_session, program.id, today))
+                is not None
+            ]
+            next_training = self._next(db_session, active, today)
         open_days = [self._open_day(day, program, today) for day, program in rows]
         open_days.sort(key=lambda day: (day.date, day.program_name.casefold(), day.id))
+        upcoming.sort(key=lambda entry: (entry.date, entry.program_name.casefold()))
         return TodayView(
-            date=today, open=open_days, next=self._next(active, today), week=week
+            date=today,
+            open=open_days,
+            next=next_training,
+            week=week,
+            upcoming=upcoming,
         )
+
+    @staticmethod
+    def upcoming_for(
+        db_session: Session, program_id: int, today: date
+    ) -> UpcomingTraining | None:
+        """Return a program's next training after today in the caller's session (today-ahead spec §2.2.1, §2.2.2).
+
+        That is the first date in the next 14 days on which the program trains and has no done, missed or skipped
+        day; an open day there doesn't move it. `startable` is false while the program has an open day of any date,
+        or a done day dated today or later. None for an unknown or inactive program. Neither locks nor reconciles.
+        """
+        program = db_session.get(ProgramRow, program_id)
+        if program is None or not program.active:
+            return None
+        days = db_session.execute(
+            select(TrainingDay.date, TrainingDay.status).where(
+                TrainingDay.program_id == program_id,
+                or_(
+                    TrainingDay.status == TrainingDayStatus.OPEN,
+                    TrainingDay.date >= today,
+                ),
+            )
+        ).all()
+        closed = {day for day, status in days if status != TrainingDayStatus.OPEN}
+        startable = not any(
+            status == TrainingDayStatus.OPEN
+            or (status == TrainingDayStatus.DONE and day >= today)
+            for day, status in days
+        )
+        for offset in range(1, _DAYS_AHEAD + 1):
+            day = today + timedelta(days=offset)
+            if _trains_on(program, day) and day not in closed:
+                document = ProgramDocument.model_validate(program.document)
+                return UpcomingTraining(
+                    program_id=program.id,
+                    program_name=program.name,
+                    date=day,
+                    station_count=len(document.stations),
+                    rounds=document.rounds,
+                    total_minutes=total_minutes(document),
+                    startable=startable,
+                )
+        return None
 
     @staticmethod
     def _week(db_session: Session, active: list[ProgramRow], today: date) -> Week:
@@ -319,12 +378,33 @@ class TrainingDays:
         )
 
     @staticmethod
-    def _next(active: list[ProgramRow], today: date) -> NextTraining | None:
-        """Return the first date after today on which an active program trains; null when none is active."""
-        for offset in range(1, 8):
+    def _next(
+        db_session: Session, active: list[ProgramRow], today: date
+    ) -> NextTraining | None:
+        """Return the first date after today on which an active program trains and isn't done there yet.
+
+        It looks 14 days ahead (today-ahead spec §2.2.9), so it is null only when no program is active.
+        """
+        last = today + timedelta(days=_DAYS_AHEAD)
+        done = {
+            (program_id, day)
+            for program_id, day in db_session.execute(
+                select(TrainingDay.program_id, TrainingDay.date).where(
+                    TrainingDay.status == TrainingDayStatus.DONE,
+                    TrainingDay.date > today,
+                    TrainingDay.date <= last,
+                )
+            )
+        }
+        for offset in range(1, _DAYS_AHEAD + 1):
             day = today + timedelta(days=offset)
             names = sorted(
-                (p.name for p in active if _trains_on(p, day)), key=str.casefold
+                (
+                    p.name
+                    for p in active
+                    if _trains_on(p, day) and (p.id, day) not in done
+                ),
+                key=str.casefold,
             )
             if names:
                 return NextTraining(date=day, programs=names)

@@ -275,9 +275,12 @@ old values.
     def get_today() -> TodayView:
         """Return today's open training days, due (today) or late (an earlier date), and the next date a program trains.
 
-        Each open day has its id, program, date, state, station count, rounds and length in whole minutes. `next` is
-        null when no program is active. `week` counts this local week, Monday to Sunday: `planned` is its training
-        days, past, today's and still to come, and `done` is those trained.
+        Each open day has its id, program, date, state, station count, rounds and length in whole minutes. `upcoming`
+        has each active program's next training after today: program, date, station count, rounds, length, and
+        `startable`, false while the program has an open day or a day done today or later. `next` looks 14 days
+        ahead, leaves out a program's date already done, and is null only when no program is active. `week` counts
+        this local week, Monday to Sunday: `planned` is its training days, past, today's and still to come, and
+        `done` is those trained.
         """
         with _tool_errors():
             return holder.get().training_days.today_view()

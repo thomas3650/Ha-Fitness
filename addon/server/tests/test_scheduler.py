@@ -100,6 +100,17 @@ async def test_midnight_creates_due_days(make_app: MakeApp) -> None:
             "open": [],
             "next": {"date": "2026-10-28", "programs": ["Onsdag"]},
             "week": {"done": 0, "planned": 1},
+            "upcoming": [
+                {
+                    "program_id": program_id,
+                    "program_name": "Onsdag",
+                    "date": "2026-10-28",
+                    "station_count": 5,
+                    "rounds": 5,
+                    "total_minutes": 29,
+                    "startable": True,
+                }
+            ],
         }
         clock.set(local(2026, 10, 27, 23, 59))
         assert (await _today(client))["open"] == []
@@ -454,7 +465,7 @@ async def test_removing_today_from_weekdays_keeps_todays_day(make_app: MakeApp) 
 
 
 async def test_next_is_null_without_active_programs(make_app: MakeApp) -> None:
-    """`next` is null with no program or only inactive ones, and is after today otherwise."""
+    """`next` is null with no program or only inactive ones, and isn't null while one program is active."""
     clock = FrozenClock(local(2026, 10, 28))
     async with started(make_app, clock) as client:
         assert await _today(client) == {
@@ -462,14 +473,14 @@ async def test_next_is_null_without_active_programs(make_app: MakeApp) -> None:
             "open": [],
             "next": None,
             "week": {"done": 0, "planned": 0},
+            "upcoming": [],
         }
         await _create(client, "Hvile", ["wed"], active=False)
         assert (await _today(client))["next"] is None
         await _create(client, "Onsdag", ["wed"])
-        assert (await _today(client))["next"] == {
-            "date": "2026-11-04",
-            "programs": ["Onsdag"],
-        }
+        view = await _today(client)
+        assert view["next"] is not None
+        assert view["next"] == {"date": "2026-11-04", "programs": ["Onsdag"]}
 
 
 async def _dates_across(
