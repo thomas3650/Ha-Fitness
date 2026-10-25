@@ -432,6 +432,23 @@ async def test_music_state_each_value(hass: HomeAssistant, workout: Workout) -> 
     assert await workout.music_state() is None
 
 
+async def test_open_subscription_music_null_after_music_assistant_unloads(
+    hass: HomeAssistant, workout: Workout, hass_ws_client: WebSocketGenerator
+) -> None:
+    """A live subscription gets music null when Music Assistant's entry is unloaded during a session."""
+    await workout.push(view(started_at=workout.setup_time + timedelta(seconds=10)))
+    client = await hass_ws_client(hass)
+    _, first = await subscribe(client)
+    assert first["music"]["state"] == "playing"
+
+    music_entry = hass.config_entries.async_entries("music_assistant")[0]
+    await unload(hass, music_entry)
+
+    event = await _event_until(client, lambda event: event["music"] != first["music"])
+    assert event["session"] is not None
+    assert event["music"] is None
+
+
 async def test_music_state_kept_across_disconnect(
     workout: Workout, hass_ws_client: WebSocketGenerator
 ) -> None:
@@ -613,6 +630,7 @@ async def test_music_command_unavailable_on_other_platform(
 
     _assert_error(await workout.command("pause"), "unavailable", "music_unavailable")
     assert tv_player.calls == []
+    assert await workout.state() == "unavailable"
     await unload(hass, other_entry)
 
 
