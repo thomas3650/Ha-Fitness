@@ -49,12 +49,13 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    is the date in Europe/Copenhagen. Each refuses, before any change, when the server has no dev routes.
    - `scripts/seed --today` makes Sample due today: it adds today's weekday to Sample, switches Sample on when it is
      off, and opens (or reopens, after a skip) its day for today.
-   - `scripts/seed --late` makes Sample late, with yesterday's day open. Other programs' days don't matter: only its own
-     program's next training closes a late day (D60).
+   - `scripts/seed --late` makes Sample late, with yesterday's day open. It removes every training day of today, other
+     programs' too; an active program that trains today gets a new open day at the next reconcile. Other programs no
+     longer block it, because only a program's own next training closes its late day (D60).
    - `scripts/seed --short` makes the short program "Kort" due today: 2 body-weight stations, 1 round, work 10 s,
      switch 0 s, countdown 5 s. It creates Kort with today's weekday only, or sets an existing Kort's weekdays to
-     today's only and switches it on, then opens (or reopens) its day for today. Kort's day
-     for today leaves a late Sample day open (D60).
+     today's only and switches it on, then opens (or reopens) its day for today. Kort's day for today
+     leaves a late Sample day open (D60).
 
    The dev routes exist only with `HA_FITNESS_DEV=1`. Without it they answer 404 and aren't in OpenAPI, so the add-on
    never has them. `POST /api/v1/dev/training-days` with `{"program_id", "date"}` opens a day on today or an earlier
@@ -242,8 +243,8 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
    while it has none, so a dev HA onboarded before the Workout view existed lacks it: delete the `ha-fitness-dev`
    dashboard (Settings → Dashboards) and run `dev_onboard.py` again.
 10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at
-    5, 4, 3, 2 and 1 s line up with the numbers, that a long (1 s) beep sounds at every exercise start, also right after the countdown, and
-    that the change tones and the chime at the end come.
+    5, 4, 3, 2 and 1 s line up with the numbers, that a long (1 s) beep sounds at every exercise start, also right after the
+    countdown, and that the change tones and the chime at the end come.
 11. **Music, with the fake Music Assistant** (music spec §8). `scripts/seed` gives Sample the playlist "Workout Mix" on
     the living-room speaker. Start Sample as in step 1.
     - **Details:** the row "Musik" with "Workout Mix", and the "Højttaler" dropdown with the fake's three speakers,
