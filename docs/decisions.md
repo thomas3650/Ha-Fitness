@@ -457,3 +457,10 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   Thomas's call.
 - **Why:** Hard rule 2: the repo is public. A hard rule wins over the snapshot rule.
 - **Source:** [Review backlog spec](superpowers/specs/2026-10-25-review-backlog-design.md) §2.6; Claude, 2026-10-25
+
+### D57: A paused timer is blue
+- **Date:** 2026-10-25 · **Status:** active
+- **Decision:** While a workout is paused, the timer's ring, its phase word and the progress bar take the rest colour
+  (blue), whatever the phase. The ring keeps the phase word.
+- **Why:** Orange means work. A paused work phase in orange looked like work going on.
+- **Source:** Thomas, screen review on 2026-10-25
