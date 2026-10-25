@@ -112,7 +112,6 @@
     "round_count_one": "{count} runde",
     "round_count_other": "{count} runder",
     "minutes": "{count} min",
-    "go_to_start": "GÅ TIL DIN STARTSTATION",
     "start_station": "{name} · station {number}",
     "start_now": "Start nu",
     "cancel": "Annullér",

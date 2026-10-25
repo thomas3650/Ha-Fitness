@@ -112,7 +112,6 @@
     "round_count_one": "{count} round",
     "round_count_other": "{count} rounds",
     "minutes": "{count} min",
-    "go_to_start": "GO TO YOUR START STATION",
     "start_station": "{name} · station {number}",
     "start_now": "Start now",
     "cancel": "Cancel",

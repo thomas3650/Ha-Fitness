@@ -1,4 +1,4 @@
-import { type TemplateResult, css, html, nothing, unsafeCSS } from "lit";
+import { type TemplateResult, css, html, nothing } from "lit";
 
 import { iconButton } from "../icon-button";
 import type { SessionView } from "../overlay";
@@ -19,8 +19,9 @@ import {
 } from "./shared";
 
 /**
- * What get ready shows (the `GetReady` mockup): the summary pill and Annullér, the countdown in a
- * ring, a card per person at their start station, and Start nu; Fortsæt for a paused countdown.
+ * What get ready shows (the `GetReady` mockup, #62): the countdown in a ring; the summary card over
+ * a card per person at their start station; and Start nu (Fortsæt for a paused countdown) with
+ * Annullér beside it.
  */
 export interface ReadyContext {
   t: Translate;
@@ -41,11 +42,6 @@ export function renderReady(ctx: ReadyContext): TemplateResult {
   const { t, view } = ctx;
   const paused = view.status === "paused";
   return html`
-    <header class="ready-top">
-      <span class="pill">${summary(t, view)}</span>
-      ${paused ? html`<span class="pill paused">${t("flow.paused")}</span>` : nothing}
-      <button class="cancel soft" @click=${() => ctx.onCancel()}>${t("flow.cancel")}</button>
-    </header>
     ${renderReach(t, ctx.reach)} ${renderSound(t, ctx.sound)}
     <div class="ready">
       <div class="countdown">${renderRing(ctx)}</div>
@@ -62,6 +58,7 @@ export function renderReady(ctx: ReadyContext): TemplateResult {
             onClick: ctx.onResume,
           })
         : html`<button class="main" @click=${() => ctx.onStartNow()}>${t("flow.start_now")}</button>`}
+      <button class="cancel soft" @click=${() => ctx.onCancel()}>${t("flow.cancel")}</button>
     </div>
   `;
 }
@@ -91,14 +88,19 @@ function renderRing(ctx: ReadyContext): TemplateResult {
   });
 }
 
-/** "GÅ TIL DIN STARTSTATION" and a card per participant, numbered in participant order. */
+/**
+ * The summary card (PAUSET beside the summary while paused) over a card per participant, numbered
+ * in participant order.
+ */
 function renderStarts(ctx: ReadyContext): TemplateResult {
   const { t, view } = ctx;
-  const heading = t("flow.go_to_start");
   return html`
     <section class="ready-starts">
-      <span class="label" aria-hidden="true">${heading}</span>
-      <ul aria-label=${heading}>
+      <div class="ready-summary card">
+        <span>${summary(t, view)}</span>
+        ${view.status === "paused" ? html`<span class="pill paused">${t("flow.paused")}</span>` : nothing}
+      </div>
+      <ul>
         ${view.participants.map((person, index) => {
           const station = view.stations?.[index]?.current;
           return html`
@@ -133,13 +135,15 @@ export const readyStyles = css`
   .ready-actions button.main ha-icon {
     --mdc-icon-size: 32px;
   }
-  .ready-top {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-  .ready-top .cancel {
-    margin-left: auto;
+  /* Annullér beside Start nu (or Fortsæt) at the same width, height, radius and font, in the soft
+     grey style, so Start nu stays the main button. */
+  .ready-actions button.main,
+  .ready-actions button.cancel {
+    box-sizing: border-box;
+    width: 240px;
+    min-height: 96px;
+    border-radius: 48px;
+    font-size: 1.5rem;
   }
   .pill {
     padding: 10px 18px;
@@ -173,10 +177,18 @@ export const readyStyles = css`
     gap: 16px;
     width: min(440px, 100%);
   }
-  .ready-starts .label {
-    color: ${unsafeCSS(PHASE_TEXT_COLORS.countdown)};
-    font-weight: 500;
-    letter-spacing: 0.08em;
+  /* The summary takes the cards' look and width (D52). */
+  .ready-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+    padding: 18px 20px;
+    border-radius: 20px;
+    font-size: 1.25rem;
+  }
+  .ready-summary .pill {
+    margin-left: auto;
   }
   .ready-starts ul {
     display: flex;
@@ -225,7 +237,10 @@ export const readyStyles = css`
     font-weight: 700;
   }
   .ready-actions {
+    display: flex;
     justify-content: center;
+    align-items: center;
+    gap: 16px;
   }
   @container (max-width: 1000px) {
     .ready {

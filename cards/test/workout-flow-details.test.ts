@@ -581,7 +581,7 @@ test("renders in Danish and English", async () => {
   await tap(flow, button(flow, "Start"));
   english.commands[0].resolve(view());
   await settle(flow);
-  expect(getAllByRole(getByRole(root(flow), "list", { name: "GO TO YOUR START STATION" }), "listitem").map(text)).toEqual([
+  expect(getAllByRole(getByRole(root(flow), "list"), "listitem").map(text)).toEqual([
     "1 Thomas · station 1 Push-up",
     "2 Maria · station 2 Squat",
   ]);
@@ -631,7 +631,7 @@ test("get ready colours follow people order, not participant order", async () =>
   });
   const { flow } = await mount(fake, { kind: "resume" }, { available: true, session });
 
-  const starts = getAllByRole(getByRole(root(flow), "list", { name: "GÅ TIL DIN STARTSTATION" }), "listitem");
+  const starts = getAllByRole(getByRole(root(flow), "list"), "listitem");
   expect(starts.map(text)).toEqual(["1 Thomas · station 1 Push-up", "2 Ida · station 2 Squat"]);
   // Thomas is first in people order; Ida, third, gets the theme's colour.
   expect(starts.map(chipColour)).toEqual(["#B18CFF", "VAR(--PRIMARY-COLOR)"]);

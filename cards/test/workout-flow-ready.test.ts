@@ -175,9 +175,9 @@ function sessionCommands(fake: Fake): Message[] {
   return fake.commands.map((command) => command.message);
 }
 
-/** The start cards, one per participant. */
-function cards(flow: FlowElement, name: string): HTMLElement[] {
-  return getAllByRole(getByRole(root(flow), "list", { name }), "listitem");
+/** The start cards, one per participant: get ready's one list. */
+function cards(flow: FlowElement): HTMLElement[] {
+  return getAllByRole(getByRole(root(flow), "list"), "listitem");
 }
 
 beforeEach(() => {
@@ -225,8 +225,9 @@ test("the countdown sits in the ring under GØR KLAR, and a tap on it sends noth
 test("one card per person: a numbered badge, the picture, name and station, the exercise", async () => {
   const { flow } = await resume(fakeHass("da"));
 
-  expect(queryByText(root(flow), "GÅ TIL DIN STARTSTATION")).not.toBeNull();
-  const starts = cards(flow, "GÅ TIL DIN STARTSTATION");
+  // No "GÅ TIL DIN STARTSTATION" label over the cards (#62): the summary sits there.
+  expect(queryByText(root(flow), /STARTSTATION/)).toBeNull();
+  const starts = cards(flow);
   expect(starts.map(text)).toEqual(["1 Thomas · station 1 Push-up", "2 Maria · station 2 Squat"]);
   // Push-up's still thumbnail; Squat has none, so a placeholder carries its name.
   expect(getByRole(starts[0], "img", { name: "Push-up" }).getAttribute("src")).toMatch(/^blob:image-/);
@@ -234,7 +235,8 @@ test("one card per person: a numbered badge, the picture, name and station, the 
   document.body.replaceChildren();
 
   const english = await resume(fakeHass("en"));
-  expect(cards(english.flow, "GO TO YOUR START STATION").map(text)).toEqual([
+  expect(queryByText(root(english.flow), /START STATION/)).toBeNull();
+  expect(cards(english.flow).map(text)).toEqual([
     "1 Thomas · station 1 Push-up",
     "2 Maria · station 2 Squat",
   ]);
@@ -284,7 +286,7 @@ test("get ready shows start stations; Start nu sends next; Annullér sends end a
 
   // The command result moves the flow on, before any push.
   expect(queryByRole(root(flow), "button", { name: "Tilbage" })).toBeNull();
-  expect(cards(flow, "GÅ TIL DIN STARTSTATION").map(text)).toEqual([
+  expect(cards(flow).map(text)).toEqual([
     "1 Thomas · station 1 Push-up",
     "2 Maria · station 2 Squat",
   ]);
