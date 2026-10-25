@@ -35,7 +35,10 @@ Thomas, 2026-10-25, in chat:
 - **The start beep (#71).** During the countdown, and at the end of every phase, the timer beeps short. When the
   exercise starts there should be one clearly long beep, so he knows without looking that it starts now. On the
   kitchen tablet he hears no such tone, although the code plays a 0.45 s tone at 1320 Hz at every work start
-  (`cards/src/audio.ts`). Either it doesn't play there, or it is too short to stand out.
+  (`cards/src/audio.ts`). Thomas tested it on the Mac in the fast loop (2026-10-25): the start tone plays at every
+  work start after a switch or rest, but **not at the first work start after the 10 s countdown**. So there is a bug
+  as well. The tone tests (`cards/test/workout-flow-pings.test.ts`, "work and switch/rest tones at local zero") pass,
+  so the cause lies in something those tests don't model.
 - **The language fix (#72).** A card config with a non-string `language` (for example `language: 1` in YAML) makes
   `cardLanguage()` pass a number to `localize()`, which throws, and the card doesn't render. Found by reading the code
   in the branch review of #65.
@@ -136,10 +139,12 @@ Thomas, 2026-10-25, in chat:
    beeps (Thomas: every exercise, not only the first). This is the tone at the end of the countdown, at the end of
    each switch and rest, and the change tone of Næste and Forrige into a work phase. A program without a countdown
    plays it when its first work phase starts at Start. Resuming into a work phase plays none. (Claude's calls.)
-2. The short beeps in the last 5 s of every phase, the switch/rest tone and the chime stay as they are.
-3. No short beep overlaps the long beep, also in a short work phase: the quiet time after a phase start (`QUIET_MS` in
+2. **The bug:** the start tone after the opening countdown is missing (§1). Its cause is found (systematic debugging,
+   in the fast loop) and fixed, with a test that fails before the fix and models what the existing tests missed.
+3. The short beeps in the last 5 s of every phase, the switch/rest tone and the chime stay as they are.
+4. No short beep overlaps the long beep, also in a short work phase: the quiet time after a phase start (`QUIET_MS` in
    `workout-flow.ts`) is at least the long beep's length.
-4. The long beep is checked in Chrome on the Mac in the fast loop, with Thomas listening. The kitchen tablet check
+5. The long beep is checked in Chrome on the Mac in the fast loop, with Thomas listening, after the countdown too. The kitchen tablet check
    doesn't block the merge; if the beep doesn't play there, that becomes a new issue (Claude's call).
 
 ### 2.5 A non-string language option (#72)
@@ -231,7 +236,7 @@ In the same PR:
   scheduled at every work start and no beep overlapping it.
 - The fast loop and the Chrome check with screenshots of the today card with upcoming rows and a late day, reviewed
   with Thomas.
-- The long beep in Chrome on the Mac, with Thomas listening (§2.4.4).
+- The long beep in Chrome on the Mac, with Thomas listening (§2.4.5).
 - The full loop before the release: `late_days` and its translations show on the Configuration tab under the real
   Supervisor, and the add-on reads the value.
 
