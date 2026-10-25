@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.1.0](https://github.com/thomas3650/Ha-Fitness/compare/v1.0.0...v1.1.0) (2026-10-25)
+
+
+### Features
+
+* **addon:** a late training day stays open per program, for late_days days (D60) ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+* **addon:** the today data lists each program's next training, and a training can be started early (D61) ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+* **cards:** a long beep at every work start ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+* **cards:** a visual editor for each card, with the Layout tab ([#73](https://github.com/thomas3650/Ha-Fitness/issues/73)) ([52a2c13](https://github.com/thomas3650/Ha-Fitness/commit/52a2c1343d23a1a1890938dc6bac18a6cc9f49ca))
+* **cards:** the today card shows trainings ahead, with Start or as a reminder ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+* the integration starts a training early with a date ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+* trainings ahead, late days, the long start beep ([#77](https://github.com/thomas3650/Ha-Fitness/issues/77)) ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+
+
+### Bug Fixes
+
+* **addon:** a reconcile's today is published for the date it handled ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+* **cards:** a non-string language option no longer breaks a card ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+* **cards:** the start tone after the opening countdown is no longer lost ([416e316](https://github.com/thomas3650/Ha-Fitness/commit/416e31684a82a45cb83306222f765a32d1a3094f))
+
 ## [1.0.0](https://github.com/thomas3650/Ha-Fitness/compare/v0.1.0...v1.0.0) (2026-10-25)
 
 
