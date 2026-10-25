@@ -77,15 +77,16 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
   });
   const stations = view.stations ?? [];
   const one = stations.length === 1;
+  const centre = renderCentre(ctx, theRing, phase.round, phase.interval, one);
   return html`
-    ${renderHeader(ctx, phase.round, phase.interval, one)}
+    ${renderHeader(ctx)}
     ${renderReach(t, ctx.reach)} ${renderSound(t, ctx.sound)}
     ${renderError(ctx.error)}
     ${
       one
-        ? renderSolo(ctx, theRing)
+        ? renderSolo(ctx, centre)
         : html`<div class="timer-duo">
-            ${renderCard(ctx, 0)} ${theRing} ${renderCard(ctx, 1)}
+            ${renderCard(ctx, 0)} ${centre} ${renderCard(ctx, 1)}
           </div>`
     }
     <div class="timer-controls">
@@ -128,20 +129,27 @@ function renderWhole(ctx: TimerContext) {
 }
 
 /**
- * The top row: the round and station pills (two people: the interval), PAUSET while paused, the
- * elapsed time against the planned, and Slut with its question.
+ * The ring's column (#60): the round pill directly above the ring, and the station pill (two
+ * people: the interval) directly below it.
  */
-function renderHeader(
-  ctx: TimerContext,
-  round: number,
-  interval: number,
-  one: boolean,
-) {
+function renderCentre(ctx: TimerContext, theRing: TemplateResult, round: number, interval: number, one: boolean) {
+  const { t, view } = ctx;
+  return html`
+    <div class="timer-centre">
+      ${renderPill(t("flow.round_label"), round, view.totals.rounds)} ${theRing}
+      ${renderPill(t(one ? "flow.station_label" : "flow.interval_label"), interval, view.totals.stations)}
+    </div>
+  `;
+}
+
+/**
+ * The top row: the music player on the left, PAUSET while paused, and on the right the elapsed
+ * time against the planned, and Slut with its question.
+ */
+function renderHeader(ctx: TimerContext) {
   const { t, view } = ctx;
   return html`
     <header class="timer-top ${ctx.music ? "with-music" : ""}">
-      ${renderPill(t("flow.round_label"), round, view.totals.rounds)}
-      ${renderPill(t(one ? "flow.station_label" : "flow.interval_label"), interval, view.totals.stations)}
       ${view.status === "paused" ? html`<span class="timer-pill paused">${t("flow.paused")}</span>` : nothing}
       ${renderPlayer(ctx)}
       <span class="elapsed"
@@ -169,7 +177,7 @@ function renderHeader(
 }
 
 /**
- * The music player after the pills (music spec §6.2): the music badge, the playlist over the
+ * The music player at the top row's start (music spec §6.2): the music badge, the playlist over the
  * speaker, and Pause or Play with Next. While waiting for the first work phase both are disabled;
  * while unavailable only Play works, so a failed start can be tried again.
  */
@@ -206,7 +214,7 @@ function renderPlayer(ctx: TimerContext) {
 }
 
 /**
- * A pill in the top row: the label, then the number out of the total in bold ("Runde **2 / 5**"),
+ * A pill by the ring: the label, then the number out of the total in bold ("Runde **2 / 5**"),
  * or the number alone when the add-on sends no total. The " / " is a numeric separator, not a word.
  */
 function renderPill(label: string, current: number, total: number | undefined) {
@@ -221,7 +229,7 @@ function renderPill(label: string, current: number, total: number | undefined) {
  * STATION" and the card says DEREFTER. The three columns keep their widths without a card, so the
  * ring stays centred (#36).
  */
-function renderSolo(ctx: TimerContext, theRing: TemplateResult) {
+function renderSolo(ctx: TimerContext, centre: TemplateResult) {
   const { t, view } = ctx;
   const station = view.stations![0];
   const person = view.participants[0];
@@ -238,7 +246,7 @@ function renderSolo(ctx: TimerContext, theRing: TemplateResult) {
         ${renderImage(ctx.imageOf, station.current, "gif", "gif")}
         <span class="exercise">${station.current.name}</span>
       </section>
-      ${theRing}
+      ${centre}
       ${station.next ? renderNext(ctx, station.next, moving) : nothing}
     </div>
   `;
@@ -323,6 +331,20 @@ export const timerStyles = css`
     border-radius: 999px;
     background: var(--secondary-background-color, var(--divider-color));
   }
+  /* The pills by the ring take the card look (D52). */
+  .timer-centre .timer-pill {
+    background: var(--card-background-color, #fff);
+    border: 1px solid var(--divider-color);
+    font-size: 1.25rem;
+    white-space: nowrap;
+  }
+  /* The ring's column: the round pill, the ring and the station or interval pill, centred. */
+  .timer-centre {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
   .timer-pill.paused {
     font-weight: 700;
     letter-spacing: 0.1em;
@@ -345,7 +367,7 @@ export const timerStyles = css`
     min-width: 120px;
   }
   /* The music player: a pill-shaped card that takes the room left in the row, up to 400 px, and
-     shrinks with ellipsis before the pills or Slut do. */
+     shrinks with ellipsis before PAUSET or Slut do. */
   .timer-music {
     display: flex;
     flex: 1 1 0;
@@ -410,14 +432,17 @@ export const timerStyles = css`
     align-items: center;
     margin: 24px 0;
   }
-  /* One person: a ring as large as get ready's, readable across a kitchen. */
-  .timer-solo > .ring {
+  /* One person: a large ring, readable across a kitchen, a little smaller than get ready's so the
+     pills above and below it fit. */
+  .timer-solo > .timer-centre {
     grid-column: 2;
-    width: 400px;
-    height: 400px;
   }
-  .timer-solo > .ring .seconds {
-    font-size: 10rem;
+  .timer-solo .timer-centre .ring {
+    width: 340px;
+    height: 340px;
+  }
+  .timer-solo .timer-centre .ring .seconds {
+    font-size: 8.5rem;
   }
   .timer-now {
     grid-column: 1;
@@ -491,12 +516,12 @@ export const timerStyles = css`
   .timer-duo > .duo-card:last-child {
     justify-self: end;
   }
-  .timer-duo > .ring {
-    width: 360px;
-    height: 360px;
+  .timer-duo .timer-centre .ring {
+    width: 320px;
+    height: 320px;
   }
-  .timer-duo > .ring .seconds {
-    font-size: 7rem;
+  .timer-duo .timer-centre .ring .seconds {
+    font-size: 6rem;
   }
   .duo-card {
     display: flex;
@@ -644,9 +669,8 @@ export const timerStyles = css`
   }
   /* A portrait tablet (about 800 px wide): nothing scrolls sideways. */
   @container (max-width: 1000px) {
-    /* The top row stays on one line: the pills shrink and wrap their text, the elapsed time and
-       Slut keep their room on the right. A pill wraps between its label and its numbers, never
-       inside the numbers. */
+    /* The top row stays on one line: PAUSET shrinks and wraps its text, the elapsed time and
+       Slut keep their room on the right. */
     .timer-top {
       flex-wrap: nowrap;
     }
@@ -654,15 +678,12 @@ export const timerStyles = css`
       white-space: normal;
       min-width: 0;
     }
-    .timer-pill strong {
-      white-space: nowrap;
-    }
     .timer-top > .elapsed {
       flex: none;
     }
-    /* With the player, the row wraps after Slut and the player takes its own line under the
-       pills: the ::after item fills the first line's rest. The pills keep shrinking as without
-       it, since they grow from 0 up to their text's width. */
+    /* With the player, the row wraps after Slut and the player takes its own line below: the
+       ::after item fills the first line's rest. PAUSET keeps shrinking as without it, since it
+       grows from 0 up to its text's width. */
     .timer-top.with-music {
       flex-wrap: wrap;
       row-gap: 0;
@@ -698,14 +719,9 @@ export const timerStyles = css`
       grid-area: second;
       width: 100%;
     }
-    .timer-duo > .ring {
+    .timer-duo > .timer-centre {
       grid-area: ring;
       justify-self: center;
-      width: 320px;
-      height: 320px;
-    }
-    .timer-duo > .ring .seconds {
-      font-size: 6rem;
     }
     /* One person: the exercise and NÆSTE side by side, the ring below them. */
     .timer-solo {
@@ -721,15 +737,15 @@ export const timerStyles = css`
     .timer-next {
       grid-area: next;
     }
-    .timer-solo > .ring {
+    .timer-solo > .timer-centre {
       grid-area: ring;
       justify-self: center;
     }
-    .timer-solo > .ring {
+    .timer-solo .timer-centre .ring {
       width: 320px;
       height: 320px;
     }
-    .timer-solo > .ring .seconds {
+    .timer-solo .timer-centre .ring .seconds {
       font-size: 6rem;
     }
   }

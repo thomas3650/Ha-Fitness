@@ -231,6 +231,11 @@ function hasPill(flow: FlowElement, value: string): boolean {
   return pill(flow, value) !== null;
 }
 
+/** Whether `first` comes before `second` in document order. */
+function before(first: Node, second: Node): boolean {
+  return (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-24T08:00:00.000Z"));
@@ -409,11 +414,14 @@ test("the three icon buttons send previous, pause and next", async () => {
   expect(sent(fake)).toEqual(["previous", "pause", "next"]);
 });
 
-test("the top row's pills for one person", async () => {
+test("the pills by the ring for one person", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
   expect(hasPill(flow, "Runde 2 / 5")).toBe(true);
   expect(hasPill(flow, "Station 1 / 3")).toBe(true);
+  // Runde comes before the ring, and Station after it (#60).
+  expect(before(pill(flow, "Runde 2 / 5")!, ring(flow))).toBe(true);
+  expect(before(ring(flow), pill(flow, "Station 1 / 3")!)).toBe(true);
   expect(hasPill(flow, "PAUSET")).toBe(false);
 
   // During a switch the pill keeps the interval.
@@ -706,9 +714,11 @@ test("one-person and two-person layouts in work and switch", async () => {
 test("the two-person timer has the same buttons and progress bar as one person's", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
-  // The top row: the round and the interval, no Station pill; no NÆSTE card.
+  // The pills by the ring: the round before it and the interval after it, no Station pill; no NÆSTE card.
   expect(hasPill(flow, "Runde 2 / 5")).toBe(true);
   expect(hasPill(flow, "Interval 1 / 3")).toBe(true);
+  expect(before(pill(flow, "Runde 2 / 5")!, ring(flow))).toBe(true);
+  expect(before(ring(flow), pill(flow, "Interval 1 / 3")!)).toBe(true);
   expect(hasPill(flow, "Station 1 / 3")).toBe(false);
   expect(queryByRole(root(flow), "region", { name: "NÆSTE" })).toBeNull();
   expect(whole(flow).getAttribute("aria-valuenow")).toBe("360");
@@ -851,7 +861,7 @@ test("a session's first view clears an alert from details", async () => {
   expect(queryByRole(root(flow), "alert")).toBeNull();
 });
 
-test("the header shows the intervals out of the stations when the view has them", async () => {
+test("the pills by the ring show the intervals out of the stations when the view has them", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
   expect(hasPill(flow, "Interval 1 / 3")).toBe(true);
@@ -1050,25 +1060,27 @@ test("pause and next send ha_fitness/music", async () => {
 test("buttons per state", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo(), true, music("waiting"));
-  const names = () => getAllByRole(player(flow), "button").map((element) => element.getAttribute("aria-label"));
-  const disabled = () => getAllByRole(player(flow), "button").map((element) => (element as HTMLButtonElement).disabled);
+  /** The player's two buttons, found by role and name in order (Pause or Play, then Next), and whether each is disabled. */
+  const disabled = (toggle: string) => {
+    const buttons = getAllByRole(player(flow), "button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toBe(playerButton(flow, toggle));
+    expect(buttons[1]).toBe(playerButton(flow, "Næste nummer"));
+    return buttons.map((element) => (element as HTMLButtonElement).disabled);
+  };
 
   // Waiting for the first work phase: both disabled.
-  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
-  expect(disabled()).toEqual([true, true]);
+  expect(disabled("Afspil musik")).toEqual([true, true]);
 
   // Unavailable: Play can retry a failed start; Next can't.
   await push(flow, solo(), true, music("unavailable"));
-  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
-  expect(disabled()).toEqual([false, true]);
+  expect(disabled("Afspil musik")).toEqual([false, true]);
 
   await push(flow, solo(), true, music("playing"));
-  expect(names()).toEqual(["Pause musik", "Næste nummer"]);
-  expect(disabled()).toEqual([false, false]);
+  expect(disabled("Pause musik")).toEqual([false, false]);
 
   await push(flow, solo(), true, music("paused"));
-  expect(names()).toEqual(["Afspil musik", "Næste nummer"]);
-  expect(disabled()).toEqual([false, false]);
+  expect(disabled("Afspil musik")).toEqual([false, false]);
 });
 
 test("no player when music is null", async () => {
