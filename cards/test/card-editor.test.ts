@@ -108,6 +108,17 @@ describe.each(CARD_TAGS)("%s", (tag) => {
     expect(events).toEqual([{ type: tag, language: "en" }]);
   });
 
+  test("the event leaves the editor's shadow root", async () => {
+    const { editor } = await mount(tag, { type: tag });
+    let sent: Event | undefined;
+    editor.addEventListener("config-changed", (event) => {
+      sent = event;
+    });
+    choose(field(editor, "Sprog"), "English");
+    expect(sent?.bubbles).toBe(true);
+    expect(sent?.composed).toBe(true);
+  });
+
   test("choosing the default removes language", async () => {
     const { editor, events } = await mount(tag, { type: tag, language: "da" });
     choose(field(editor, "Sprog"), "Følg brugerens sprog");
