@@ -1,4 +1,4 @@
-import { getByRole } from "@testing-library/dom";
+import { getByRole, queryByRole } from "@testing-library/dom";
 import { afterEach, describe, expect, onTestFinished, test } from "vitest";
 
 import "../src/index";
@@ -157,6 +157,16 @@ describe.each(CARD_TAGS)("%s", (tag) => {
 
   test("the stub config adds no options", () => {
     expect(cardClass(tag).getStubConfig()).toEqual({});
+  });
+
+  test("renders no field until it has a config", async () => {
+    const editor = cardClass(tag).getConfigElement() as EditorElement;
+    document.body.append(editor);
+    await editor.updateComplete;
+    expect(queryByRole(root(editor), "combobox")).toBeNull();
+    editor.setConfig(deepFreeze({ type: tag }));
+    await editor.updateComplete;
+    expect(queryByRole(root(editor), "combobox")).not.toBeNull();
   });
 
   test("labels in English before hass", async () => {

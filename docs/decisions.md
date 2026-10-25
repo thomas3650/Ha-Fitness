@@ -497,6 +497,6 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Decision:** Each card has a visual editor. Options go there; layout stays HA's Layout tab, never a control of
   ours. The editor uses `getConfigElement` with native controls, not `getConfigForm` or `ha-form`. Its texts follow
   the HA user's language, a narrow exception to D38.
-- **Why:** HA builds the Layout tab only around a visual editor. `getConfigForm` has no `hass`, so it can't follow the
-  user's language. `ha-form` loads lazily and doesn't render in tests.
+- **Why:** HA builds the Layout tab only around a visual editor, and the other two routes fall short. The facts are in
+  [`ha-notes.md`](ha-notes.md#the-frontend).
 - **Source:** [card editors spec](superpowers/specs/2026-10-25-card-editors-design.md) §2 and §6

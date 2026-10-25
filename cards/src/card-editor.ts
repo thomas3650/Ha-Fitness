@@ -74,6 +74,8 @@ export class CardEditor extends LitElement {
   }
 
   protected override render() {
+    // Until Home Assistant has given a config, a change would send one without `type`.
+    if (!this.config) return nothing;
     const current = this.current;
     return html`
       <label for="language">${this.t("editor.language")}</label>
@@ -91,7 +93,8 @@ export class CardEditor extends LitElement {
   // committed before them, and a `selected` attribute stops moving it once the user has chosen.
   protected override updated(): void {
     const select = this.renderRoot.querySelector("select");
-    if (select) select.value = this.current;
+    // Only when it differs, so Home Assistant's frequent `hass` updates leave an open dropdown alone.
+    if (select && select.value !== this.current) select.value = this.current;
   }
 }
 
