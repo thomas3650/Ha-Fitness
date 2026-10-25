@@ -24,7 +24,14 @@ can't be reached.
 
 ## Configuration
 
-The add-on has no options yet.
+The options are on the add-on's *Configuration* tab. A changed option takes effect at the add-on's next start.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `late_days` | `2` | How many days after its date a late training can still be done, from 0 to 6. It closes earlier when the same program trains again. With 0 it closes at midnight. |
+
+A training that closes this way counts as missed. A training closed already never reopens. When you lower the
+number, open trainings past the new limit close as missed at the next start.
 
 ## Network
 

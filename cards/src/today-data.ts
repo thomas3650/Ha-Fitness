@@ -11,6 +11,21 @@ export interface OpenDay {
   total_minutes: number;
 }
 
+/**
+ * A program's next training after today (today-ahead spec §2.2.1). `startable` says whether it can
+ * start early now; otherwise it is a reminder only.
+ */
+export interface Upcoming {
+  program_id: number;
+  program_name: string;
+  /** The training's date, `YYYY-MM-DD`. */
+  date: string;
+  station_count: number;
+  rounds: number;
+  total_minutes: number;
+  startable: boolean;
+}
+
 /** What the add-on's `GET /api/v1/today` returns (spec §3.5). */
 export interface Today {
   date: string;
@@ -18,6 +33,8 @@ export interface Today {
   next: { date: string; programs: string[] } | null;
   /** This week's counted days done and planned (UI refresh spec §3.1); missing from an older add-on. */
   week?: { done: number; planned: number };
+  /** One per active program, by date then name (today-ahead spec §2.2.1); missing from an older add-on. */
+  upcoming?: Upcoming[];
 }
 
 /** The part of home-assistant-js-websocket's `Connection` the subscription uses. */

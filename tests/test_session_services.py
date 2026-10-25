@@ -7,6 +7,7 @@ from homeassistant.auth.const import GROUP_ID_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.loader import async_get_integration
+import probatio
 import pytest
 from pytest_homeassistant_custom_component.common import CLIENT_ID, MockConfigEntry
 from pytest_homeassistant_custom_component.typing import (
@@ -123,6 +124,63 @@ async def test_start_and_end_services_and_errors(
     with pytest.raises(HomeAssistantError) as unloaded:
         await hass.services.async_call(DOMAIN, "end_session", {}, blocking=True)
     assert unloaded.value.translation_key == "unavailable"
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_start_service_passes_date(
+    hass: HomeAssistant, fake_addon: FakeAddon, config_entry: MockConfigEntry
+) -> None:
+    """The start service sends its date as YYYY-MM-DD; a date that isn't one fails the schema."""
+    await _connected(hass, config_entry)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "start_session",
+        {"program_id": 4, "participants": [1], "date": "2026-10-31"},
+        blocking=True,
+    )
+    assert [call[1] for call in fake_addon.session_calls] == [
+        {"program_id": 4, "participants": [1], "date": "2026-10-31"}
+    ]
+
+    for date in ("2026-02-30", "soon", ""):
+        with pytest.raises(probatio.Invalid):
+            await hass.services.async_call(
+                DOMAIN,
+                "start_session",
+                {"program_id": 4, "participants": [1], "date": date},
+                blocking=True,
+            )
+    assert len(fake_addon.session_calls) == 1
+    await unload(hass, config_entry)
+
+
+@pytest.mark.usefixtures("cards_bundle")
+async def test_start_service_with_date_refused_by_an_older_addon(
+    hass: HomeAssistant, fake_addon: FakeAddon, config_entry: MockConfigEntry
+) -> None:
+    """An add-on whose today has no upcoming can't start early: a translated refusal before the relay."""
+    del fake_addon.today["upcoming"]
+    await _connected(hass, config_entry)
+
+    with pytest.raises(ServiceValidationError) as raised:
+        await hass.services.async_call(
+            DOMAIN,
+            "start_session",
+            {"program_id": 4, "participants": [1], "date": "2026-10-31"},
+            blocking=True,
+        )
+    assert raised.value.translation_domain == DOMAIN
+    assert raised.value.translation_key == "session_early_unsupported"
+    assert fake_addon.session_calls == []
+
+    await hass.services.async_call(
+        DOMAIN, "start_session", {"program_id": 3, "participants": [1]}, blocking=True
+    )
+    assert [call[1] for call in fake_addon.session_calls] == [
+        {"program_id": 3, "participants": [1]}
+    ]
+    await unload(hass, config_entry)
 
 
 @pytest.mark.usefixtures("cards_bundle")

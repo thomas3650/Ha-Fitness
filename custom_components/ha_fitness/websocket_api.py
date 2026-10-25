@@ -16,6 +16,7 @@ from homeassistant.components.websocket_api.decorators import (
 )
 from homeassistant.components.websocket_api.messages import event_message
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 import probatio
@@ -261,6 +262,7 @@ def _usable(
         probatio.Optional("program_id"): int,
         probatio.Optional("participants"): [int],
         probatio.Optional("training_day_id"): int,
+        probatio.Optional("date"): cv.date,
         probatio.Optional("speaker"): str,
         probatio.Optional("feeling"): str,
     }
@@ -275,7 +277,8 @@ async def ws_session_command(
 
     `start` needs `program_id` and `participants`, and its optional `speaker` must match the add-on's pattern;
     `feeling` needs `feeling`; the add-on checks the rest. The speaker is passed on only while the add-on supports
-    music (the music spec §5.6). A refusal keeps the add-on's code (not_found, conflict, invalid); anything else
+    music (the music spec §5.6). A start's `date` is refused as invalid (`session_early_unsupported`) while the
+    add-on's today has no `upcoming`. A refusal keeps the add-on's code (not_found, conflict, invalid); anything else
     that fails is unavailable.
     """
     command: str = msg["command"]
@@ -290,6 +293,14 @@ async def ws_session_command(
         _send_error(connection, msg["id"], "invalid")
         return
     if (coordinator := _usable(hass, connection, msg)) is None:
+        return
+    # An add-on before upcoming doesn't know the date (the today-ahead spec §6).
+    if (
+        command == "start"
+        and "date" in msg
+        and "upcoming" not in (coordinator.today or {})
+    ):
+        _send_error(connection, msg["id"], "invalid", "session_early_unsupported")
         return
     try:
         if command == "feeling":
@@ -308,6 +319,7 @@ async def ws_session_command(
                 msg.get("training_day_id"),
                 coordinator.integration_version,
                 msg.get("speaker") if coordinator.music_supported else None,
+                msg.get("date"),
             )
         else:
             view = await async_session_command(

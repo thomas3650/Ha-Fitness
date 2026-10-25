@@ -26,13 +26,14 @@ def get_session(services: ServicesDep) -> SessionView | None:
 def start_session(
     services: ServicesDep, client: ClientDep, body: NewSession
 ) -> SessionView:
-    """Start a session: 404 `not_found`, 409 `conflict` or 422 `invalid` when the start is refused."""
+    """Start a session, for a training day, early for an upcoming date, or extra: 404, 409 or 422 when refused."""
     return services.sessions.start(
         body.program_id,
         body.participants,
         body.training_day_id,
         client,
         speaker=body.speaker,
+        date=body.date,
     )
 
 

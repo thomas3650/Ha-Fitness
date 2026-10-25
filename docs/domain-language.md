@@ -30,7 +30,7 @@ spec already names.
 | **Person** | Someone who trains, linked to an HA person entity. |
 | **Participant** | A person taking part in one session (1 or 2, at most the number of stations). Participant 1 starts at station 1, participant 2 at station 2. |
 | **Session** | One run of a program's workout, from start to done or ended early. |
-| **Extra session** | A session started when nothing is due, or from the workout tab. It counts toward done and time trained, not toward the streak, and closes no training day. |
+| **Extra session** | A session started when nothing is due, or from the workout tab. It counts toward done and time trained, not toward the streak, and closes no training day. A start from an upcoming row on the today card is not one: it is a training day done early. |
 | **Feeling** | How a workout felt, given on the finished screen: too easy, just right or too hard. Stored with the completed session, so Claude can read it when it adjusts a program. |
 | **Ended early** | A session stopped before its last work phase ended: with Slut or Annullér, or after 30 minutes paused. It counts as done if at least one full round was completed. |
 
@@ -48,15 +48,17 @@ spec already names.
 | --- | --- | --- |
 | **Training day** | | One program on one of its weekdays (one local date). Created at 00:00 HA time, and also during the day when a program is created, switched on, or gets today's weekday (D34). |
 | **Due** | | Today's training day, not done yet. |
-| **Late** | Forfalden | A due day that has passed untouched. It stays visible until the next training day of any program begins, unless a session for it is running or paused (D42). |
-| **Missed** | | A late day closed because the next training day began. |
+| **Late** | Forfalden | A due day that has passed untouched. It stays open until its own program trains again or `late_days` days have passed, whichever comes first (D60). A session for it that is running or paused keeps it open (D42). |
+| **Missed** | | A late day that closed because its program trains again or its `late_days` are up. Another program's training day closes nothing. |
+| **Upcoming** | | A program's next training after today, with no done, missed or skipped day. It is in the `upcoming` list of the today data, one per active program. Its Start is on only while the program has no open day and no day done today or later (D61). |
+| **Done early** | | A training day done before its date, from an upcoming row. The day counts for its own date (D47). A session that doesn't count leaves no day. |
 | **Skipped** | | A training day closed on purpose with Spring over (one confirmation, no reason). |
 | **Done** | | A training day closed by a counted session. |
 | **Done late** | | A done day whose date is before the local date of the session's first work phase. A session that crosses midnight is not late. |
 | **Week ring** | Denne uge | Done over planned training days for the current local week, Monday to Sunday, for the household. Planned counts this week's days of any status, plus the days the active programs will still create until Sunday. Done counts days with status done. |
 | **Open** | | Due or late. |
 | **Closed** | | Done, missed or skipped. |
-| **Next training day** | Næste træningsdag | The first date after today on which an active program trains. The entity `sensor.ha_fitness_next_training_day`, with the programs of that date. |
+| **Next training day** | Næste træningsdag | The first date after today on which an active program trains and isn't already done there. The entity `sensor.ha_fitness_next_training_day`, with the programs of that date. |
 | **Training today** (the open-days sensor) | Træning i dag | The entity `sensor.ha_fitness_today`: `due` if any open day is due, else `late` if any is late, else `none`. Its `training_days` attribute lists the open days. |
 | **Training open** | Træning åben | The entity `binary_sensor.ha_fitness_training_open`: on while any training day is open. Unavailable, like every HA Fitness entity, while the add-on can't be reached. |
 
@@ -65,6 +67,7 @@ The week ring in five cases:
 - A late day from last week, trained on Monday, counts as done in last week. The ring doesn't move.
 - After a fresh install, or when a program is created or switched on mid-week, planned counts only from today.
 - Skipped and missed days count in planned, never in done.
+- A day done early whose date is in next week counts in next week's ring. This week's ring doesn't move.
 - Extra sessions don't count.
 - The ring starts over at the Sunday to Monday midnight.
 
@@ -86,16 +89,17 @@ All per person. The add-on computes them from the training days and the counted 
 | **All time** | Everything above, from the start. |
 | **This month** | The same, limited to the add-on's current local month. A day counts in the month of its date. An extra session's done and every session's time count in the month the session started. |
 
-Two rules surprise:
+Three rules surprise:
 
 - A day dated 31 October and done on 1 November counts its done in October but its time in November.
+- A day dated 1 November and done early on 31 October counts its done in November but its time in October.
 - With two programs on one date, doing only one of them breaks the streak.
 
 ## The tablet
 
 | Term | Danish UI | Meaning |
 | --- | --- | --- |
-| **Today card** | Træning i dag | The small card that shows the open training days, with Start and Spring over. Hidden when nothing is open. |
+| **Today card** | Træning i dag | The small card that shows the open training days, with Start and Spring over. With `days_ahead` it also shows upcoming rows: Start, or a reminder only. Hidden when nothing is open or upcoming. |
 | **Workout tab** | | The dashboard tab with all active programs and the stats. |
 | **Workout flow** | | Details → Get ready → Timer → Done, full screen. |
 | **Skip** | Spring over | The today card's button that skips a training day. |

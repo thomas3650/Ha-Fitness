@@ -1,7 +1,7 @@
 import { getAllByRole, getByRole, queryAllByRole, queryByRole, queryByText } from "@testing-library/dom";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { audioLocked } from "../src/audio";
+import { audioLocked, scheduleTone } from "../src/audio";
 import "../src/index";
 import type { OverlayMode, SessionState, SessionView } from "../src/overlay";
 import { installFakeAudio } from "./fake-audio";
@@ -477,6 +477,39 @@ test("Start unlocks audio before the command resolves", async () => {
   expect(button(flow, "Start").disabled).toBe(true);
 });
 
+test("a program without a countdown plays the long beep at Start", async () => {
+  const nocount: Program = { ...onsdag, id: 5, countdown_seconds: 0 };
+  const fake = fakeHass("da", [thomas, maria], [nocount]);
+  const { flow } = await mount(fake, { kind: "details", programId: 5 });
+  await tap(flow, button(flow, "Start"));
+  const context = audio.contexts[0];
+  context.currentTime = 3;
+  const before = audio.tones().length;
+
+  // The start's answer: the first phase is work, from now to 45 s.
+  fake.commands[0].resolve(
+    view({
+      phase: {
+        index: 0,
+        kind: "work",
+        round: 1,
+        interval: 1,
+        duration: 45,
+        ends_at: "2026-10-24T08:00:45.000Z",
+        remaining: null,
+      },
+      next_phase: { kind: "switch", duration: 15 },
+    }),
+  );
+  await settle(flow);
+  const now = audio.tones().slice(before).filter((tone) => tone.start === 3 && !tone.cancelled);
+
+  // The work tone, as the audio module makes it, for its pitch.
+  scheduleTone("work", 0, 0)();
+  const work = audio.tones().at(-1)!;
+  expect(now.map((tone) => tone.frequency)).toEqual([work.frequency]);
+});
+
 test("Start sends participants and training day", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, fromToday);
@@ -846,6 +879,40 @@ test("no speaker sent without the row", async () => {
     const { flow } = await mount(fake, details);
     await tap(flow, button(flow, "Start"));
     expect(sessionCommands(fake)[0]).not.toHaveProperty("speaker");
+    document.body.replaceChildren();
+  }
+});
+
+test("Start from an upcoming row sends the date and no training day", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, { kind: "details", programId: 3, date: "2026-10-30" });
+  await tap(flow, button(flow, "Start"));
+  expect(sessionCommands(fake)).toEqual([
+    {
+      type: "ha_fitness/session/command",
+      command: "start",
+      program_id: 3,
+      participants: [1, 2],
+      date: "2026-10-30",
+    },
+  ]);
+});
+
+test("a refused early start shows the can't-start text, also from an older add-on", async () => {
+  const cases: unknown[] = [
+    // The add-on: that date isn't startable (any more).
+    { code: "conflict", message: "Not startable" },
+    // The integration: the add-on is too old to start early.
+    { code: "invalid", message: "HA Fitness: invalid", translation_key: "session_early_unsupported" },
+  ];
+  for (const error of cases) {
+    const fake = fakeHass("da");
+    const { flow } = await mount(fake, { kind: "details", programId: 3, date: "2026-10-30" });
+    await tap(flow, button(flow, "Start"));
+    fake.commands[0].reject(error);
+    await settle(flow);
+    expect(text(getByRole(root(flow), "alert"))).toBe("Træningen kan ikke startes nu.");
+    expect(button(flow, "Start").disabled).toBe(false);
     document.body.replaceChildren();
   }
 });

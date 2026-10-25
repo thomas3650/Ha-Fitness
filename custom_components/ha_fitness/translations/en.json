@@ -140,6 +140,10 @@
         "training_day_id": {
           "name": "Training day ID",
           "description": "The open training day this session is for. Leave it out for an extra session."
+        },
+        "date": {
+          "name": "Date",
+          "description": "The upcoming date of the program's next training, to start it early. Leave it out otherwise."
         }
       }
     },
@@ -166,6 +170,9 @@
     },
     "session_invalid": {
       "message": "Choose one or two different people, and no more people than the program has stations."
+    },
+    "session_early_unsupported": {
+      "message": "The HA Fitness app is too old to start a training early. Update the app."
     },
     "music_not_found": {
       "message": "There's no workout with music running."

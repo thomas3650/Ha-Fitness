@@ -21,6 +21,11 @@ ingress: true
 ingress_port: 8765
 panel_icon: mdi:dumbbell
 panel_title: HA Fitness
+# How many days after its date a missed training stays open (today-ahead spec §2.1.5); read at the start.
+options:
+  late_days: 2
+schema:
+  late_days: "int(0,6)"
 # A consistent copy of the database (backup/snapshot.db) before each hot backup; the live database and the
 # downloaded media are left out (the media is downloaded again after a restore).
 backup_pre: /usr/bin/with-contenv /opt/venv/bin/python -m ha_fitness_server.snapshot

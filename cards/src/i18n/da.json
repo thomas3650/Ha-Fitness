@@ -23,6 +23,8 @@
     "short_minutes": "{count} min",
     "due": "I dag",
     "late": "Forfalden · {weekday}",
+    "tomorrow": "I morgen",
+    "ahead": "{weekday}",
     "start": "Start",
     "skip": "Spring over",
     "skip_confirm": "Spring over?",
@@ -202,6 +204,7 @@
     "language": "Sprog",
     "language_default": "Følg brugerens sprog",
     "language_en": "English",
-    "language_da": "Dansk"
+    "language_da": "Dansk",
+    "days_ahead": "Dage frem"
   }
 }

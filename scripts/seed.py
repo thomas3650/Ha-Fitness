@@ -22,14 +22,12 @@ Three flags then make a training day on purpose, through the add-on's dev routes
 - Each flag first checks that the server has its dev routes, before anything changes, and refuse when it hasn't.
 - `--today` adds today's weekday to Sample, switches Sample on when it is off, and creates or reopens its day for
   today, so it is due at once, also after a skip earlier that day.
-- `--late` makes Sample late. It first refuses when another active program trains today, before it changes anything
-  (also before the persons, people and Sample above). Then it switches Sample off (which removes its open days), sets
-  its weekdays to every day except today, removes every training day of today (any day today, closed ones included,
-  would close the late one), switches Sample on, and creates or reopens its day for yesterday.
+- `--late` makes Sample late. It switches Sample off (which removes its open days), sets its weekdays to every day
+  except today, removes every training day of today (a Sample day today would close the late one), switches Sample on,
+  and creates or reopens its day for yesterday.
 - `--short` is for a short real run of the workout: it creates the program "Kort" (2 body-weight stations, 1 round,
   work 10 s, switch 0 s, countdown 5 s) with today's weekday only, or, when Kort exists, sets its weekdays to today's
-  only and switches it on. Then it creates or reopens Kort's day for today. Kort's day for today closes an earlier
-  late day as missed, and makes `--late` refuse on that weekday.
+  only and switches it on. Then it creates or reopens Kort's day for today.
 """
 
 import argparse
@@ -197,28 +195,6 @@ def _server_session(server_url: str) -> aiohttp.ClientSession:
     )
 
 
-async def _refuse_late(server_url: str, today: dt.date) -> None:
-    """Raise when another active program trains today: its day of today would close Sample's late day."""
-    weekday = WEEKDAYS[today.weekday()]
-    async with (
-        _server_session(server_url) as session,
-        session.get("/api/v1/programs") as response,
-    ):
-        programs = await _json(response)
-    others = [
-        program["program"]["name"]
-        for program in programs
-        if program["program"]["active"]
-        and weekday in program["program"]["weekdays"]
-        and program["program"]["name"].casefold() != SAMPLE_NAME.casefold()
-    ]
-    if others:
-        raise SeedError(
-            f"refusing --late: the active program {', '.join(others)} trains today ({weekday}); "
-            "switch it off first, then seed again"
-        )
-
-
 async def _find_program(
     session: aiohttp.ClientSession, name: str
 ) -> dict[str, Any] | None:
@@ -384,8 +360,6 @@ async def _run(ha_url: str, server_url: str, mode: str | None) -> None:
     today = _local_today()
     if mode is not None:
         await _require_dev_routes(server_url)
-    if mode == "late":
-        await _refuse_late(server_url, today)
     people = await _ha_persons(ha_url)
     await _seed_server(server_url, people)
     if mode == "today":
@@ -422,7 +396,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dest="mode",
         action="store_const",
         const="late",
-        help="then make Sample late (refuses when another active program trains today)",
+        help="then make Sample late",
     )
     when.add_argument(
         "--short",

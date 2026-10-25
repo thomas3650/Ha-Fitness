@@ -9,7 +9,14 @@ import * as overlay from "./overlay";
 import { type SessionView, isActive } from "./overlay";
 import { initials, personColor } from "./people";
 import type { PersonStats, StatsMessage } from "./stats-card";
-import { type Connection, type OpenDay, type Today, TodaySubscription, WsSubscription } from "./today-data";
+import {
+  type Connection,
+  type OpenDay,
+  type Today,
+  TodaySubscription,
+  type Upcoming,
+  WsSubscription,
+} from "./today-data";
 
 /** The part of Home Assistant's `hass` object this card uses. */
 interface Hass extends LanguageHass {
@@ -26,6 +33,8 @@ interface Hass extends LanguageHass {
 
 interface TodayCardConfig extends LanguageConfig {
   type: string;
+  /** How many days ahead upcoming trainings show, 0–6 (today-ahead spec §2.3.1); unset is 0. */
+  days_ahead?: unknown;
 }
 
 interface CustomCardEntry {
@@ -63,6 +72,9 @@ const WEEK_SIZE = 96;
 const WEEK_STROKE = 10;
 const WEEK_RADIUS = (WEEK_SIZE - WEEK_STROKE) / 2;
 const WEEK_CIRCUMFERENCE = 2 * Math.PI * WEEK_RADIUS;
+/** The most days ahead the card shows (today-ahead spec §2.3.1). */
+const MAX_DAYS_AHEAD = 6;
+const DAY_MS = 86_400_000;
 /** The service errors with a text of their own; any other error gets the general text. */
 const KNOWN_ERRORS = new Set(["not_found", "not_open", "unavailable"]);
 
@@ -70,6 +82,30 @@ const KNOWN_ERRORS = new Set(["not_found", "not_open", "unavailable"]);
 function weekdayOf(date: string): string {
   const [year, month, day] = date.split("-").map(Number);
   return WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+}
+
+/** The days from one `YYYY-MM-DD` date to another, the same in every timezone. */
+function daysBetween(from: string, to: string): number {
+  const utc = (date: string): number => {
+    const [year, month, day] = date.split("-").map(Number);
+    return Date.UTC(year, month - 1, day);
+  };
+  return Math.round((utc(to) - utc(from)) / DAY_MS);
+}
+
+/**
+ * By date, then by program name ignoring case: a late day before a due one, an earlier training
+ * before a later one. Names compare by code point, as the add-on's `casefold()` sort does, so the
+ * card keeps the add-on's order (Ø after Z).
+ */
+function byDateThenName<T extends { date: string; program_name: string }>(rows: readonly T[]): T[] {
+  const key = (row: T): [string, string] => [row.date, row.program_name.toLowerCase()];
+  return [...rows].sort((a, b) => {
+    const [dateA, nameA] = key(a);
+    const [dateB, nameB] = key(b);
+    if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+    return nameA === nameB ? 0 : nameA < nameB ? -1 : 1;
+  });
 }
 
 /** The card's error text key for an error from `hass.callService`. */
@@ -80,7 +116,9 @@ function errorKey(error: unknown): string {
 
 /**
  * "Træning i dag" (UI refresh spec §2.1): a top line with the title and the people's streaks, then
- * the open training days, each with Start and a two-step Spring over (step 4 spec §6). While a
+ * the open training days, each with Start and a two-step Spring over (step 4 spec §6), then the
+ * trainings coming within `days_ahead` days, with Start when they can start early, else as a
+ * reminder (today-ahead spec §2.3). While a
  * session is active the days give way to the session row: the program, the state line and the
  * people line, with Fortsæt (UI polish spec §2). The week ring sits beside the first row's text,
  * and each row's buttons sit under the ring and the text (UI polish spec §2.6). Without rows, the
@@ -307,6 +345,18 @@ export class TodayCard extends LitElement {
       padding: 12px 20px 0;
       color: var(--error-color);
     }
+    /* An upcoming row: coming, not due. Its name is quieter and its when line has a calendar. */
+    .upcoming .name {
+      color: var(--secondary-text-color);
+    }
+    .when {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .when ha-icon {
+      --mdc-icon-size: 18px;
+    }
   `;
 
   setConfig(config: TodayCardConfig): void {
@@ -365,8 +415,7 @@ export class TodayCard extends LitElement {
    * is active: then it shows, an extra session too.
    */
   private syncHidden(): void {
-    const hide =
-      !this.inPreview && !this.session && (this.today === undefined || this.today?.open.length === 0);
+    const hide = !this.inPreview && !this.session && (this.today === undefined || this.empty);
     if (hide === this.hidden) return;
     // As HA's own cards do: hui-card hides a card that sets `hidden` and says so.
     this.toggleAttribute("hidden", hide);
@@ -380,10 +429,35 @@ export class TodayCard extends LitElement {
     return Boolean(this.preview || this.editMode);
   }
 
-  /** One row for the session, else one per open day. */
+  /** One row for the session, else one per open day and upcoming training. */
   private get rowCount(): number {
     if (this.session) return 1;
-    return Math.max(1, this.today?.open.length ?? 0);
+    return Math.max(1, (this.today?.open.length ?? 0) + this.upcoming.length);
+  }
+
+  /** The today data has nothing to show: no open day and no upcoming training in range. */
+  private get empty(): boolean {
+    return this.today?.open.length === 0 && this.upcoming.length === 0;
+  }
+
+  /** The `days_ahead` option: a whole number up to 6, else 0. */
+  private get daysAhead(): number {
+    const days = this.config?.days_ahead;
+    if (typeof days !== "number" || !Number.isInteger(days)) return 0;
+    return Math.min(MAX_DAYS_AHEAD, Math.max(0, days));
+  }
+
+  /** The upcoming trainings within `days_ahead` days of the today data's date, by date then name. */
+  private get upcoming(): Upcoming[] {
+    const today = this.today;
+    const limit = this.daysAhead;
+    if (!today?.upcoming || limit === 0) return [];
+    return byDateThenName(
+      today.upcoming.filter((entry) => {
+        const days = daysBetween(today.date, entry.date);
+        return days >= 1 && days <= limit;
+      }),
+    );
   }
 
   private t(key: string, vars?: Vars): string {
@@ -409,6 +483,12 @@ export class TodayCard extends LitElement {
   private start(day: OpenDay): void {
     unlockAudio();
     overlay.open({ kind: "details", programId: day.program_id, trainingDayId: day.id, ...this.flowLanguage });
+  }
+
+  /** Start on an upcoming row: as Start, and the flow's start carries the training's date. */
+  private startEarly(entry: Upcoming): void {
+    unlockAudio();
+    overlay.open({ kind: "details", programId: entry.program_id, date: entry.date, ...this.flowLanguage });
   }
 
   /** Fortsæt: unlock audio in the tap itself, then reopen the overlay at the session. */
@@ -468,8 +548,14 @@ export class TodayCard extends LitElement {
     return this.t("today.late", { weekday: this.t(`weekday.${weekdayOf(day.date)}`) });
   }
 
+  /** "I morgen" for the day after the today data's date, else the weekday: "fredag". */
+  private whenLine(entry: Upcoming): string {
+    if (this.today && daysBetween(this.today.date, entry.date) === 1) return this.t("today.tomorrow");
+    return this.t("today.ahead", { weekday: this.t(`weekday.${weekdayOf(entry.date)}`) });
+  }
+
   /** "5 øvelser · 29 min". */
-  private summaryLine(day: OpenDay): string {
+  private summaryLine(day: OpenDay | Upcoming): string {
     return this.t("today.short_summary", {
       stations: this.t("today.stations", { count: day.station_count }),
       minutes: this.t("today.short_minutes", { count: day.total_minutes }),
@@ -644,12 +730,13 @@ export class TodayCard extends LitElement {
     const today = this.today;
     // Without rows, the ring and the text sit side by side.
     if (today === null) return this.renderHead(true, html`<div class="muted">${this.t("today.unreachable")}</div>`);
-    if (!today?.open.length) {
+    if (!today || this.empty) {
       return this.renderHead(true, html`<div class="muted">${this.t("today.nothing_open")}</div>`);
     }
+    const open = byDateThenName(today.open);
     return html`
       <ul>
-        ${today.open.map(
+        ${open.map(
           (day, index) => html`
             <li>
               ${this.renderHead(
@@ -666,7 +753,41 @@ export class TodayCard extends LitElement {
             </li>
           `,
         )}
+        ${this.upcoming.map((entry, index) => this.renderUpcoming(entry, open.length + index === 0))}
       </ul>
+    `;
+  }
+
+  /** An upcoming row: Start when it can start early, else a reminder with no buttons. */
+  private renderUpcoming(entry: Upcoming, first: boolean) {
+    return html`
+      <li class="upcoming">
+        ${this.renderHead(
+          first,
+          html`
+            <div class="name">${entry.program_name}</div>
+            <div class="line when">
+              <ha-icon icon="mdi:calendar-clock" aria-hidden="true"></ha-icon>${this.whenLine(entry)}
+            </div>
+            <div class="line">${this.summaryLine(entry)}</div>
+          `,
+        )}
+        ${entry.startable
+          ? html`
+              <div class="actions">
+                <div class="lead">
+                  ${iconButton({
+                    icon: "mdi:play",
+                    label: this.t("today.start"),
+                    text: this.t("today.start"),
+                    className: "slot",
+                    onClick: () => this.startEarly(entry),
+                  })}
+                </div>
+              </div>
+            `
+          : nothing}
+      </li>
     `;
   }
 
@@ -674,7 +795,7 @@ export class TodayCard extends LitElement {
     // No data yet, or hidden with nothing open; an active session always shows.
     if (!this.session) {
       if (this.today === undefined) return nothing;
-      if (this.today !== null && this.today.open.length === 0 && !this.inPreview) return nothing;
+      if (this.today !== null && this.empty && !this.inPreview) return nothing;
     }
     return html`
       <ha-card>
@@ -693,7 +814,7 @@ export class TodayCard extends LitElement {
 export function registerTodayCard(): void {
   if (customElements.get(TAG)) return;
   customElements.define(TAG, TodayCard);
-  registerCardEditor(EDITOR_TAG);
+  registerCardEditor(EDITOR_TAG, { daysAhead: true });
   window.customCards = window.customCards ?? [];
   window.customCards.push({
     type: TAG,

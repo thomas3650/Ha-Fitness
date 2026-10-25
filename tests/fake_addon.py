@@ -28,6 +28,27 @@ TODAY_DUE: dict[str, Any] = {
         }
     ],
     "next": {"date": "2026-10-31", "programs": ["Lørdag"]},
+    # Each active program's next training (the today-ahead spec §2.2.1); an add-on before it has no key.
+    "upcoming": [
+        {
+            "program_id": 4,
+            "program_name": "Lørdag",
+            "date": "2026-10-31",
+            "station_count": 4,
+            "rounds": 3,
+            "total_minutes": 18,
+            "startable": True,
+        },
+        {
+            "program_id": 3,
+            "program_name": "Onsdag",
+            "date": "2026-11-04",
+            "station_count": 5,
+            "rounds": 5,
+            "total_minutes": 29,
+            "startable": False,
+        },
+    ],
 }
 
 
