@@ -1,5 +1,6 @@
 import { LitElement, type PropertyValues, css, html, nothing } from "lit";
 
+import { registerCardEditor } from "./card-editor";
 import { type Vars, localize } from "./i18n";
 import { type LanguageConfig, type LanguageHass, cardLanguage } from "./language";
 import { PERSON_COLORS } from "./people";
@@ -58,6 +59,7 @@ declare global {
 }
 
 const TAG = "ha-fitness-stats-card";
+const EDITOR_TAG = "ha-fitness-stats-card-editor";
 
 /**
  * The workout tab's stats (spec §5.2): one panel per person with the streak and a table of this
@@ -81,6 +83,16 @@ export class StatsCard extends LitElement {
   private readonly subscription = new WsSubscription<StatsMessage>("ha_fitness/stats/subscribe", (message) =>
     this.receive(message),
   );
+
+  /** Home Assistant's card editor shows this element for the card (card editors spec). */
+  static getConfigElement(): HTMLElement {
+    return document.createElement(EDITOR_TAG);
+  }
+
+  /** The config the card picker starts from, besides `type`: no options. */
+  static getStubConfig(): Record<string, unknown> {
+    return {};
+  }
 
   static override styles = css`
     :host {
@@ -287,6 +299,7 @@ export class StatsCard extends LitElement {
 export function registerStatsCard(): void {
   if (customElements.get(TAG)) return;
   customElements.define(TAG, StatsCard);
+  registerCardEditor(EDITOR_TAG);
   window.customCards = window.customCards ?? [];
   window.customCards.push({
     type: TAG,
