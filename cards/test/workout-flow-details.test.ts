@@ -882,3 +882,37 @@ test("no speaker sent without the row", async () => {
     document.body.replaceChildren();
   }
 });
+
+test("Start from an upcoming row sends the date and no training day", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, { kind: "details", programId: 3, date: "2026-10-30" });
+  await tap(flow, button(flow, "Start"));
+  expect(sessionCommands(fake)).toEqual([
+    {
+      type: "ha_fitness/session/command",
+      command: "start",
+      program_id: 3,
+      participants: [1, 2],
+      date: "2026-10-30",
+    },
+  ]);
+});
+
+test("a refused early start shows the can't-start text, also from an older add-on", async () => {
+  const cases: unknown[] = [
+    // The add-on: that date isn't startable (any more).
+    { code: "conflict", message: "Not startable" },
+    // The integration: the add-on is too old to start early.
+    { code: "invalid", message: "HA Fitness: invalid", translation_key: "session_early_unsupported" },
+  ];
+  for (const error of cases) {
+    const fake = fakeHass("da");
+    const { flow } = await mount(fake, { kind: "details", programId: 3, date: "2026-10-30" });
+    await tap(flow, button(flow, "Start"));
+    fake.commands[0].reject(error);
+    await settle(flow);
+    expect(text(getByRole(root(flow), "alert"))).toBe("Træningen kan ikke startes nu.");
+    expect(button(flow, "Start").disabled).toBe(false);
+    document.body.replaceChildren();
+  }
+});

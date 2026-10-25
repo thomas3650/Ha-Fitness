@@ -78,10 +78,12 @@ export function isActive(session: SessionView | null | undefined): session is Se
 
 /**
  * How the flow opens: the details of a program (from a card's Start), or the running session.
- * `language` is the opening card's `language` option, if it has one; the flow then uses it too.
+ * `trainingDayId` is an open day's, `date` an upcoming training's (today-ahead spec §2.3.4); the
+ * start carries the one given. `language` is the opening card's `language` option, if it has one;
+ * the flow then uses it too.
  */
 export type OverlayMode =
-  | { kind: "details"; programId: number; trainingDayId?: number; language?: string }
+  | { kind: "details"; programId: number; trainingDayId?: number; date?: string; language?: string }
   | { kind: "resume"; language?: string };
 
 /** The part of Home Assistant's `hass` object the controller uses. */

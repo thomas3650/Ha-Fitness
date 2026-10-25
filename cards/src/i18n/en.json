@@ -23,6 +23,8 @@
     "short_minutes": "{count} min",
     "due": "Today",
     "late": "Late · {weekday}",
+    "tomorrow": "Tomorrow",
+    "ahead": "{weekday}",
     "start": "Start",
     "skip": "Skip",
     "skip_confirm": "Skip?",
@@ -202,6 +204,7 @@
     "language": "Language",
     "language_default": "Follow the user's language",
     "language_en": "English",
-    "language_da": "Dansk"
+    "language_da": "Dansk",
+    "days_ahead": "Days ahead"
   }
 }

@@ -528,6 +528,7 @@ export class WorkoutFlow extends LitElement {
         program_id: program.id,
         participants,
         ...(mode.trainingDayId === undefined ? {} : { training_day_id: mode.trainingDayId }),
+        ...(mode.date === undefined ? {} : { date: mode.date }),
         ...(speaker === undefined ? {} : { speaker }),
       });
       // With no countdown, work starts now: the flow whose tap unlocked the audio plays its long beep.
@@ -544,6 +545,10 @@ export class WorkoutFlow extends LitElement {
 
   private startErrorKey(error: unknown): string {
     const code = errorCode(error);
+    // An early start the add-on is too old for: the integration refuses it as invalid, with its own key.
+    if ((error as { translation_key?: unknown } | null)?.translation_key === "session_early_unsupported") {
+      return "flow.error.cant_start";
+    }
     if (code === "conflict") {
       return isActive(this.state?.session) ? "flow.error.already_running" : "flow.error.cant_start";
     }

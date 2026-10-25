@@ -1,4 +1,4 @@
-import { getByRole, queryByRole } from "@testing-library/dom";
+import { getByRole, queryAllByRole, queryByRole } from "@testing-library/dom";
 import { afterEach, describe, expect, onTestFinished, test } from "vitest";
 
 import "../src/index";
@@ -175,14 +175,80 @@ describe.each(CARD_TAGS)("%s", (tag) => {
     const editor = cardClass(tag).getConfigElement() as EditorElement;
     document.body.append(editor);
     await editor.updateComplete;
-    expect(queryByRole(root(editor), "combobox")).toBeNull();
+    expect(queryAllByRole(root(editor), "combobox")).toEqual([]);
     editor.setConfig(deepFreeze({ type: tag }));
     await editor.updateComplete;
-    expect(queryByRole(root(editor), "combobox")).not.toBeNull();
+    expect(queryAllByRole(root(editor), "combobox")).not.toEqual([]);
   });
 
   test("labels in English before hass", async () => {
     const { editor } = await mount(tag, { type: tag }, null);
     expect(field(editor, "Language")).toBeDefined();
   });
+});
+
+/** The days ahead field's options: 0 to 6. */
+const DAYS = ["0", "1", "2", "3", "4", "5", "6"];
+
+describe("the today card's days ahead", () => {
+  const tag = "ha-fitness-today-card";
+
+  test("a Dage frem field from 0 to 6, at 0 by default", async () => {
+    const { editor } = await mount(tag, { type: tag });
+    const select = field(editor, "Dage frem");
+    expect(optionTexts(select)).toEqual(DAYS);
+    expect(selectedText(select)).toBe("0");
+  });
+
+  test("labelled Days ahead in English", async () => {
+    const { editor } = await mount(tag, { type: tag }, "en");
+    expect(field(editor, "Days ahead")).toBeDefined();
+  });
+
+  test("shows the config's value and keeps the language field's", async () => {
+    const { editor } = await mount(tag, { type: tag, language: "en", days_ahead: 3 });
+    expect(selectedText(field(editor, "Dage frem"))).toBe("3");
+    expect(selectedText(field(editor, "Sprog"))).toBe("English");
+  });
+
+  test("choosing a number sets days_ahead and keeps the rest", async () => {
+    const { editor, events } = await mount(tag, { type: tag, language: "da", foo: 1 });
+    choose(field(editor, "Dage frem"), "2");
+    expect(events).toEqual([{ type: tag, language: "da", foo: 1, days_ahead: 2 }]);
+  });
+
+  test("choosing 0 removes days_ahead", async () => {
+    const { editor, events } = await mount(tag, { type: tag, days_ahead: 4 });
+    choose(field(editor, "Dage frem"), "0");
+    expect(events).toEqual([{ type: tag }]);
+    expect(Object.hasOwn(events[0], "days_ahead")).toBe(false);
+  });
+
+  test("a language change keeps days_ahead", async () => {
+    const { editor, events } = await mount(tag, { type: tag, days_ahead: 2 });
+    choose(field(editor, "Sprog"), "English");
+    expect(events).toEqual([{ type: tag, days_ahead: 2, language: "en" }]);
+  });
+
+  test("shows a value outside 0 to 6, so it can be cleared", async () => {
+    for (const value of [9, "2", 1.5]) {
+      const { editor, events } = await mount(tag, { type: tag, days_ahead: value });
+      const select = field(editor, "Dage frem");
+      expect(optionTexts(select)).toEqual([...DAYS, String(value)]);
+      expect(selectedText(select)).toBe(String(value));
+      // Chosen again (the last option; "2" also names the number's option): nothing changes.
+      select.selectedIndex = select.options.length - 1;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      expect(events).toEqual([]);
+      choose(select, "0");
+      expect(events).toEqual([{ type: tag }]);
+      document.body.replaceChildren();
+    }
+  });
+});
+
+test.each(["ha-fitness-workout-card", "ha-fitness-stats-card"])("%s's editor has no days ahead field", async (tag) => {
+  const { editor } = await mount(tag, { type: tag });
+  expect(queryByRole(root(editor), "combobox", { name: "Dage frem" })).toBeNull();
+  expect(field(editor, "Sprog")).toBeDefined();
 });
