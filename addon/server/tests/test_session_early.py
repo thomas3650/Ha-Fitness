@@ -13,6 +13,7 @@ from datetime import timedelta
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from ha_fitness_server.push import Hub, Message
 import httpx
 
@@ -26,6 +27,7 @@ from tests.session_helpers import (
     SMALL_END,
     SMALL_STARTS,
     TODAY,
+    WS,
     at,
     create_small,
     current,
@@ -35,6 +37,9 @@ from tests.session_helpers import (
     open_day,
     set_people,
     start,
+    tc_setup,
+    ws_connect,
+    ws_session,
 )
 from tests.test_people import THOMAS
 from tests.test_scheduler import local
@@ -171,6 +176,32 @@ async def test_early_start_accepted(make_app: MakeApp) -> None:
     assert [(day["id"], day["date"], day["status"]) for day in listed] == [
         (view["training_day_id"], WEDNESDAY, "open")
     ]
+
+
+def test_early_start_today_follows_on_the_websocket(make_app: MakeApp) -> None:
+    """On the websocket an early start's `session` and `session_started` are followed at once by the new `today`."""
+    clock = FrozenClock(TUESDAY_9)
+    app = make_session_app(clock, make_app, {"session_tick_max": 0.05})
+    with TestClient(app) as tc:
+        thomas, program_id = tc_setup(tc)  # trains on Wednesdays
+        with tc.websocket_connect(WS) as ws:
+            ws_connect(ws)
+            body = {
+                "program_id": program_id,
+                "participants": [thomas],
+                "date": WEDNESDAY,
+            }
+            response = tc.post(SESSION, json=body, headers=AGENT)
+            assert response.status_code == 201, response.text
+            view = ws_session(ws.receive_json())
+            started = ws.receive_json()
+            today = ws.receive_json()
+    assert view == response.json()
+    assert (started["type"], started["event"]) == ("event", "session_started")
+    assert started["session"]["training_day_id"] == view["training_day_id"]
+    assert today["type"] == "today"
+    assert today["data"]["open"] == []
+    assert _entries(today["data"]) == [(WEDNESDAY, "Lille", False)]
 
 
 async def test_early_start_refused(make_app: MakeApp) -> None:
