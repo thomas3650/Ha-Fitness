@@ -6,6 +6,9 @@ import type { LanguageHass } from "./language";
 /** The languages the cards ship, as option values; their names are never translated. */
 const LANGUAGES = ["en", "da"];
 
+/** The option value that stands for a language that isn't a string; choosing it keeps that value. */
+const OTHER = "\u0000other";
+
 /**
  * The visual editor of an HA Fitness card (card editors spec): one field, the card's language.
  * Home Assistant sets `hass`, calls `setConfig` with the card's config, and listens for
@@ -54,10 +57,11 @@ export class CardEditor extends LitElement {
     this.config = config;
   }
 
-  /** The config's language, or "" when it follows the user's. */
+  /** The selected option's value: the config's language, OTHER for one that isn't a string, or "" when unset. */
   private get current(): string {
     const language = this.config?.language;
-    return typeof language === "string" ? language : "";
+    if (typeof language === "string") return language;
+    return language === undefined ? "" : OTHER;
   }
 
   private t(key: string): string {
@@ -66,6 +70,8 @@ export class CardEditor extends LitElement {
 
   private onChange(event: Event): void {
     const value = (event.target as HTMLSelectElement).value;
+    // The non-string value chosen again: leave it as it is, rather than send it as a string.
+    if (value === OTHER) return;
     const config: Record<string, unknown> = { ...this.config };
     if (value) config.language = value;
     else delete config.language;
@@ -84,7 +90,10 @@ export class CardEditor extends LitElement {
         ${LANGUAGES.map(
           (language) => html`<option value=${language}>${this.t(`editor.language_${language}`)}</option>`,
         )}
-        ${current && !LANGUAGES.includes(current) ? html`<option value=${current}>${current}</option>` : nothing}
+        ${current && current !== OTHER && !LANGUAGES.includes(current)
+          ? html`<option value=${current}>${current}</option>`
+          : nothing}
+        ${current === OTHER ? html`<option value=${OTHER}>${String(this.config.language)}</option>` : nothing}
       </select>
     `;
   }

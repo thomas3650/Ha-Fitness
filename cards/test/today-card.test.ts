@@ -686,6 +686,21 @@ test("language option wins", async () => {
   expect(text(getByRole(root(card), "alert"))).toBe("Træningsdagen er allerede afsluttet.");
 });
 
+test("a language option that isn't a string falls back to the user's language", async () => {
+  const fake = fakeHass("da");
+  const card = document.createElement("ha-fitness-today-card") as unknown as CardElement;
+  // YAML can give a number; `mount` passes the option only as a string.
+  card.setConfig({ type: "custom:ha-fitness-today-card", language: 1 } as unknown as { type: string });
+  card.hass = fake.hass;
+  document.body.append(card);
+  await vi.advanceTimersByTimeAsync(0);
+  await card.updateComplete;
+  await push(card, fake, today([{ ...wednesday, state: "late" }], "2026-10-29"));
+  expect(rows(card).map(text)).toEqual([
+    "Onsdag Forfalden · onsdag 5 øvelser · 29 min Start Spring over",
+  ]);
+});
+
 test("full width, the height follows the content", async () => {
   // getCardSize still counts one for the top line, then three per day (or for the session row).
   const fake = fakeHass();

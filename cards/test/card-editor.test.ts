@@ -146,6 +146,18 @@ describe.each(CARD_TAGS)("%s", (tag) => {
     expect(events).toEqual([{ type: tag, language: "da" }]);
   });
 
+  test("shows a language that isn't a string, so it can be cleared", async () => {
+    const { editor, events } = await mount(tag, { type: tag, language: 1 });
+    const select = field(editor, "Sprog");
+    expect(optionTexts(select)).toEqual(["Følg brugerens sprog", "English", "Dansk", "1"]);
+    expect(selectedText(select)).toBe("1");
+    choose(select, "1");
+    expect(events.every((config) => config.language === 1)).toBe(true);
+    choose(select, "Følg brugerens sprog");
+    expect(events.at(-1)).toEqual({ type: tag });
+    expect(Object.hasOwn(events.at(-1) ?? {}, "language")).toBe(false);
+  });
+
   test("sends nothing until changed", async () => {
     const { editor, events } = await mount(tag, { type: tag });
     editor.setConfig(deepFreeze({ type: tag, language: "en" }));
