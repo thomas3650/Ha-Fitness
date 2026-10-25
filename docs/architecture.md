@@ -57,8 +57,8 @@ The cards are built into the integration: one bundle, released and versioned wit
   - **Trainings ahead** ([spec](superpowers/specs/2026-10-25-today-ahead-and-start-beep-design.md) §2).
     `GET /api/v1/today` and the `today` message carry `upcoming`: one entry per active program, its next training after
     today, with the program's id and name, the date, stations, rounds, total minutes and `startable` (D61). `open` is
-    sorted by date, then by name ignoring case. `late_days` (0–6) is an add-on option that decides when a late day closes (D60); see
-    [`addon/DOCS.md`](../addon/DOCS.md) and [`testing.md`](testing.md).
+    sorted by date, then by name ignoring case. `late_days` (0–6) is an add-on option that decides when a late day
+    closes (D60); see [`addon/DOCS.md`](../addon/DOCS.md) and [`testing.md`](testing.md).
   - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5,
     the read-only `get_session` and `list_sessions` from step 5 spec §3.5, the read-only `get_stats` from the
     stats spec §4, and the read-only `list_speakers` and `list_playlists` from the
@@ -238,8 +238,8 @@ The integration relays it.
   - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end` or
     `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id`, an optional `date`
     and an optional `speaker` (checked with the add-on's pattern; dropped while the add-on has no music). For
-    `feeling` it takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's view. Its
-    error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
+    `feeling` it takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's
+    view. Its error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
     `invalid` before any relay, and so is a `date` while the add-on's last today data has no `upcoming` (key
     `session_early_unsupported`; the service raises a validation error with that key). A field of the wrong type fails
     HA's own schema, as `invalid_format`.

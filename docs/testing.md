@@ -243,8 +243,8 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
    while it has none, so a dev HA onboarded before the Workout view existed lacks it: delete the `ha-fitness-dev`
    dashboard (Settings → Dashboards) and run `dev_onboard.py` again.
 10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at
-    5, 4, 3, 2 and 1 s line up with the numbers, that a long (1 s) beep sounds at every exercise start, also right after the
-    countdown, and that the change tones and the chime at the end come.
+    5, 4, 3, 2 and 1 s line up with the numbers, that a long (1 s) beep sounds at every exercise start, also right
+    after the countdown, and that the change tones and the chime at the end come.
 11. **Music, with the fake Music Assistant** (music spec §8). `scripts/seed` gives Sample the playlist "Workout Mix" on
     the living-room speaker. Start Sample as in step 1.
     - **Details:** the row "Musik" with "Workout Mix", and the "Højttaler" dropdown with the fake's three speakers,
