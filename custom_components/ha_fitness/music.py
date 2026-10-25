@@ -264,6 +264,8 @@ class MusicController:
                 raise MusicNotFound
             followed.state = STARTED
             followed.starting = True
+            # The card shows waiting at once, not unavailable until the start ends.
+            self._changed()
             async with self._lock:
                 if self._followed is not followed:
                     # The session ended while the command waited.

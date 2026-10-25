@@ -282,6 +282,7 @@ async def test_subscription_unavailable_keeps_last_view(
             "server_time": _iso(start + timedelta(seconds=20)),
             "time_trained": 120,
         },
+        "music": None,
     }
     await unload(hass, config_entry)
 
@@ -300,7 +301,11 @@ async def test_subscription_without_loaded_entry(
     await unload(hass, config_entry)
 
     client = await hass_ws_client(hass)
-    assert await _subscribe(client) == {"available": False, "session": None}
+    assert await _subscribe(client) == {
+        "available": False,
+        "session": None,
+        "music": None,
+    }
 
 
 @pytest.mark.usefixtures("cards_bundle")
@@ -324,7 +329,11 @@ async def test_no_sessions_mode_raises_addon_too_old_after_hello(
     assert _state(hass) == STATE_UNAVAILABLE
 
     client = await hass_ws_client(hass)
-    assert await _subscribe(client) == {"available": False, "session": None}
+    assert await _subscribe(client) == {
+        "available": False,
+        "session": None,
+        "music": None,
+    }
 
     # Each hello deletes the issue; the probe after it raises it again.
     await fake_addon.push({"type": "hello", "version": "0.2.0", "api_version": 1})

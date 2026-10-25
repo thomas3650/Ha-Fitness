@@ -1,7 +1,8 @@
 """The cards' websocket commands (the workout spec §4).
 
-The subscriptions to today (step 4 spec §4.5), to the session and to the stats (the stats spec
-§5.1); the session command; the programs, people and speakers lists. None needs an admin: the tablet's user isn't one.
+The subscriptions to today (step 4 spec §4.5), to the session with its music (the music spec §5.4) and to the
+stats (the stats spec §5.1); the session and music commands; the programs, people and speakers lists. None needs
+an admin: the tablet's user isn't one.
 """
 
 import re
@@ -30,12 +31,15 @@ from .client import (
 )
 from .const import DOMAIN, SIGNAL_UPDATE
 from .coordinator import FitnessCoordinator, usable_coordinator
-from .music import _parse_time, music_speakers
+from .music import MusicNotFound, MusicUnavailable, _parse_time, music_speakers
 
 _MISSING = object()
 
 # The add-on's pattern for `Music.speaker` (the music spec §5.5).
 SPEAKER_PATTERN = re.compile(r"media_player\.[a-z0-9_]+")
+
+# The music commands of the cards (the music spec §5.5).
+MUSIC_ACTIONS = ("pause", "play", "next")
 
 SESSION_COMMANDS = (
     "start",
@@ -58,6 +62,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_programs)
     websocket_api.async_register_command(hass, ws_people)
     websocket_api.async_register_command(hass, ws_speakers)
+    websocket_api.async_register_command(hass, ws_music)
 
 
 def _current_today(hass: HomeAssistant) -> dict[str, Any] | None:
@@ -98,13 +103,16 @@ def ws_subscribe_today(
     send()
 
 
-def _current_session(hass: HomeAssistant) -> tuple[bool, dict[str, Any] | None]:
-    """Return whether the session can be used, and the add-on's last view (kept while unreachable)."""
+def _current_session(
+    hass: HomeAssistant,
+) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
+    """Return whether the session can be used, the add-on's last view (kept while unreachable), and the music."""
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         coordinator = entry.runtime_data
         session: dict[str, Any] | None = coordinator.session
-        return coordinator.session_available, session
-    return False, None
+        music: dict[str, Any] | None = coordinator.music.music_state()
+        return coordinator.session_available, session, music
+    return False, None, None
 
 
 def _without_server_time(view: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -146,23 +154,28 @@ def ws_subscribe_session(
     connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Send `{available, session}` at once and after each change, with a fresh server_time.
+    """Send `{available, session, music}` at once and after each change, with a fresh server_time.
 
-    A change is a change of the add-on's raw view, server_time left out, or of `available`. It
-    follows the dispatcher, not one coordinator, so it survives an entry reload.
+    A change is a change of the add-on's raw view, server_time left out, of `available`, or of the music state
+    (the music spec §5.4). It follows the dispatcher, not one coordinator, so it survives an entry reload.
     """
     last: object = _MISSING
 
     @callback
     def send() -> None:
         nonlocal last
-        available, session = _current_session(hass)
-        key = (available, _without_server_time(session))
+        available, session, music = _current_session(hass)
+        key = (available, _without_server_time(session), music)
         if key != last:
             last = key
             connection.send_message(
                 event_message(
-                    msg["id"], {"available": available, "session": _fresh(session)}
+                    msg["id"],
+                    {
+                        "available": available,
+                        "session": _fresh(session),
+                        "music": music,
+                    },
                 )
             )
 
@@ -213,9 +226,15 @@ def ws_subscribe_stats(
     send()
 
 
-def _send_error(connection: ActiveConnection, msg_id: int, code: str) -> None:
-    """Send one of the codes not_found, conflict, invalid or unavailable, with its translation key."""
-    key = "unavailable" if code == "unavailable" else f"session_{code}"
+def _send_error(
+    connection: ActiveConnection, msg_id: int, code: str, key: str | None = None
+) -> None:
+    """Send one of the codes not_found, conflict, invalid or unavailable, with its translation key.
+
+    The key is the code's own unless given (the music command's keys).
+    """
+    if key is None:
+        key = "unavailable" if code == "unavailable" else f"session_{code}"
     connection.send_error(
         msg_id,
         code,
@@ -393,3 +412,35 @@ def ws_speakers(
     It reads Home Assistant only, so it needs no add-on; without Music Assistant the list is empty.
     """
     connection.send_result(msg["id"], {"speakers": music_speakers(hass)})
+
+
+@websocket_command(
+    {
+        probatio.Required("type"): "ha_fitness/music",
+        probatio.Required("action"): probatio.In(MUSIC_ACTIONS),
+    }
+)
+@async_response
+async def ws_music(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Pause, play or skip the active session's music on its speaker (the music spec §5.5).
+
+    It doesn't change the workout, and needs no connected add-on: the speaker is Home Assistant's, and the
+    session is the one last seen. Without a loaded entry or an active session with music it is not_found;
+    a speaker that can't play, or a call that fails, is unavailable.
+    """
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        coordinator: FitnessCoordinator = entry.runtime_data
+        try:
+            await coordinator.music.async_command(msg["action"])
+        except MusicNotFound:
+            break
+        except MusicUnavailable:
+            _send_error(connection, msg["id"], "unavailable", "music_unavailable")
+            return
+        connection.send_result(msg["id"])
+        return
+    _send_error(connection, msg["id"], "not_found", "music_not_found")

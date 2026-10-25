@@ -75,7 +75,7 @@ class Player:
 DEFAULT_PLAYERS = (
     Player("kitchen", "Kitchen speaker"),
     Player("living_room", "Living room speaker"),
-    Player("garage", "Garage speaker", volume=False),
+    Player("garage", "Workshop speaker", volume=False),
 )
 
 
@@ -141,6 +141,16 @@ class MockPlayer(MediaPlayerEntity):
     def set_volume_level(self, volume: float | None) -> None:
         """Report another volume level, or none, without a call."""
         self._attr_volume_level = volume
+        self.async_write_ha_state()
+
+    def set_unknown(self) -> None:
+        """Report no state, so HA shows `unknown`."""
+        self._attr_state = None
+        self.async_write_ha_state()
+
+    def set_name(self, name: str | None) -> None:
+        """Report another name; with none, HA's state has no friendly name."""
+        self._attr_name = name
         self.async_write_ha_state()
 
     def set_available(self, available: bool) -> None:

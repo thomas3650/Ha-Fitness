@@ -166,6 +166,12 @@
     },
     "session_invalid": {
       "message": "Choose one or two different people, and no more people than the program has stations."
+    },
+    "music_not_found": {
+      "message": "There's no workout with music running."
+    },
+    "music_unavailable": {
+      "message": "The speaker can't be reached."
     }
   }
 }
