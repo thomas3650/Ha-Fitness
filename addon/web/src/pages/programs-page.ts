@@ -40,6 +40,7 @@ interface Deleting {
 /**
  * The Programs page (W1, website spec §2.2.1): search and filters, one row per program with its switch, and edit,
  * copy and delete. Delete asks first (W5); a refusal (a running session, D42) shows by the row or in the dialog.
+ * A program's name links to its editor, and a click elsewhere on its row opens it too (#96).
  */
 export class ProgramsPage extends LitElement {
   static override properties = {
@@ -52,6 +53,7 @@ export class ProgramsPage extends LitElement {
     rowErrors: { state: true },
     missing: { state: true },
     deleting: { state: true },
+    note: { attribute: false },
   };
 
   declare api: Api;
@@ -66,6 +68,8 @@ export class ProgramsPage extends LitElement {
   /** Exercises whose thumbnail didn't load. */
   declare missing: ReadonlySet<string>;
   declare deleting: Deleting | null;
+  /** The shell's note after a save in the editor ("Saved …"); it goes on the next navigation. */
+  declare note: string | null;
 
   constructor() {
     super();
@@ -78,6 +82,7 @@ export class ProgramsPage extends LitElement {
     this.rowErrors = new Map();
     this.missing = new Set();
     this.deleting = null;
+    this.note = null;
   }
 
   protected override createRenderRoot(): HTMLElement {
@@ -147,11 +152,16 @@ export class ProgramsPage extends LitElement {
     this.focusAfterDelete(neighbour?.id ?? null);
   }
 
-  /** Focus a row's first control (its switch, or its edit link while the switch waits), or the heading for none. */
+  /**
+   * Focus a row's first control after its name link (its switch, or its edit link while the switch waits), or the
+   * heading for none.
+   */
   private focusAfterDelete(id: number | null): void {
     const row = id === null ? null : this.querySelector(`tr[data-program="${id}"]`);
     const control = row
-      ? [...row.querySelectorAll<HTMLElement>(FOCUSABLE)].find((element) => element.tabIndex >= 0)
+      ? [...row.querySelectorAll<HTMLElement>(FOCUSABLE)].find(
+          (element) => element.tabIndex >= 0 && !element.matches("a.program-name"),
+        )
       : undefined;
     (control ?? this.querySelector<HTMLElement>("h1"))?.focus();
   }
@@ -169,6 +179,16 @@ export class ProgramsPage extends LitElement {
     }
   }
 
+  /**
+   * A click on a row opens the program, for touch (the name link is the keyboard's way). A click on a link or a
+   * button, or anywhere in the Active and Actions cells, does only what it does there.
+   */
+  private openFromRow(event: MouseEvent, id: number): void {
+    const target = event.target as Element | null;
+    if (!target || target.closest("a, button, .active-cell, .actions")) return;
+    location.hash = `#/programs/${id}`;
+  }
+
   private markMissing(exercise: string): void {
     if (!this.missing.has(exercise)) this.missing = new Set([...this.missing, exercise]);
   }
@@ -179,7 +199,8 @@ export class ProgramsPage extends LitElement {
         <h1 tabindex="-1">${t("programs.title")}</h1>
         <a class="button primary" href="#/programs/new">${icon(mdiPlus)}<span>${t("programs.new")}</span></a>
       </header>
-      ${this.renderBody()} ${this.renderDialog()}
+      ${this.note ? html`<p class="saved-note" role="status">${this.note}</p>` : nothing} ${this.renderBody()}
+      ${this.renderDialog()}
     `;
   }
 
@@ -257,9 +278,13 @@ export class ProgramsPage extends LitElement {
     const error = this.rowErrors.get(stored.id);
     const days = program.weekdays.map((day) => t(`weekday.${day}`)).join(t("list_separator"));
     const music = program.music ? program.music.playlist_name || program.music.playlist : null;
-    return html`<tr class=${active ? "" : "off"} data-program=${stored.id}>
+    return html`<tr
+      class=${active ? "" : "off"}
+      data-program=${stored.id}
+      @click=${(event: MouseEvent) => this.openFromRow(event, stored.id)}
+    >
       <th scope="row">
-        <strong>${name}</strong>
+        <a class="program-name" href="#/programs/${stored.id}"><strong>${name}</strong></a>
         <span class="secondary">${duration(stored.total_seconds)}</span>
         ${error ? html`<p class="error" role="alert">${error}</p>` : nothing}
       </th>
@@ -299,7 +324,7 @@ export class ProgramsPage extends LitElement {
             ? html`<span class="badge">${icon(mdiAccount)}<span>${t("programs.created_by_you")}</span></span>`
             : nothing}
       </td>
-      <td>
+      <td class="active-cell">
         <button
           type="button"
           class="switch"
@@ -413,6 +438,28 @@ export const programsPageStyles = css`
   .programs th[scope="row"] strong,
   .programs th[scope="row"] .secondary {
     display: block;
+  }
+  /* A click on a row opens the program (#96). */
+  .programs tbody tr {
+    cursor: pointer;
+  }
+  .programs tbody tr:hover {
+    background: var(--hf-background);
+  }
+  .programs td.active-cell,
+  .programs td.actions {
+    cursor: default;
+  }
+  .programs a.program-name {
+    color: inherit;
+    text-decoration: none;
+  }
+  .programs a.program-name:hover {
+    text-decoration: underline;
+  }
+  .saved-note {
+    margin: 0 0 16px;
+    color: var(--hf-text-secondary);
   }
   .programs tr.off strong {
     color: var(--hf-text-secondary);

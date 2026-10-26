@@ -68,10 +68,16 @@ export class AppShell extends LitElement {
   static override properties = {
     route: { state: true },
     version: { state: true },
+    note: { state: true },
   };
 
   declare route: Route;
   declare version: string | null;
+  /**
+   * The note the Programs page shows after the editor saved and went back ("Saved …", #96). The shell keeps it, not
+   * the page, so it reaches the Programs page the editor goes to; it goes on the next navigation.
+   */
+  declare note: string | null;
 
   private readonly api: Api = createApi();
   /** The hash of the page shown; it lags `location.hash` while the page asks whether to leave. */
@@ -82,6 +88,8 @@ export class AppShell extends LitElement {
     const show = () => {
       this.shownHash = hash;
       this.route = parseRoute(hash);
+      // The editor's saved note is for the Programs page it goes to; any other navigation drops it.
+      if (this.route.page !== "programs") this.note = null;
     };
     const page = this.renderRoot.querySelector("main")?.firstElementChild as (Element & Partial<LeaveGuard>) | null;
     const held = page?.guardLeave?.(() => {
@@ -101,6 +109,7 @@ export class AppShell extends LitElement {
     super();
     this.route = parseRoute(location.hash);
     this.version = null;
+    this.note = null;
   }
 
   override connectedCallback(): void {
@@ -142,14 +151,16 @@ export class AppShell extends LitElement {
         </ul>
         ${this.version ? html`<p class="version">${t("menu.version", { version: this.version })}</p>` : nothing}
       </nav>
-      <main>${this.renderPage()}</main>
+      <main @program-saved=${(event: CustomEvent<string>) => (this.note = event.detail)}>
+        ${this.renderPage()}
+      </main>
     `;
   }
 
   private renderPage() {
     switch (this.route.page) {
       case "programs":
-        return html`<hf-programs-page .api=${this.api}></hf-programs-page>`;
+        return html`<hf-programs-page .api=${this.api} .note=${this.note}></hf-programs-page>`;
       case "new":
         return html`<hf-new-program .api=${this.api}></hf-new-program>`;
       case "empty":

@@ -473,3 +473,44 @@ test("while the next row's switch waits for the add-on, the focus goes to its ed
   await vi.waitFor(() => expect(focused(root)).toBe(getByRole(root, "link", { name: "Edit Legs" })));
   release();
 });
+
+// #96: a program opens from its row.
+
+test("a program's name is a link to its editor", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  const link = within(rowOf(root, "Core")).getByRole("link", { name: "Core" });
+  expect(link.getAttribute("href")).toBe("#/programs/2");
+});
+
+test("a click elsewhere on the row opens the program", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
+
+  fireEvent.click(within(rowOf(root, "Core")).getByText("Tue, Sat"));
+
+  await vi.waitFor(() => getByRole(root, "heading", { level: 1, name: en.editor.edit_title }));
+  expect(location.hash).toBe("#/programs/2");
+  expect(writes(fake)).toEqual([]);
+});
+
+test("a click on the switch toggles it and stays on the list", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
+
+  fireEvent.click(switchOf(root, "Core"));
+
+  await vi.waitFor(() => expect(switchOf(root, "Core").getAttribute("aria-checked")).toBe("false"));
+  expect(writes(fake)).toEqual(["PUT api/v1/programs/2/active"]);
+  expect(location.hash).toBe("#/programs");
+  expect(getByRole(root, "heading", { level: 1, name: en.programs.title })).toBeTruthy();
+});
+
+test("a click on Delete asks and doesn't open the program", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  fireEvent.click(getByRole(root, "button", { name: "Delete Core" }));
+
+  expect(await findByRole(root, "dialog", { name: "Delete “Core”?" })).toBeTruthy();
+  expect(location.hash).toBe("#/programs");
+});
