@@ -608,7 +608,7 @@ test("the summary says the number of exercises, the add-on's total time and the 
   const root = await openEditor(fake, "#/programs/1");
 
   expect(await within(root).findByText("5 exercises")).toBeTruthy();
-  expect(within(root).getByText("23 min")).toBeTruthy();
+  expect(within(root).getByText("23 min in all · 4 rounds × 5 exercises")).toBeTruthy();
   expect(within(root).getByText("Equipment: dumbbell, cable")).toBeTruthy();
 });
 
@@ -794,7 +794,8 @@ test("a failed setup read says so, and the editor still works", async () => {
   fake.answer("GET", "api/v1/setup", 503, { detail: "The setup can't be read", code: "", field: null });
   const root = await openEditor(fake, "#/programs/1");
 
-  expect(await within(root).findByText("The setup can't be read")).toBeTruthy();
+  const music = getByRole(root, "group", { name: en.editor.music_group });
+  expect(await within(music).findByText("The setup can't be read")).toBeTruthy();
   await vi.waitFor(() => expect(panelNames(root)).toContain("push-up"));
   rename(root, "Still works");
   await save(root, fake);
@@ -872,4 +873,144 @@ test("“Turn it off instead” in the editor switches the program off, and a la
   await save(root, fake);
   expect(lastWrite(fake).path).toBe(`api/v1/programs/1?if_updated_at=${encodeURIComponent(answered)}`);
   expect((lastWrite(fake).body as ProgramDocument).active).toBe(false);
+});
+
+// The editor in cards (W7).
+
+function stepper(root: HTMLElement, name: string): HTMLButtonElement {
+  return getByRole(root, "button", { name }) as HTMLButtonElement;
+}
+
+/** Wait until a number field shows `value`. */
+async function shows(root: HTMLElement, name: string, value: string): Promise<void> {
+  await vi.waitFor(() => expect(field(root, "spinbutton", name).value).toBe(value));
+}
+
+test("the head: the Programs link, the page title, and the name field with its placeholder", async () => {
+  const root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/1");
+
+  const breadcrumb = getByRole(root, "navigation", { name: en.editor.breadcrumb });
+  expect(within(breadcrumb).getByRole("link", { name: en.menu.programs }).getAttribute("href")).toBe("#/programs");
+  expect(getByRole(root, "heading", { level: 1, name: en.editor.edit_title })).toBeTruthy();
+  const name = field(root, "textbox", en.editor.name);
+  expect(name.placeholder).toBe("Unnamed program");
+  expect(name.value).toBe("Full body");
+  expect((root as unknown as ShadowRoot).activeElement).not.toBe(name);
+});
+
+test("a new program and a copy open with the focus in the name field", async () => {
+  const active = (root: HTMLElement) => (root as unknown as ShadowRoot).activeElement;
+  let root = await openEditor(newFake(), "#/programs/new/empty");
+  await vi.waitFor(() => expect(active(root)).toBe(field(root, "textbox", en.editor.name)));
+  unmount();
+
+  root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/new/copy/1");
+  await vi.waitFor(() => expect(active(root)).toBe(field(root, "textbox", en.editor.name)));
+});
+
+test("Delete shows only once the program is stored", async () => {
+  let root = await openEditor(newFake(), "#/programs/new/empty");
+  expect(queryByRole(root, "button", { name: en.editor.delete })).toBeNull();
+  unmount();
+
+  root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/new/copy/1");
+  expect(queryByRole(root, "button", { name: en.editor.delete })).toBeNull();
+  unmount();
+
+  root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/1");
+  expect(getByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
+});
+
+test("Not saved shows while there are changes, and Saved right after a save", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  expect(queryByRole(root, "status")).toBeNull();
+  rename(root, "Changed");
+  expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
+  await save(root, fake);
+  await vi.waitFor(() => expect(text(getByRole(root, "status"))).toBe(en.editor.saved));
+  expect(within(root).queryByText(en.editor.not_saved)).toBeNull();
+});
+
+test("+ and − step the timing: rounds by 1, the seconds by 5, and − stops at 0", async () => {
+  const fake = newFake({ programs: [fullBody({ rounds: 5, work_seconds: 45, switch_seconds: 0, round_rest_seconds: 3 })] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  fireEvent.click(stepper(root, "More rounds"));
+  await shows(root, en.editor.rounds, "6");
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  await shows(root, en.editor.rounds, "4");
+  fireEvent.click(stepper(root, "More work"));
+  await shows(root, en.editor.work, "50");
+  fireEvent.click(stepper(root, "Less work"));
+  fireEvent.click(stepper(root, "Less work"));
+  await shows(root, en.editor.work, "40");
+  fireEvent.click(stepper(root, "Shorter break"));
+  await shows(root, en.editor.switch, "0");
+  fireEvent.click(stepper(root, "Longer break"));
+  await shows(root, en.editor.switch, "5");
+  fireEvent.click(stepper(root, "Shorter rest"));
+  await shows(root, en.editor.round_rest, "0");
+  fireEvent.click(stepper(root, "Longer rest"));
+  await shows(root, en.editor.round_rest, "5");
+  expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
+
+  await save(root, fake);
+  expect(lastWrite(fake).body).toMatchObject({ rounds: 4, work_seconds: 40, switch_seconds: 5, round_rest_seconds: 5 });
+});
+
+test("on an emptied field + and − set the add-on's default, and an empty field is sent as null", async () => {
+  const fake = newFake({ programs: [fullBody({ work_seconds: 30, round_rest_seconds: 20 })] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  fireEvent.input(field(root, "spinbutton", en.editor.work), { target: { value: "" } });
+  fireEvent.click(stepper(root, "More work"));
+  await shows(root, en.editor.work, "45");
+  fireEvent.input(field(root, "spinbutton", en.editor.round_rest), { target: { value: "" } });
+  fireEvent.click(stepper(root, "Shorter rest"));
+  await shows(root, en.editor.round_rest, "60");
+
+  fireEvent.input(field(root, "spinbutton", en.editor.switch), { target: { value: "" } });
+  await save(root, fake);
+  expect(lastWrite(fake).body).toMatchObject({ work_seconds: 45, switch_seconds: null, round_rest_seconds: 60 });
+});
+
+test("with the defaults read failing, + and − on an emptied field set 0", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  fake.answer("GET", "api/v1/programs/defaults", 503, { detail: "No defaults", code: "", field: null });
+  const root = await openEditor(fake, "#/programs/new/copy/1");
+
+  fireEvent.input(field(root, "spinbutton", en.editor.work), { target: { value: "" } });
+  fireEvent.click(stepper(root, "More work"));
+  await shows(root, en.editor.work, "0");
+  fireEvent.input(field(root, "spinbutton", en.editor.rounds), { target: { value: "" } });
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  await shows(root, en.editor.rounds, "0");
+});
+
+test("the timing's title row shows the total, and Countdown is still a choice of 0, 5 and 10 s", async () => {
+  const fake = newFake({
+    programs: [
+      fullBody({
+        stations: ["0001", "0002", "0003", "0005", "0006"].map((exercise) => ({ exercise })),
+        rounds: 5,
+        work_seconds: 45,
+        switch_seconds: 15,
+        round_rest_seconds: 60,
+      }),
+    ],
+  });
+  const root = await openEditor(fake, "#/programs/1");
+
+  expect(await within(root).findByText("29 min in all · 5 rounds × 5 exercises")).toBeTruthy();
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  expect(await within(root).findByText("5 min in all · 1 round × 5 exercises")).toBeTruthy();
+
+  const countdown = field(root, "combobox", en.editor.countdown);
+  expect(within(countdown).getAllByRole("option").map(text)).toEqual(["0 s", "5 s", "10 s"]);
 });
