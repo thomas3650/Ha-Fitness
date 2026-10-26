@@ -104,12 +104,8 @@ export interface LeaveGuard {
 let nextId = 0;
 
 function formOf(document: ProgramDocument, defaultSpeaker: string | null): Form {
-  const music = document.music ?? null;
-  const rest: Form["musicRest"] = {};
-  if (music) {
-    if ("volume" in music) rest.volume = music.volume;
-    if ("shuffle" in music) rest.shuffle = music.shuffle;
-  }
+  // Every music field the editor doesn't show is kept as it is, including any the add-on adds later.
+  const { playlist, playlist_name, speaker, ...rest } = document.music ?? {};
   return {
     name: document.name,
     active: document.active !== false,
@@ -120,8 +116,8 @@ function formOf(document: ProgramDocument, defaultSpeaker: string | null): Form 
     switch_seconds: document.switch_seconds ?? null,
     round_rest_seconds: document.round_rest_seconds ?? null,
     countdown_seconds: document.countdown_seconds ?? 5,
-    playlist: music ? { uri: music.playlist, name: music.playlist_name ?? null } : null,
-    speaker: music?.speaker ?? defaultSpeaker ?? "",
+    playlist: playlist ? { uri: playlist, name: playlist_name ?? null } : null,
+    speaker: speaker ?? defaultSpeaker ?? "",
     musicRest: rest,
   };
 }
@@ -163,6 +159,12 @@ function message(error: unknown): string {
   throw error;
 }
 
+/** A failed read's text for the page: the add-on's message, or the error's own, so no read leaves "Loading…". */
+function failure(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * The program editor (W3, website spec §2.2.4): the fields at the top, the exercises as a list, the library beside
  * it, the summary line, and Save, Cancel and Delete. It holds no program rules: a save sends the whole document and
@@ -178,6 +180,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     loadError: { state: true },
     exercises: { state: true },
     exercisesError: { state: true },
+    setupError: { state: true },
     setup: { state: true },
     speakers: { state: true },
     playlists: { state: true },
@@ -202,6 +205,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   declare loadError: string | null;
   declare exercises: ExerciseSummary[] | null;
   declare exercisesError: string | null;
+  /** Why the setup couldn't be read, if it couldn't. */
+  declare setupError: string | null;
   declare setup: Setup;
   declare speakers: MusicRead<SpeakerOut>;
   declare playlists: MusicRead<PlaylistOut>;
@@ -220,6 +225,11 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   declare missing: ReadonlySet<string>;
 
   private updatedAt: string | undefined;
+  /**
+   * The stored program this editor saves to: the edited one, or the one a create stored. From then on a Save
+   * replaces it, so a second Save never creates another.
+   */
+  private storedId: number | null = null;
   /** Station names from the stored program, for exercises the summaries don't have. */
   private storedNames = new Map<string, string>();
   private dragIndex: number | null = null;
@@ -240,6 +250,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     this.loadError = null;
     this.exercises = null;
     this.exercisesError = null;
+    this.setupError = null;
     this.setup = { equipment: [], favourite_playlists: [], default_speaker: null };
     this.speakers = { items: [], error: null };
     this.playlists = { items: [], error: null };
@@ -288,6 +299,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
 
   private async load(): Promise<void> {
     const mode = this.mode;
+    if (mode.kind === "edit") this.storedId = mode.id;
     const first = mode.kind === "new" ? this.api.programDefaults() : this.api.program(mode.id);
     const [main, setup, exercises, speakers, playlists] = await Promise.allSettled([
       first,
@@ -296,21 +308,22 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       this.api.speakers(),
       this.api.playlists(),
     ]);
-    // Without the setup the editor works with an empty one (body weight only, no favourites, no default speaker).
+    // Without the setup the editor works with an empty one (body weight only, no favourites, no default speaker),
+    // and says why.
     if (setup.status === "fulfilled") this.setup = setup.value;
-    else message(setup.reason);
+    else this.setupError = failure(setup.reason);
     if (exercises.status === "fulfilled") this.exercises = exercises.value;
-    else this.exercisesError = message(exercises.reason);
+    else this.exercisesError = failure(exercises.reason);
     this.speakers =
       speakers.status === "fulfilled"
         ? { items: speakers.value, error: null }
-        : { items: [], error: message(speakers.reason) };
+        : { items: [], error: failure(speakers.reason) };
     this.playlists =
       playlists.status === "fulfilled"
         ? { items: playlists.value, error: null }
-        : { items: [], error: message(playlists.reason) };
+        : { items: [], error: failure(playlists.reason) };
     if (main.status === "rejected") {
-      this.loadError = message(main.reason);
+      this.loadError = failure(main.reason);
       return;
     }
     if (mode.kind === "new") {
@@ -443,18 +456,20 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     const document = documentOf(this.form);
     const sent = JSON.stringify(document);
     try {
-      if (this.mode.kind === "edit") {
-        const stored = await this.api.replaceProgram(this.mode.id, document, this.updatedAt);
-        this.updatedAt = stored.updated_at;
-        this.storedName = stored.program.name;
-        this.saved = sent;
-        this.justSaved = true;
-      } else {
-        const stored = await this.api.createProgram(document);
-        // The stored program opens for editing; anything typed during the request isn't kept, so nothing asks.
-        this.saved = this.form ? JSON.stringify(documentOf(this.form)) : sent;
-        location.hash = `#/programs/${stored.id}`;
-      }
+      const stored =
+        this.storedId === null
+          ? await this.api.createProgram(document)
+          : await this.api.replaceProgram(this.storedId, document, this.updatedAt);
+      this.storedId = stored.id;
+      this.updatedAt = stored.updated_at;
+      this.createdBy = stored.created_by;
+      this.storedName = stored.program.name;
+      this.saved = sent;
+      this.justSaved = true;
+      const route = `#/programs/${stored.id}`;
+      // A new program or a copy opens as the stored program. Anything typed while the request ran is still unsaved,
+      // so the leave guard asks first; staying keeps it, and the next Save replaces the stored program.
+      if (location.hash !== route) location.hash = route;
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       this.showRefusal(error);
@@ -465,10 +480,10 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
 
   /** Load the stored program again after a change made elsewhere; what was typed gives way to it. */
   private async reload(): Promise<void> {
-    if (this.mode.kind !== "edit" || this.busy) return;
+    if (this.storedId === null || this.busy) return;
     this.busy = true;
     try {
-      const stored = await this.api.program(this.mode.id);
+      const stored = await this.api.program(this.storedId);
       this.remember(stored);
       this.clearRefusals();
       this.useStored(stored);
@@ -493,8 +508,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   }
 
   private async confirmDelete(): Promise<void> {
-    if (this.mode.kind !== "edit" || !this.deleting || this.deleting.busy) return;
-    const id = this.mode.id;
+    const id = this.storedId;
+    if (id === null || !this.deleting || this.deleting.busy) return;
     this.deleting = { busy: true, error: null };
     try {
       await this.api.deleteProgram(id);
@@ -507,10 +522,11 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   }
 
   private async turnOffInstead(): Promise<void> {
-    if (this.mode.kind !== "edit" || !this.deleting || this.deleting.busy) return;
+    const id = this.storedId;
+    if (id === null || !this.deleting || this.deleting.busy) return;
     this.deleting = { busy: true, error: null };
     try {
-      const stored = await this.api.setActive(this.mode.id, false);
+      const stored = await this.api.setActive(id, false);
       this.updatedAt = stored.updated_at;
       const saved = JSON.parse(this.saved) as ProgramDocument;
       this.saved = JSON.stringify({ ...saved, active: false });
@@ -575,16 +591,16 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         <nav class="breadcrumb" aria-label=${t("editor.breadcrumb")}>
           <a href="#/programs">${t("menu.programs")}</a> <span aria-hidden="true">${t("breadcrumb_separator")}</span>
           <span class="crumb">${form.name || t("editor.untitled")}</span>
-          ${this.mode.kind === "edit" && this.createdBy === "claude"
+          ${this.storedId !== null && this.createdBy === "claude"
             ? html`<span class="badge claude">${icon(mdiCreation)}<span>${t("editor.created_by_claude")}</span></span>`
-            : this.mode.kind === "edit" && this.createdBy === "you"
+            : this.storedId !== null && this.createdBy === "you"
               ? html`<span class="badge">${icon(mdiAccount)}<span>${t("editor.created_by_you")}</span></span>`
               : nothing}
         </nav>
         <h1>${this.pageTitle()}</h1>
       </div>
       <div class="editor-actions">
-        ${this.mode.kind === "edit"
+        ${this.storedId !== null
           ? html`<button
               type="button"
               class="text danger-text"
@@ -740,6 +756,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
               ? html`<span class="secondary">${this.speakers.error ?? t("editor.no_speakers")}</span>`
               : nothing}
           </label>
+          ${this.setupError ? html`<span class="secondary">${this.setupError}</span>` : nothing}
           ${this.renderFieldError("music")}
         </div>
         <label class="field">
@@ -796,6 +813,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       draggable="true"
       aria-describedby=${this.describedBy(place)}
       @dragstart=${() => (this.dragIndex = index)}
+      @dragend=${() => (this.dragIndex = null)}
       @dragover=${(event: DragEvent) => event.preventDefault()}
       @drop=${(event: DragEvent) => {
         event.preventDefault();

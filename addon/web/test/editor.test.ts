@@ -767,3 +767,109 @@ test("the editor shows who created the program", async () => {
 
   expect(await within(root).findByText(en.editor.created_by_you)).toBeTruthy();
 });
+
+// Fix round 1.
+
+test("Tab and Shift+Tab keep the focus inside the details dialog", async () => {
+  const fake = newFake({ programs: [fullBody()], details: { "0003": GOBLET } });
+  const root = await openEditor(fake, "#/programs/1");
+  await vi.waitFor(() => expect(panelNames(root)).toContain("goblet squat"));
+
+  fireEvent.click(within(panel(root)).getByRole("button", { name: "goblet squat" }));
+  const dialog = await findByRole(root, "dialog", { name: "goblet squat" });
+  const first = within(dialog).getByRole("button", { name: en.details.close });
+  const last = within(dialog).getByRole("button", { name: en.details.add });
+  const active = () => (root as unknown as ShadowRoot).activeElement;
+
+  last.focus();
+  fireEvent.keyDown(last, { key: "Tab" });
+  expect(active()).toBe(first);
+
+  fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+  expect(active()).toBe(last);
+});
+
+test("a failed setup read says so, and the editor still works", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  fake.answer("GET", "api/v1/setup", 503, { detail: "The setup can't be read", code: "", field: null });
+  const root = await openEditor(fake, "#/programs/1");
+
+  expect(await within(root).findByText("The setup can't be read")).toBeTruthy();
+  await vi.waitFor(() => expect(panelNames(root)).toContain("push-up"));
+  rename(root, "Still works");
+  await save(root, fake);
+  expect(lastWrite(fake).method).toBe("PUT");
+});
+
+test("a change typed while a new program is being created isn't lost, and no second program is created", async () => {
+  const fake = newFake();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let posted = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "POST") {
+      posted = true;
+      await gate;
+    }
+    return fake.fetch(input, init);
+  });
+  const root = await mount("#/programs/new/empty");
+  await findByRole(root, "textbox", { name: en.editor.name });
+
+  rename(root, "First");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  await vi.waitFor(() => expect(posted).toBe(true));
+  rename(root, "Later");
+  release();
+
+  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
+  expect(field(root, "textbox", en.editor.name).value).toBe("Later");
+  fireEvent.click(within(dialog).getByRole("button", { name: en.dialog.cancel }));
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+
+  await save(root, fake);
+  const sent = writes(fake).map((request) => `${request.method} ${request.path.split("?")[0]}`);
+  expect(sent).toEqual(["POST api/v1/programs", "PUT api/v1/programs/1"]);
+  expect((lastWrite(fake).body as ProgramDocument).name).toBe("Later");
+  await vi.waitFor(() => expect(location.hash).toBe("#/programs/1"));
+});
+
+test("dragging a station onto another moves it there", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  const root = await openEditor(fake, "#/programs/1");
+  await vi.waitFor(() => expect(stationNames(root)).toEqual(["push-up", "squat", "plank"]));
+
+  const items = within(stationList(root)).getAllByRole("listitem");
+  fireEvent.dragStart(items[2]);
+  fireEvent.dragOver(items[0]);
+  fireEvent.drop(items[0]);
+  fireEvent.dragEnd(items[2]);
+  await vi.waitFor(() => expect(stationNames(root)).toEqual(["plank", "push-up", "squat"]));
+
+  await save(root, fake);
+  expect((lastWrite(fake).body as ProgramDocument).stations).toEqual([
+    { exercise: "0006" },
+    { exercise: "0001" },
+    { exercise: "0002" },
+  ]);
+});
+
+test("“Turn it off instead” in the editor switches the program off, and a later Save uses that answer's updated_at", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  fireEvent.click(getByRole(root, "button", { name: en.editor.delete }));
+  const dialog = await findByRole(root, "dialog", { name: "Delete “Full body”?" });
+  fireEvent.click(within(dialog).getByRole("button", { name: en.programs.turn_off }));
+
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+  expect(lastWrite(fake)).toMatchObject({ method: "PUT", path: "api/v1/programs/1/active", body: { active: false } });
+  expect(getByRole(root, "switch", { name: en.editor.active }).getAttribute("aria-checked")).toBe("false");
+  expect(within(root).queryByText(en.editor.not_saved)).toBeNull();
+
+  const answered = fake.state.programs[0].updated_at;
+  rename(root, "Paused");
+  await save(root, fake);
+  expect(lastWrite(fake).path).toBe(`api/v1/programs/1?if_updated_at=${encodeURIComponent(answered)}`);
+  expect((lastWrite(fake).body as ProgramDocument).active).toBe(false);
+});

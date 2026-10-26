@@ -14,7 +14,10 @@ const FOCUSABLE = [
  */
 export function trapFocus(event: KeyboardEvent, container: HTMLElement): void {
   if (event.key !== "Tab") return;
-  const focusable = [...container.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  // Only what Tab reaches: not taken out of the order (tabindex -1), and not hidden from assistive tech.
+  const focusable = [...container.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (element) => element.tabIndex >= 0 && !element.closest('[aria-hidden="true"]'),
+  );
   if (!focusable.length) {
     event.preventDefault();
     return;
