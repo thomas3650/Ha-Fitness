@@ -279,14 +279,15 @@ async def test_two_saves_in_a_row_with_the_previous_updated_at(
 
 
 async def test_session_route_refusal_keeps_its_shape(make_app: MakeApp) -> None:
-    """A session route's refusal is still `{detail: {code, message}}`, with no top-level code."""
+    """Pausing with no session running is a 409 `{detail: {code, message}}`, with no top-level code."""
     async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
         response = await command(client, "pause")
         current = await client.get(SESSION)
-    assert response.status_code in (404, 409), response.text
+    assert response.status_code == 409, response.text
     body = response.json()
     assert set(body) == {"detail"}
     assert set(body["detail"]) == {"code", "message"}
+    assert body["detail"]["code"] == "conflict"
     assert current.status_code == 200
 
 

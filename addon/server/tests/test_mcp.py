@@ -287,6 +287,27 @@ async def test_text_detail_is_not_json_quoted(make_app: MakeApp) -> None:
     )
 
 
+async def test_active_without_weekdays_names_the_weekday_rule(
+    make_app: MakeApp,
+) -> None:
+    """Creating or updating an active program without weekdays tells Claude the field and the rule."""
+    async with mcp_client(make_app()) as session:
+        with pytest.raises(ToolError) as created:
+            await call(session, "create_program", program=_program(weekdays=[]))
+        program = await call(session, "create_program", program=_program())
+        with pytest.raises(ToolError) as updated:
+            await call(
+                session,
+                "update_program",
+                program_id=program["id"],
+                program=_program(weekdays=[], active=True),
+            )
+    for error in (created, updated):
+        text = str(error.value)
+        assert "program.weekdays" in text
+        assert "an active program needs at least one weekday" in text
+
+
 async def test_out_of_range_field_is_a_tool_error(make_app: MakeApp) -> None:
     """Argument validation names the field that is out of range."""
     async with mcp_client(make_app()) as session:
