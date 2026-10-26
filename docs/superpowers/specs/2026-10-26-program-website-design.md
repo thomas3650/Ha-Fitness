@@ -65,6 +65,8 @@ Claude edit through the same add-on service layer, and the integration and the c
    - Gem, Annullér and Slet. Leaving with unsaved changes asks first.
    - The rules are the add-on's (`ProgramDocument`): a refused save shows the add-on's reason at the field it is about,
      and nothing is lost from the form.
+   - Saving keeps the fields the editor doesn't show (`music.volume`, `music.shuffle`, `music.playlist_name`), since a
+     save replaces the whole program. A program Claude made loses nothing when it is saved here. (Claude's call.)
 5. **Delete (W5):** a confirmation that says the history and stats stay, the program's open training days go, and it
    can't be undone, with "Slå det fra i stedet". While a session for the program runs, the add-on refuses (D42) and
    the website says why.
@@ -81,16 +83,29 @@ Claude edit through the same add-on service layer, and the integration and the c
    English, with the dataset's attribution.
 4. Custom exercises (made through Claude) are listed too, without media.
 
+### 2.3a The whole dataset in the library
+
+1. The built-in library takes **every exercise** of the dataset at its pinned commit (Thomas, 2026-10-26): 1,324
+   exercises with 28 equipment values, instead of the 721 with home equipment today. Measured at the pinned commit: the
+   data grows from about 0.5 to 1 MB, the downloaded GIFs and thumbnails from 72 MB to about 130 MB.
+2. `scripts/build_library.py` drops its equipment filter; the data is rebuilt and committed as today (D30), and the
+   media is still downloaded (D13). Ids stay the dataset's, so programs and history keep their exercises.
+3. The setup's equipment filter (§2.4) is what keeps the library and the editor to the household's exercises.
+4. `band` and `resistance band` are one setup choice ("elastik"). (Claude's call.)
+
 ### 2.4 Setup ("Opsætning", mockup W6)
 
 1. **Equipment:** which of the library's equipment the household has. Body weight is always there. The library's
    equipment values are English; whether the website shows them in Danish through the language files is the
-   builder's call (they aren't exercise names, so hard rule 6 allows it).
+   builder's call (they aren't exercise names, so hard rule 6 allows it). The same goes for body parts and target
+   muscles in the library's filters.
 2. **People:** which of HA's persons train, at most 2, in order (the colours follow the order), as `set_people` does
    today. The same rules and errors as the people write.
 3. **Favourite playlists:** chosen from Music Assistant's playlists (`/api/v1/music/playlists`). They come first in
    the editor's music choice.
-4. **Default speaker:** chosen from Music Assistant's speakers. New programs get it.
+4. **Default speaker:** chosen from Music Assistant's speakers. New programs get it. A program's music is stored whole
+   or not at all (`Music.playlist` is required), so the editor fills in the default speaker and it is stored once a
+   playlist is picked. (Claude's call.)
 5. **Claude uses the setup too:** the MCP tool descriptions say to prefer the household's equipment when suggesting
    exercises, and to offer the favourite playlists and the default speaker first when asking about music (#76). (Claude's
    call: a guess Thomas didn't object to.)
@@ -141,7 +156,8 @@ and the links to the JSON status and health.
 
 In the same PR: `docs/architecture.md` (the website, the new routes, the setup data), `docs/domain-language.md`
 (setup, favourite playlists, default speaker, "created by"), `docs/decisions.md` (a decision for the website: option
-B, admin only in v2, Lit in the add-on; and one for the setup), `addon/DOCS.md`, `CLAUDE.md` (layout and gates),
+B, admin only in v2, Lit in the add-on; one for the setup; and one for the whole dataset, which updates D30's
+"filtered"), `addon/DOCS.md`, `CLAUDE.md` (layout and gates),
 `docs/testing.md` (how to run the website in the fast loop and check it in the full loop), and `docs/mockups/README.md`
 pointing to the new screens.
 
