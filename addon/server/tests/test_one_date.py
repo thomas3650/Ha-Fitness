@@ -214,7 +214,11 @@ async def test_early_start_across_midnight_checks_the_reconciled_date(
 
 
 def test_connect_across_midnight_sends_one_date(make_app: MakeApp) -> None:
-    """A connect whose reconcile reads Saturday sends `today` and `stats` for Saturday, and reconciles no other date."""
+    """A connect whose reconcile reads Saturday sends `today` and `stats` for Saturday, and reconciles no other date.
+
+    The connect ticks the session first (one read), then reconciles (one read): both read Saturday, every read after
+    them Sunday. A `GET /today` first lets the session loop's first tick at the start read the clock before the arm.
+    """
     clock = MidnightClock(SATURDAY_NIGHT)
     app = make_app(
         settings_overrides={
@@ -225,7 +229,8 @@ def test_connect_across_midnight_sends_one_date(make_app: MakeApp) -> None:
         clock=clock,
     )
     with TestClient(app) as tc:
-        clock.arm(LAST_READ, FIRST_READ)
+        assert tc.get(TODAY).status_code == 200
+        clock.arm(LAST_READ, FIRST_READ, reads=2)
         with tc.websocket_connect(WS) as ws:
             assert ws.receive_json()["type"] == "hello"
             today = ws.receive_json()

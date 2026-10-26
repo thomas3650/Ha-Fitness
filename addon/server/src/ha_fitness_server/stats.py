@@ -127,10 +127,12 @@ class StatsService:
             return [{"type": "stats", "data": stats.model_dump(mode="json")}]
 
     def view(self, today: date | None = None) -> Stats:
-        """Tick the session, then reconcile, then compute: the lifespan's order, under the lock (stats spec §4).
+        """Tick the session, then compute; without `today`, reconcile between: the lifespan's order (stats spec §4).
 
-        Given `today`, the date the caller's request already reconciled (the connect snapshot), it computes for that
-        date and doesn't reconcile again, so one request uses one date (#79). A failed computation is logged with its exception, forgets what was published (see `messages_if_changed`) and
+        All under the lock. `today` is the date the caller's request already reconciled (the connect snapshot): the
+        stats are computed for it and nothing reconciles again, so one request uses one date (#79).
+
+        A failed computation is logged with its exception, forgets what was published (see `messages_if_changed`) and
         is raised as `Unavailable`: REST answers 503, MCP a tool error, and the connect snapshot leaves the stats out.
         The reconcile's stats hook has usually failed and logged just before, so a failed read logs twice.
         """

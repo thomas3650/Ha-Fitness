@@ -40,24 +40,28 @@ class FrozenClock:
 
 
 class MidnightClock(FrozenClock):
-    """A frozen clock that can cross midnight between a reconcile's own read and every read after it."""
+    """A frozen clock that can cross midnight between a request's first reads and every read after them."""
 
     def __init__(self, start: datetime) -> None:
         """Start at `start`, with nothing armed."""
         super().__init__(start)
         self._then: datetime | None = None
+        self._left = 0
 
-    def arm(self, first: datetime, then: datetime) -> None:
-        """Return `first` on the next read only, then `then` on every read after it."""
+    def arm(self, first: datetime, then: datetime, reads: int = 1) -> None:
+        """Return `first` on the next `reads` reads, then `then` on every read after them."""
         self.set(first)
         self._then = then
+        self._left = reads
 
     def now(self) -> datetime:
-        """Return the frozen time; an armed clock moves on to its second time after this read."""
+        """Return the frozen time; an armed clock moves on to its second time after its `reads` reads."""
         moment = super().now()
         if self._then is not None:
-            self.set(self._then)
-            self._then = None
+            self._left -= 1
+            if self._left == 0:
+                self.set(self._then)
+                self._then = None
         return moment
 
 

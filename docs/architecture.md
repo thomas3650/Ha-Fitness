@@ -512,7 +512,8 @@ The design is the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3
   days and sessions a year.
 - **Reads tick and reconcile first.** `GET /api/v1/stats` and `get_stats` tick the session, then reconcile the
   training days, under the lock. So a read just after midnight already sees yesterday's open day as missed. The
-  connect snapshot reconciles once, for its `today`, then ticks and computes the stats for that date (#79).
+  connect snapshot ticks the session, then reconciles once, for its `today`, and computes the stats for that date
+  (#79).
 - **REST:** `GET /api/v1/stats` → `Stats` (`counting_from`, `month` as `YYYY-MM` in the add-on's local time, and
   `people` in the people's order). Each person has `streak`, `all_time` and `this_month`; the totals are `done`,
   `extra`, `missed`, `skipped` and `time_trained` (whole seconds). `Stats` in `schemas.py` is the shape.

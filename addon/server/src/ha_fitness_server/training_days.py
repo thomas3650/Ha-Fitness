@@ -231,6 +231,7 @@ class TrainingDays:
     def reconciled_date(self) -> date:
         """Return the date the last reconcile handled; the local date now before the first reconcile."""
         with self.lock:
+            # Only reached by the startup `recover()`, before the first reconcile, when no client is subscribed yet.
             return self.local_today() if self._reconciled is None else self._reconciled
 
     def publish_today(self) -> None:

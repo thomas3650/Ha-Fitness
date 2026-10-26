@@ -26,9 +26,9 @@ async def push_channel(websocket: WebSocket) -> None:
     the drain holds a `today`, the last one is the newest view and is sent instead of the snapshot. Otherwise the
     snapshot is the newest: a later change would have queued a `today`. `session` works the same way: every change of
     the session publishes one, and reading the snapshot can tick. So does `stats`: every change that can move them
-    checks them and publishes them if they changed, and reading the snapshot ticks. The snapshot reconciles once, for
-    `today`, and its `stats` are for that date too (#79). When the stats
-    can't be computed, the snapshot has no `stats` unless one was queued. The queued events follow, in queue order.
+    checks them and publishes them if they changed. The snapshot ticks the session, then reconciles once, for `today`,
+    and computes its `stats` for that date too (#79). When the stats can't be computed, the snapshot has no `stats`
+    unless one was queued. The queued events follow, in queue order.
 
     A client that falls behind is dropped by the hub; its websocket is then closed with 1013 ("try again later"),
     and the client reconnects to a fresh snapshot.
@@ -38,9 +38,9 @@ async def push_channel(websocket: WebSocket) -> None:
     await websocket.accept()
     async with hub.subscribe() as (queue, dropped):
         services = holder.get()
+        current = await anyio.to_thread.run_sync(services.sessions.current)
         view = await anyio.to_thread.run_sync(services.training_days.today_view)
         today: Message = {"type": "today", "data": view.model_dump(mode="json")}
-        current = await anyio.to_thread.run_sync(services.sessions.current)
         session: Message = {
             "type": "session",
             "data": None if current is None else current.model_dump(mode="json"),
