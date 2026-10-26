@@ -23,8 +23,9 @@ git config user.email 24604147+thomas3650@users.noreply.github.com
 
 ## 2026-10-23: TypeScript is held at 6.0.x
 
-`typescript-eslint` 8.x supports TypeScript below 6.1, so `cards/package.json` pins TypeScript 6.0.x. Dependabot
-ignores TypeScript's minor and major updates. Lift the hold when `typescript-eslint` supports the newer version.
+`typescript-eslint` 8.x supports TypeScript below 6.1, so `cards/package.json` and `addon/web/package.json` pin
+TypeScript 6.0.x. Dependabot ignores TypeScript's minor and major updates. Lift the hold when `typescript-eslint`
+supports the newer version.
 
 ## 2026-10-23: Branch protection requires `addon-build`
 
@@ -57,5 +58,4 @@ null, and `programs` sets `training_days.program_id` to null. Drop a column with
 
 The add-on's `Dockerfile` builds the website in a `node:24-alpine` stage, pinned to the multi-arch index digest.
 Dependabot doesn't watch the Dockerfile, so bump the pin by hand: take the new digest from
-`docker buildx imagetools inspect node:24-alpine`. The website (`addon/web/package.json`) holds TypeScript at 6.0.x
-too, for the same reason as the cards.
+`docker buildx imagetools inspect node:24-alpine`.

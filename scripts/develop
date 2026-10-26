@@ -78,8 +78,6 @@ trap 'exit 143' TERM
 # The real processes run with exec, so the pidfiles hold their PIDs (not those of npm or uv wrappers).
 (cd cards && exec ./node_modules/.bin/vite build --watch) >local/cards-watch.log 2>&1 &
 echo $! > "$watch_pidfile"
-(cd addon/web && exec ./node_modules/.bin/vite build --watch) >local/web-watch.log 2>&1 &
-echo $! > "$web_watch_pidfile"
 (
   export HA_FITNESS_PORT=8765 HA_FITNESS_DATA_DIR="$root/local/addon-data"
   # The dev routes (POST/DELETE /api/v1/dev/training-days, for scripts/seed --today and --late), and the same
@@ -92,6 +90,12 @@ echo $! > "$web_watch_pidfile"
   exec addon/server/.venv/bin/python -m ha_fitness_server
 ) >local/addon-server.log 2>&1 &
 echo $! > "$server_pidfile"
+# The server mounts the website's assets only if addon/web/dist/web exists when it starts, and the watch's first
+# build empties dist/ before it writes it again. So the watch starts once the server answers (up to 30 s).
+curl -sf -o /dev/null --retry 30 --retry-delay 1 --retry-connrefused --retry-all-errors --max-time 2 \
+  http://localhost:8765/api/v1/health || echo "develop: the add-on server isn't answering; see local/addon-server.log." >&2
+(cd addon/web && exec ./node_modules/.bin/vite build --watch) >local/web-watch.log 2>&1 &
+echo $! > "$web_watch_pidfile"
 echo "develop: cards and website watches and add-on server (http://localhost:8765) started; logs in local/."
 
 # Not exec: the EXIT trap must run when Home Assistant stops.
