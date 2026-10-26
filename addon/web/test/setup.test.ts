@@ -420,7 +420,11 @@ test("Home Assistant unreachable on saving people shows the message and keeps th
   await vi.waitFor(() => expect(peopleNames(root)).toEqual(["Elin", "Thomas"]));
   savePeople(root);
 
-  expect(text(await within(people).findByRole("alert"))).toBe("Home Assistant can't be reached");
+  const alert = await within(people).findByRole("alert");
+  expect(text(alert)).toBe("Home Assistant can't be reached");
+  // A refusal without a field shows above the people, not below them.
+  const list = within(people).getByRole("list", { name: en.setup.people });
+  expect(alert.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(peopleNames(root)).toEqual(["Elin", "Thomas"]);
 
   fake.restore("PUT", "api/v1/people");

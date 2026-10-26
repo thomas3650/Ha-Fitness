@@ -310,6 +310,13 @@ export class SetupPage extends LitElement {
       .map((item) => html`<p class="error" role="alert">${item.message}</p>`);
   }
 
+  /** The people refusals whose field passes `at`: one without a field shows above the list, the others below it. */
+  private peopleAlerts(at: (field: string | null) => boolean) {
+    return this.peopleErrors
+      .filter((item) => at(item.field))
+      .map((item) => html`<p class="error" role="alert">${item.message}</p>`);
+  }
+
   protected override render() {
     if (!this.loaded) {
       return html`<h1>${t("setup.title")}</h1>
@@ -373,6 +380,7 @@ export class SetupPage extends LitElement {
       <h2 id="setup-people">${icon(mdiAccountGroup)}<span>${t("setup.people")}</span></h2>
       <p class="secondary">${t("setup.people_hint")}</p>
       ${this.peopleNote ? html`<p class="error">${this.peopleNote}</p>` : nothing}
+      ${this.peopleAlerts((field) => field === null)}
       <ul class="setup-people" aria-label=${t("setup.people")}>
         ${this.people.map(
           (person, index) => html`<li>
@@ -422,7 +430,7 @@ export class SetupPage extends LitElement {
             </label>`
           : html`<p class="secondary">${t("setup.no_persons")}</p>`
         : nothing}
-      ${this.peopleErrors.map((item) => html`<p class="error" role="alert">${item.message}</p>`)}
+      ${this.peopleAlerts((field) => field !== null)}
       <div class="setup-actions">
         ${this.peopleSaved ? html`<span class="secondary" role="status">${t("setup.people_saved")}</span>` : nothing}
         <button type="button" class="button primary" ?disabled=${this.peopleSaving} @click=${() => this.savePeople()}>
