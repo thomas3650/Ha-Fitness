@@ -5,15 +5,17 @@ REST maps them to 404, 409, 422 and 503 with a `detail`, a `code` and a `field` 
 `DatabaseTooNew` stops the start.
 """
 
+from typing import ClassVar
+
 
 class Refusal(Exception):
     """A refusal REST answers with `detail`, a stable `code` and the `field` it is about (D65).
 
-    `code` defaults to the class's own; `field` is null where the refusal is about no one field. `str()` stays the
-    message, which MCP sends as it is.
+    `code` defaults to the class's own `default_code`, which each subclass sets; nothing raises a bare `Refusal`.
+    `field` is null where the refusal is about no one field. `str()` stays the message, which MCP sends as it is.
     """
 
-    default_code = "refused"
+    default_code: ClassVar[str]
 
     def __init__(
         self, message: str, *, code: str | None = None, field: str | None = None
