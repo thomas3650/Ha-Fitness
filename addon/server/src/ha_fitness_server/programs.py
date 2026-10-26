@@ -37,6 +37,16 @@ def total_minutes(document: ProgramDocument) -> int:
     return (total_seconds(document) + 30) // 60
 
 
+def _same_instant(given: datetime, stored: datetime) -> bool:
+    """Tell whether two times are the same instant; a time without an offset counts as UTC."""
+    return _aware(given) == _aware(stored)
+
+
+def _aware(moment: datetime) -> datetime:
+    """Return `moment` with an offset, UTC when it has none."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
 def _change(field: str, old: Any, new: Any) -> str:
     """Describe one changed top-level field: `rounds 5 → 4`, or only the name for lists and music."""
     if field in _NAMED_ONLY:
@@ -174,12 +184,16 @@ class Programs:
             )
         )
         if any(row.plan["program_id"] == program_id for row in active):
-            raise Conflict("A session for this program is running")
+            raise Conflict(
+                "A session for this program is running", code="session_running"
+            )
 
     @staticmethod
     def _taken(name: str) -> Conflict:
         """Return the error for a name already in use."""
-        return Conflict(f"Program name '{name}' is taken")
+        return Conflict(
+            f"Program name '{name}' is taken", code="name_taken", field="name"
+        )
 
     def create(self, document: ProgramDocument, client: str) -> ProgramOut:
         """Store a new program and log it; raise `Invalid` for a station that can't be resolved, `Conflict` for a taken name."""
@@ -226,17 +240,22 @@ class Programs:
             raise self._taken(document.name) from error
 
     def replace(
-        self, program_id: int, document: ProgramDocument, client: str
+        self,
+        program_id: int,
+        document: ProgramDocument,
+        client: str,
+        if_updated_at: datetime | None = None,
     ) -> ProgramOut:
         """Replace a program's whole document and log the fields that changed.
 
-        Raise `NotFound`, `Invalid` for a station that can't be resolved, or `Conflict` for a name another program has
-        or for `active: false` while a session of the program is active.
+        Raise `NotFound`, `Invalid` for a station that can't be resolved, or `Conflict` for a name another program has,
+        for `active: false` while a session of the program is active, or when `if_updated_at` is given and isn't the
+        stored `updated_at` (`changed_elsewhere`, spec §2.2.6).
         """
         stored = self._resolved(document)
         with self._training_days.lock:
             self._training_days.reconcile_now()
-            out = self._replace(program_id, document, stored, client)
+            out = self._replace(program_id, document, stored, client, if_updated_at)
             self._training_days.reconcile_now()
             return out
 
@@ -246,11 +265,19 @@ class Programs:
         document: ProgramDocument,
         stored: dict[str, Any],
         client: str,
+        if_updated_at: datetime | None,
     ) -> ProgramOut:
         """Replace and log a program's document, in one transaction."""
         try:
             with session(self._engine) as db_session:
                 row = self._row(db_session, program_id)
+                if if_updated_at is not None and not _same_instant(
+                    if_updated_at, row.updated_at
+                ):
+                    raise Conflict(
+                        f"Program {program_id} was changed elsewhere; reload it",
+                        code="changed_elsewhere",
+                    )
                 if not document.active:
                     self._refuse_in_session(db_session, program_id)
                 before = self._snapshot(row)
@@ -296,7 +323,9 @@ class Programs:
             before = self._snapshot(row)
             if active and not row.document["weekdays"]:
                 raise Invalid(
-                    f"Program {program_id} has no weekdays; give it one before switching it on"
+                    f"Program {program_id} has no weekdays; give it one before switching it on",
+                    code="weekday_needed",
+                    field="weekdays",
                 )
             # A new dict, as the JSON column doesn't track changes inside the old one.
             row.document = {**row.document, "active": active}

@@ -178,7 +178,8 @@ class Library:
     def resolve(self, ref: str, station: int) -> Exercise:
         """Return the exercise a station names by id or by a name only one exercise has.
 
-        Otherwise raise `Invalid` with the 1-based `station` and the close matches (spec §3.5).
+        Otherwise raise `Invalid` with the 1-based `station` and the close matches (spec §3.5); its code is
+        `station_shared` or `station_unknown` and its field `stations.<index from 0>` (D65).
         """
         by_id = self._by_id.get(ref) or self._get_custom(ref)
         if by_id is not None:
@@ -213,13 +214,17 @@ class Library:
                     {"id": exercise.id, "name": exercise.name}
                     for exercise in matches[:MAX_CLOSE_MATCHES]
                 ],
-            }
+            },
+            code="station_shared" if named else "station_unknown",
+            field=f"stations.{station - 1}",
         )
 
     def add_custom(self, new: NewCustomExercise, client: str) -> Exercise:
         """Store a custom exercise as `custom-<n>` and log it; raise `Conflict` if the name is taken."""
         name_key = new.name.casefold()
-        taken = Conflict(f"Exercise name '{new.name}' is taken")
+        taken = Conflict(
+            f"Exercise name '{new.name}' is taken", code="name_taken", field="name"
+        )
         if name_key in self._library_names:
             raise taken
         try:

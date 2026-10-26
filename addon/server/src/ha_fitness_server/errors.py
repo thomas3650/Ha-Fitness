@@ -1,29 +1,59 @@
 """The errors the services raise and the adapters map.
 
-REST maps them to 404, 409, 422 and 503 with a `detail`; MCP turns them into a `ToolError`. `SessionError` carries its
-own status and a `{code, message}` detail, for the session routes only. `DatabaseTooNew` stops the start.
+REST maps them to 404, 409, 422 and 503 with a `detail`, a `code` and a `field` (D65); MCP turns them into a
+`ToolError`. `SessionError` carries its own status and a `{code, message}` detail, for the session routes only.
+`DatabaseTooNew` stops the start.
 """
 
 
-class NotFound(Exception):
+class Refusal(Exception):
+    """A refusal REST answers with `detail`, a stable `code` and the `field` it is about (D65).
+
+    `code` defaults to the class's own; `field` is null where the refusal is about no one field. `str()` stays the
+    message, which MCP sends as it is.
+    """
+
+    default_code = "refused"
+
+    def __init__(
+        self, message: str, *, code: str | None = None, field: str | None = None
+    ) -> None:
+        """Keep the code and the field for the adapters."""
+        super().__init__(message)
+        self.code = code or self.default_code
+        self.field = field
+
+
+class NotFound(Refusal):
     """The thing asked for doesn't exist."""
 
+    default_code = "not_found"
 
-class Conflict(Exception):
+
+class Conflict(Refusal):
     """The write clashes with what is stored, for example a name already in use."""
 
+    default_code = "conflict"
 
-class Invalid(Exception):
+
+class Invalid(Refusal):
     """The input breaks a rule; `detail` is a text or a JSON-able dict that says how."""
 
-    def __init__(self, detail: object) -> None:
+    default_code = "invalid"
+
+    def __init__(
+        self, detail: object, *, code: str | None = None, field: str | None = None
+    ) -> None:
         """Keep the detail for the adapters."""
-        super().__init__(detail)
+        super().__init__(str(detail), code=code, field=field)
+        self.args = (detail,)
         self.detail = detail
 
 
-class Unavailable(Exception):
+class Unavailable(Refusal):
     """Something the write needs, such as Home Assistant, can't be reached."""
+
+    default_code = "unavailable"
 
 
 class SessionError(Exception):

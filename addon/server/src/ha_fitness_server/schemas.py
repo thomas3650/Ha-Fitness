@@ -2,7 +2,7 @@
 
 import datetime as dt
 from datetime import UTC, datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -10,9 +10,10 @@ from pydantic import (
     Field,
     PlainSerializer,
     StringConstraints,
+    ValidationInfo,
     field_validator,
-    model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 
 class ExerciseSummary(BaseModel):
@@ -222,18 +223,22 @@ class ProgramDocument(BaseModel):
 
     @field_validator("weekdays")
     @classmethod
-    def _week_order(cls, weekdays: list[Weekday]) -> list[Weekday]:
-        """Refuse a weekday given twice; keep the rest in week order."""
+    def _week_order(
+        cls, weekdays: list[Weekday], info: ValidationInfo
+    ) -> list[Weekday]:
+        """Refuse a weekday given twice, and none for an active program; keep the rest in week order.
+
+        The weekday rule sits here, not on the model, so its error is at `weekdays` (D65). `active` is declared
+        first; when it is itself invalid it is missing here and has its own error.
+        """
         if len(set(weekdays)) != len(weekdays):
             raise ValueError("a weekday is given more than once")
+        if info.data.get("active") and not weekdays:
+            raise PydanticCustomError(
+                "weekday_needed",
+                "Value error, an active program needs at least one weekday",
+            )
         return sorted(weekdays, key=WEEK_ORDER.index)
-
-    @model_validator(mode="after")
-    def _active_needs_a_weekday(self) -> Self:
-        """An active program needs at least one weekday."""
-        if self.active and not self.weekdays:
-            raise ValueError("an active program needs at least one weekday")
-        return self
 
 
 class ProgramActive(BaseModel):
