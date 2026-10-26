@@ -1,15 +1,16 @@
 # The add-on's website: programs, library and setup
 
 **Status:** draft for Thomas's approval. Issue #85 (the choice of option B and Thomas's review are in its comments).
-The mockups are in [`docs/mockups/website/`](../../mockups/website/) (W1–W6, 1440×900). They show the layout and the
-Danish texts; the notes in their corner aren't part of the screens, and W6's equipment chips are examples (§2.4.1).
+The mockups are in [`docs/mockups/website/`](../../mockups/website/) (W1–W6, 1440×900). They show the layout; their texts are
+Danish, but the v2 website is in English (§2.1.5). The notes in their corner aren't part of the screens, and W6's
+equipment chips are examples (§2.4.1).
 
 **Real Home Assistant:** no change is needed there beyond the releases. The website ships in the add-on and shows in the
 add-on's panel ("HA Fitness"). The release's `fitness` issue tells the house that the panel now holds the editor, and
 asks it to check that the add-on's "show in sidebar" is on ([`ha-notes.md`](../../ha-notes.md)).
 
 **Builds on:** the add-on's REST API and service layer (D3), D1 and D7 (the v2 editor is the add-on's website, in Lit),
-the Ingress page (D27) and the browser's language (D11), the library (D13, D30), people (D33), the change log, the
+the Ingress page (D27), the library (D13, D30), people (D33), the change log, the
 music reads (`/api/v1/music/*`), and D42.
 
 ## 1. Why
@@ -39,23 +40,24 @@ Claude edit through the same add-on service layer, and the integration and the c
 3. **The boundary:** HA's login protects the site only through Ingress. On the add-on's port 8765 the same app is open
    to the LAN, as the REST API already is (D44, #21); the site adds no capability the REST API doesn't have.
 4. A computer screen first (from about 1280 px wide). It needn't work on a phone or the tablet.
-5. Its texts follow the browser's language (D11), Danish or English, from the site's language files (hard rule 6).
-   Exercise names and instructions are never translated.
+5. **English only in v2** (Thomas, 2026-10-26). All texts come from an English language file, so Danish can be added
+   later as a second file. This is an exception to hard rule 6's "Danish ships too" for the website in v2, recorded in
+   the new decision; the integration, the cards and the tablet stay Danish and English.
 6. HA's light look as the cards have it (D51, D52): white cards with a grey border, HA's blue, `mdi:` icons. Inside
    the Ingress iframe HA's `<ha-icon>` and CSS variables don't exist, so the site inlines the icons it uses (e.g.
    `@mdi/js` paths) and defines HA's light-theme values itself. This is a stated exception to D51's "no icon package",
    recorded in the new decision.
-7. A menu with four pages: **Programmer, Bibliotek, Opsætning, Status**. There is no history page. Pages and the
+7. A menu with four pages: **Programs, Library, Setup, Status**. There is no history page. Pages and the
    editor survive a reload under the changing Ingress prefix (e.g. hash routes, so `/` stays the one HTML route).
 
 ### 2.2 Programs (mockups W1, W2, W3, W5)
 
 1. **The list (W1):**
    - search by name; filters: all, active, off;
-   - one row per program: its name and length, its weekdays, its exercises as thumbnails, its music, **"Oprettet af"**
-     (Claude or Dig), an active switch, and edit, copy and delete;
-   - a "Nyt program" button.
-2. **"Oprettet af"** says who created the program: Claude (an MCP write) or Dig (the website, or any other REST
+   - one row per program: its name and length, its weekdays, its exercises as thumbnails, its music, **"Created by"**
+     (Claude or You), an active switch, and edit, copy and delete;
+   - a "New program" button.
+2. **"Created by"** says who created the program: Claude (an MCP write) or You (the website, or any other REST
    client). It shows in the list and as a small badge in the editor (W3); there is nothing else about Claude on the
    website, and no per-program history. It is stored on the program's row at creation (not in `ProgramDocument`,
    which forbids extra keys). Programs from before this change take it from the change log's `program.created` entry
@@ -64,9 +66,8 @@ Claude edit through the same add-on service layer, and the integration and the c
    - Empty starts active, with no weekdays, and the defaults the add-on fills in (5 rounds, 45 s work, 15 s break
      between exercises, 60 s between rounds, 5 s countdown). Saving it needs a weekday or switching it off; the
      add-on's refusal says so (§2.2.4).
-   - A copy is named "<name> (kopi)" (the suffix from the language files: "(copy)" in English), switched off, and is
-     stored only when saved. Its "Oprettet af" is Dig. A name the add-on refuses (too long, or taken) is shown at the
-     name field.
+   - A copy is named "<name> (copy)", switched off, and is stored only when saved. Its "Created by" is You. A name the
+     add-on refuses (too long, or taken) is shown at the name field.
 4. **The editor (W3):**
    - at the top: name, rounds, work, break between exercises, rest between rounds;
    - weekdays; music (the setup's favourite playlists first, §2.4) and speaker; countdown (0, 5 or 10 s); active;
@@ -74,19 +75,19 @@ Claude edit through the same add-on service layer, and the integration and the c
      through roles); × to remove;
    - the library beside it (search, filters, + to add, ✓ when already in the program; a click shows the exercise's
      details, W4); thumbnails load lazily;
-   - a line with the number of exercises, the total time and the equipment needed, and "Ikke gemt" while there are
+   - a line with the number of exercises, the total time and the equipment needed, and "Not saved" while there are
      unsaved changes;
-   - Gem, Annullér and Slet. Leaving the editor with unsaved changes, inside the site or by closing the tab, asks
+   - Save, Cancel and Delete. Leaving the editor with unsaved changes, inside the site or by closing the tab, asks
      first. (A click in HA's own sidebar can't be caught from the iframe.)
    - **No second set of rules:** the form bounds nothing beyond the controls' natural ranges; the add-on decides. A
-     refused save shows the reason in the browser's language at the field it is about (§2.6), and nothing typed is
+     refused save shows the add-on's reason at the field it is about (§2.6), and nothing typed is
      lost.
    - **Music:** picking a playlist sets the music's `playlist` and `playlist_name` together. A new program's speaker is
      the setup's default speaker (§2.4.4); the music is stored once a playlist is picked, since `Music.playlist` is
      required. Saving keeps the fields the editor doesn't show (`music.volume`, `music.shuffle`), because a save
      replaces the whole program. A speaker that isn't in Music Assistant's list is still shown and kept.
 5. **Delete (W5):** a confirmation that says the history and stats stay, the program's open training days go, and it
-   can't be undone, with "Slå det fra i stedet". While a session for the program runs, the add-on refuses deleting and
+   can't be undone, with "Turn it off instead". While a session for the program runs, the add-on refuses deleting and
    switching off (D42), and the site says why (§2.6), also for W1's active switch.
 6. **A change made elsewhere** (Claude, or another tab) while the editor is open: saving must not silently undo it.
    The check is **opt-in** on the write: a request without it (MCP's `update_program`, other REST clients) works as
@@ -97,15 +98,14 @@ Claude edit through the same add-on service layer, and the integration and the c
 1. A page to browse the exercises: search by name, and filter by equipment, body part and target muscle, several values
    per filter.
 2. **The household filter:** by default it shows only exercises the household can do: those whose equipment is in the
-   setup's equipment (§2.4.1), body weight always included, and custom exercises always shown. "Vis alle" turns it
+   setup's equipment (§2.4.1), body weight always included, and custom exercises always shown. "Show all" turns it
    off. The editor's library panel works the same.
 3. **Where the filtering happens:** the site loads the summaries of all exercises once (id, name, equipment, body part,
    target, custom; about 1,324 rows) from a new read route, and searches and filters them itself. The REST search and
    MCP's `search_exercises` keep their limits.
 4. An exercise's details (W4): a big GIF with Gym visual's attribution beside it (the `attribution` field, D13),
    equipment, body part, target and secondary muscles, and the instructions in English.
-5. Equipment, body parts and target muscles are shown in the browser's language through the site's language files
-   (they aren't exercise names). A value with no translation is shown as it is.
+5. Equipment, body parts and target muscles are shown as the dataset names them (English).
 
 ### 2.3a The whole dataset in the library
 
@@ -121,11 +121,10 @@ Claude edit through the same add-on service layer, and the integration and the c
 4. The tablet's cards show an equipment value they have no translation for in English (`cards/src/flow/details.ts`).
    That stays as it is; §3 keeps the cards unchanged.
 
-### 2.4 Setup ("Opsætning", mockup W6)
+### 2.4 Setup (mockup W6)
 
 1. **Equipment:** which equipment the household has. The choices are every equipment value of the library and the
-   custom exercises, with `band` and `resistance band` as one choice ("elastik"; Claude's call), shown through the
-   language files. Body weight is always on. W6's chips are examples, not the list.
+   custom exercises, with `band` and `resistance band` as one choice ("band"; Claude's call). Body weight is always on. W6's chips are examples, not the list.
 2. **People:** which of HA's persons train, at most 2, in order (the colours follow the order), with the people write's
    rules (`PUT /api/v1/people`). It is Thomas's call to have them on the website. People **save on their own**, apart
    from the rest of the setup (the people write can fail with 503 while HA is unreachable). **Removing a person asks
@@ -145,16 +144,17 @@ Claude edit through the same add-on service layer, and the integration and the c
 The page shows what today's status page shows: the version, the library and media state, the people, the programs, and
 links to the JSON library status (`/api/v1/library`) and health. It reads them through the REST API.
 
-### 2.6 Refusals in the browser's language
+### 2.6 Refusals
 
-1. The add-on gives each refusal the site can meet a **stable code**, and the **field** it is about where there is one:
+1. The site shows the add-on's own (English) message, at the field it is about. For that the add-on gives each
+   refusal the site can meet a **stable code**, and the **field** where there is one:
    a taken name, a weekday needed for an active program, a station that can't be resolved, too many people, a session
    that blocks a delete or a switch-off (D42), a conflict on save (§2.2.6), HA unreachable for the people write, and
    the field-level validation errors. This is an addition to the REST error bodies (`api_version` stays 1): an
    existing route's `detail` keeps its type and meaning, and new fields go beside it. The session routes keep their
    `{code, message}` detail and codes, which the integration reads. MCP's error texts stay as they are.
-2. The site maps code and field to texts in its language files. An unknown code shows a general text in the browser's
-   language, with the add-on's English message underneath.
+2. The code lets the site react (for example offer a reload on a conflict, or "Turn it off instead" when a delete is
+   refused); the field places the message. A refusal without a field is shown above the form.
 
 ## 3. Unchanged
 
@@ -177,7 +177,6 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
 - **A website that can lose work:** a refused save or a change made elsewhere must not throw away what was typed.
 - **Tests pinned to the implementation** (Thomas): components and code can be refactored without rewriting the tests.
 - **A second set of rules:** the site never decides what a valid program is; the add-on does.
-- **English refusals on a Danish page** (hard rule 6).
 
 ## 6. Constraints
 
@@ -191,7 +190,7 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
   The build output is never committed (hard rule 3's spirit).
 - **Serving:** the site's assets get their own route or mount under a named prefix, before the MCP mount (which takes
   every unmatched path, D26); `/` serves the site's HTML. Without a built site (pytest, the CI `addon-server` job, a
-  fast loop without a build), `/` serves a short page that says the website isn't built, in the browser's language.
+  fast loop without a build), `/` serves a short English page that says the website isn't built.
   `ingress.py`'s status page and `test_ingress.py` are replaced; the server's `i18n/` files keep only the fallback
   page's texts. `docs/architecture.md`'s
   "Routing in the add-on server" is updated.
@@ -208,7 +207,8 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
   that merges after the feature PR, so the integration doesn't release unchanged
   ([`releasing.md`](../../releasing.md), D29). The site's build output is ignored by a `.gitignore` inside its own
   folder under `addon/`.
-- **Languages:** every text in Danish and English language files (hard rule 6).
+- **Languages:** every text in the site's English language file (§2.1.5); the fallback page's text in the server's
+  English file.
 
 ## 7. Docs
 
@@ -216,8 +216,8 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
   routing.
 - `docs/domain-language.md`: setup, household equipment, favourite playlists, default speaker, "created by".
 - `docs/decisions.md`:
-  - the website is built into the add-on image and served at the panel's root, admin only in v2, with its own icons
-    and theme values (an exception to D51);
+  - the website is built into the add-on image and served at the panel's root, admin only in v2, English only in v2
+    (an exception to hard rule 6), with its own icons and theme values (an exception to D51);
   - the setup (equipment, people on the website, favourites, default speaker) and `get_setup`;
   - the whole dataset, which sets D13 and D30 to `active; <the filtered part> superseded by D<n>`;
   - stable error codes for the REST API.
@@ -230,7 +230,7 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
 
 - The store and REST shape of the setup, and the read route for all exercise summaries.
 - The error codes' names and the error body's shape (additive), and the opt-in conflict check's mechanism.
-- How "Oprettet af" is stored and the change-log fallback is read.
+- How "Created by" is stored and the change-log fallback is read.
 - The exact layout within the mockups' structure, and drag and drop's implementation.
 - How the fast loop serves the site during development.
 - Splitting the feature into more than one PR, as long as the root files go in their own PR, merged last (§6).
