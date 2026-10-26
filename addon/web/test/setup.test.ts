@@ -289,7 +289,7 @@ test("a favourite playlist is added from Music Assistant's playlists and another
   fireEvent.change(add, { target: { value: "library://playlist/2" } });
   await vi.waitFor(() => expect(favouriteNames(root)).toEqual(["Workout Mix", "Run 160 bpm"]));
 
-  fireEvent.click(within(playlists).getByRole("button", { name: removeName("Workout Mix") }));
+  fireEvent.click(within(playlists).getByRole("button", { name: en.setup.remove.replace("{name}", "Workout Mix") }));
   await vi.waitFor(() => expect(favouriteNames(root)).toEqual(["Run 160 bpm"]));
   save(root);
 
@@ -415,8 +415,8 @@ test("removing a person asks first and says what it means", async () => {
   const root = await openSetup(fake);
   const people = region(root, en.setup.people);
 
-  fireEvent.click(within(people).getByRole("button", { name: removeName("Elin") }));
-  const dialog = await findByRole(root, "dialog", { name: removeName("“Elin”?") });
+  fireEvent.click(within(people).getByRole("button", { name: en.setup.remove.replace("{name}", "Elin") }));
+  const dialog = await findByRole(root, "dialog", { name: en.setup.remove_title.replace("{name}", "Elin") });
   expect(within(dialog).getByText(en.setup.remove_stats)).toBeTruthy();
   expect(within(dialog).getByText(en.setup.remove_sensors)).toBeTruthy();
   expect(within(dialog).getByText(en.setup.remove_new)).toBeTruthy();
@@ -425,7 +425,7 @@ test("removing a person asks first and says what it means", async () => {
   await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
   expect(peopleNames(root)).toEqual(["Thomas", "Elin"]);
 
-  fireEvent.click(within(people).getByRole("button", { name: removeName("Elin") }));
+  fireEvent.click(within(people).getByRole("button", { name: en.setup.remove.replace("{name}", "Elin") }));
   fireEvent.click(within(await findByRole(root, "dialog")).getByRole("button", { name: en.setup.remove_confirm }));
   await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
   expect(peopleNames(root)).toEqual(["Thomas"]);
