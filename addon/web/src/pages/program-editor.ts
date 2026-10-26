@@ -1108,9 +1108,12 @@ export const programEditorStyles = css`
     border: 1px solid transparent;
     border-radius: 8px;
   }
-  .editor-main .name-field:hover,
-  .editor-main .name-field:focus-within {
+  .editor-main .name-field:hover {
     border-color: var(--hf-border);
+    background: var(--hf-card);
+  }
+  .editor-main .name-field:focus-within {
+    border-color: var(--hf-primary);
     background: var(--hf-card);
   }
   .editor-main .name-field input {
@@ -1231,6 +1234,9 @@ export const programEditorStyles = css`
     margin-top: 6px;
     font-size: 12px;
   }
+  .editor-main .timing select {
+    margin-top: auto;
+  }
   .editor-main .music select,
   .editor-main .timing select {
     width: 100%;
@@ -1275,6 +1281,7 @@ export const programEditorStyles = css`
   }
   .editor-main .stepper {
     display: flex;
+    margin-top: auto;
     align-items: center;
     gap: 2px;
   }
