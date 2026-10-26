@@ -221,7 +221,8 @@
   },
   "error": {
     "unknown": "The add-on answered with an error ({status}).",
-    "network": "The add-on can't be reached."
+    "network": "The add-on can't be reached.",
+    "unexpected": "Something went wrong. Reload the page and try again."
   },
   "new_program": {
     "heading": "How do you want to start?",

@@ -27,6 +27,7 @@ import {
 import "../components/confirm-dialog";
 import "../components/multi-select";
 import { applySelectValues } from "../components/select-value";
+import { failure } from "../failure";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { BAND, BAND_NAMES, BODY_WEIGHT, facetValues } from "../library-filter";
@@ -54,11 +55,6 @@ interface MusicRead<T> {
 
 /** Where a setup refusal shows: at a card, or above the page. */
 type Place = "equipment" | "playlists" | "speaker" | "page";
-
-function failure(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  throw error;
-}
 
 function placeOf(item: ErrorItem): Place {
   const field = item.field ?? "";

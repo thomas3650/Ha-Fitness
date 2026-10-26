@@ -1,10 +1,11 @@
 import { mdiDumbbell, mdiMagnify } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
-import { ApiError, createApi, thumbnailUrl, type Api, type ExerciseSummary, type Setup } from "../api";
+import { createApi, thumbnailUrl, type Api, type ExerciseSummary, type Setup } from "../api";
 import "../components/equipment-filter";
 import "../components/exercise-details";
 import "../components/multi-select";
+import { failure } from "../failure";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import {
@@ -22,11 +23,6 @@ import {
 type ValueFacet = Exclude<Facet, "equipment">;
 
 const VALUE_FACETS: ValueFacet[] = ["body_part", "target"];
-
-function failure(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  throw error;
-}
 
 /**
  * The Library page (website spec §2.3, W4): every exercise, searched by name and filtered by equipment, body part and

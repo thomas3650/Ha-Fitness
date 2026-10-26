@@ -11,7 +11,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
 import "../src/main";
-import { fakeApi, program, type FakeApi } from "./fake-api";
+import { brokenAt, fakeApi, program, type FakeApi } from "./fake-api";
 import { mount, unmount } from "./mount";
 
 afterEach(() => {
@@ -380,4 +380,14 @@ test("a program under half a minute shows “< 1 min”; half a minute shows 1 m
   expect(within(rowOf(root, "Short")).getByText("< 1 min")).toBeTruthy();
   expect(within(rowOf(root, "Half")).getByText("1 min")).toBeTruthy();
   expect(within(rowOf(root, "Empty")).getByText("0 min")).toBeTruthy();
+});
+
+test("a list read that fails with a bug shows the generic message and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(fakeApi({ programs: programs() }), "api/v1/programs"));
+  const root = await mount("#/programs");
+
+  expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+  logged.mockRestore();
 });

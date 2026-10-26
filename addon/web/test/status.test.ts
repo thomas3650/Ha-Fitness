@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
 import "../src/main";
-import { fakeApi, program } from "./fake-api";
+import { brokenAt, fakeApi, program } from "./fake-api";
 import { mount, unmount } from "./mount";
 
 afterEach(() => {
@@ -131,4 +131,14 @@ test("the Status page shows “< 1 min” for a program under half a minute", as
     .slice(1)
     .map((row) => text(within(row).getAllByRole("cell")[3]));
   expect(lengths).toEqual(["< 1 min", "1 min", "0 min"]);
+});
+
+test("a read that fails with a bug shows the generic message on the Status page and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(fakeApi(), "api/v1/programs"));
+  const root = await mount("#/status");
+
+  expect(await findByText(root, en.error.unexpected)).toBeTruthy();
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+  logged.mockRestore();
 });

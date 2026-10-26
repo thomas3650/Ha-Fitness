@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { Exercise, ExerciseSummary, ProgramDocument } from "../src/api";
 import en from "../src/i18n/en.json";
 import "../src/main";
-import { fakeApi, program, type FakeApi } from "./fake-api";
+import { brokenAt, fakeApi, program, type FakeApi } from "./fake-api";
 import { mount, unmount } from "./mount";
 
 afterEach(() => {
@@ -1151,4 +1151,25 @@ test("a program under half a minute shows “< 1 min” on the new-program page 
   const oneRound = { rounds: 1, work_seconds: 45, switch_seconds: 15, round_rest_seconds: 60, countdown_seconds: 5 };
   root = await openEditor(newFake({ defaults: oneRound }), "#/programs/new/empty");
   expect(within(root).getByText("0 min in all · 1 round × 0 exercises")).toBeTruthy();
+});
+
+test("a program read that fails with a bug shows the generic message, not the bug's text, and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(newFake({ programs: [fullBody()] }), "api/v1/programs/1"));
+  const root = await mount("#/programs/1");
+
+  const alert = await findByRole(root, "alert");
+  expect(text(alert)).toBe(en.error.unexpected);
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+  logged.mockRestore();
+});
+
+test("a defaults read that fails with a bug shows the generic message on the new-program page and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(newFake(), "api/v1/programs/defaults"));
+  const root = await mount("#/programs/new");
+
+  expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+  logged.mockRestore();
 });

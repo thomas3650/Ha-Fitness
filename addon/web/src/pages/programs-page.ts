@@ -12,8 +12,9 @@ import {
 } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
-import { ApiError, createApi, thumbnailUrl, type Api, type ProgramOut, type Weekday } from "../api";
+import { createApi, thumbnailUrl, type Api, type ProgramOut, type Weekday } from "../api";
 import "../components/confirm-dialog";
+import { failure } from "../failure";
 import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
@@ -33,12 +34,6 @@ interface Deleting {
   id: number;
   busy: boolean;
   error: string | null;
-}
-
-/** The refusal's message; anything that isn't a refusal is a bug and is thrown on. */
-function message(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  throw error;
 }
 
 /**
@@ -97,7 +92,7 @@ export class ProgramsPage extends LitElement {
     try {
       this.programs = await this.api.programs();
     } catch (error) {
-      this.loadError = message(error);
+      this.loadError = failure(error);
     }
   }
 
@@ -121,7 +116,7 @@ export class ProgramsPage extends LitElement {
     try {
       this.replace(await this.api.setActive(stored.id, !isActive(stored)));
     } catch (error) {
-      this.setRowError(stored.id, message(error));
+      this.setRowError(stored.id, failure(error));
     } finally {
       const pending = new Set(this.pending);
       pending.delete(stored.id);
@@ -139,7 +134,7 @@ export class ProgramsPage extends LitElement {
       this.setRowError(deleting.id, null);
       this.deleting = null;
     } catch (error) {
-      this.deleting = { ...deleting, busy: false, error: message(error) };
+      this.deleting = { ...deleting, busy: false, error: failure(error) };
     }
   }
 
@@ -152,7 +147,7 @@ export class ProgramsPage extends LitElement {
       this.setRowError(deleting.id, null);
       this.deleting = null;
     } catch (error) {
-      this.deleting = { ...deleting, busy: false, error: message(error) };
+      this.deleting = { ...deleting, busy: false, error: failure(error) };
     }
   }
 
