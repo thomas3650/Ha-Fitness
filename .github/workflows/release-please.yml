@@ -20,6 +20,7 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       # Only used if RELEASE_PLEASE_TOKEN is missing; that token has the same scopes for this repo.
       contents: write
@@ -40,6 +41,7 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     env:

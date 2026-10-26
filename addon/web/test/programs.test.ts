@@ -6,6 +6,7 @@ import {
   queryByRole,
   within,
 } from "@testing-library/dom";
+import { computeAccessibleName } from "dom-accessibility-api";
 import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
@@ -74,7 +75,7 @@ function names(root: HTMLElement): string[] {
   const table = getByRole(root, "table", { name: en.programs.title });
   return within(table)
     .getAllByRole("switch")
-    .map((element) => element.getAttribute("aria-label") ?? "");
+    .map((element) => computeAccessibleName(element));
 }
 
 function switchOf(root: HTMLElement, name: string): HTMLElement {

@@ -105,6 +105,18 @@ async def test_bad_setup_is_refused(
     assert (await client.get(SETUP)).json() == _setup()
 
 
+async def test_duplicate_playlist_is_at_favourite_playlists(
+    client: httpx.AsyncClient,
+) -> None:
+    """A playlist given twice is a 422 item at the playlist list, which the website shows by the playlists."""
+    duplicate = [PLAYLIST, PLAYLIST | {"name": "Igen"}]
+    response = await client.put(SETUP, json=_setup(favourite_playlists=duplicate))
+    assert response.status_code == 422, response.text
+    [item] = response.json()["detail"]
+    assert item["loc"] == ["body", "favourite_playlists"]
+    assert "more than once" in item["msg"]
+
+
 async def test_twenty_playlists_are_allowed(client: httpx.AsyncClient) -> None:
     """Twenty favourite playlists is the most there can be."""
     playlists = [{"uri": f"library://playlist/{n}", "name": f"P{n}"} for n in range(20)]

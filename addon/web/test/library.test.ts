@@ -7,6 +7,7 @@ import {
   queryByText,
   within,
 } from "@testing-library/dom";
+import { computeAccessibleName } from "dom-accessibility-api";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { Exercise, ExerciseSummary } from "../src/api";
@@ -110,7 +111,7 @@ async function options(root: HTMLElement, facet: string): Promise<HTMLElement[]>
 
 /** A filter's options by their accessible names ("cable, not at home"). */
 async function optionNames(root: HTMLElement, facet: string): Promise<string[]> {
-  return (await options(root, facet)).map((option) => option.getAttribute("aria-label") ?? text(option));
+  return (await options(root, facet)).map((option) => computeAccessibleName(option));
 }
 
 /** Choose an option of a filter by its accessible name, or take it off, through its combobox. */

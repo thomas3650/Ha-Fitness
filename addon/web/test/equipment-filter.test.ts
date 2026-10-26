@@ -1,4 +1,5 @@
 import { fireEvent, getByRole, queryByRole, within } from "@testing-library/dom";
+import { computeAccessibleName } from "dom-accessibility-api";
 import { afterEach, expect, test } from "vitest";
 
 import { EquipmentFilter } from "../src/components/equipment-filter";
@@ -51,7 +52,7 @@ function listbox(root: HTMLElement): HTMLElement | null {
 }
 
 function optionName(option: HTMLElement): string {
-  return option.getAttribute("aria-label") ?? text(option);
+  return computeAccessibleName(option);
 }
 
 /** The options' accessible names, in one group or in the whole list. */

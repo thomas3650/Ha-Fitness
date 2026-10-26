@@ -20,6 +20,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@testing-library/dom": "10.4.2",
+    "dom-accessibility-api": "0.7.1",
     "eslint": "10.13.0",
     "happy-dom": "21.0.4",
     "typescript": "6.0.3",

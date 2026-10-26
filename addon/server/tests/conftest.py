@@ -80,14 +80,17 @@ def make_app(tmp_path: Path) -> MakeApp:
 
     `settings_overrides` replaces `Settings` fields; the other keywords go to `create_app`. The media source is a
     fake unless a test passes its own `media_transport`, so no test touches the network. HA is not configured unless
-    a test overrides `ha_url` with `ha_token` or `ha_token_file` (and passes an `ha_transport` fake).
+    a test overrides `ha_url` with `ha_token` or `ha_token_file` (and passes an `ha_transport` fake). The website
+    is read from a `web/` under the test's folder, which isn't there, unless a test gives its own `web_dir`; so no
+    test reads the add-on's real path.
     """
 
     def _make_app(
         settings_overrides: dict[str, Any] | None = None, **create_app_kwargs: Any
     ) -> FastAPI:
         settings = replace(
-            Settings(port=0, data_dir=tmp_path), **(settings_overrides or {})
+            Settings(port=0, data_dir=tmp_path, web_dir=tmp_path / "web"),
+            **(settings_overrides or {}),
         )
         create_app_kwargs.setdefault("media_transport", fake_media_transport())
         return create_app(settings, **create_app_kwargs)

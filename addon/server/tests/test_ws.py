@@ -1,7 +1,8 @@
 """Tests for the push channel `GET /api/v1/ws` (step 4 spec §3.6), with a frozen clock in Copenhagen time.
 
-`receive_json()` has no timeout, so every test asserts on the exact next message: a missing message shows up as a
-wrong one. The scheduler runs every 0.05 s, so a test that only moves the clock sees what the loop's tick pushes.
+`receive_json()` has no timeout of its own, so every test asserts on the exact next message: a missing message shows
+up as a wrong one. A read that never gets a message fails on the per-test timeout (`pytest-timeout`). The scheduler
+runs every 0.05 s, so a test that only moves the clock sees what the loop's tick pushes.
 """
 
 from collections.abc import Iterator
@@ -70,7 +71,10 @@ def _event(message: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def _connect_expect(ws: Any, date: str) -> dict[str, Any]:
-    """Read `hello`, the first `today`, `session` (none) and `stats` of a new connection; check the date, return `today`."""
+    """Read `hello`, the first `today`, `session` (none) and `stats` of a new connection.
+
+    Check the date and return `today`.
+    """
     assert ws.receive_json() == {
         "type": "hello",
         "version": __version__,
@@ -254,7 +258,10 @@ class _MidnightClock(FrozenClock):
 
 @contextmanager
 def _quiet_client(make_app: MakeApp, clock: FrozenClock) -> Iterator[TestClient]:
-    """Run an app in Copenhagen time where only requests read the clock: the scheduler and session loop wait a minute."""
+    """Run an app in Copenhagen time where only requests read the clock.
+
+    The scheduler and the session loop wait a minute.
+    """
     app = make_app(
         settings_overrides={
             "timezone": ZONE,

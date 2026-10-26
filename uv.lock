@@ -1239,6 +1239,7 @@ dev = [
     { name = "pre-commit" },
     { name = "pytest-cov" },
     { name = "pytest-homeassistant-custom-component" },
+    { name = "pytest-timeout" },
     { name = "ruff" },
     { name = "zizmor" },
 ]
@@ -1253,6 +1254,7 @@ dev = [
     { name = "pre-commit" },
     { name = "pytest-cov" },
     { name = "pytest-homeassistant-custom-component", specifier = "==0.13.373" },
+    { name = "pytest-timeout" },
     { name = "ruff" },
     { name = "zizmor" },
 ]

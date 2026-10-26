@@ -8,6 +8,7 @@ permissions: {}
 jobs:
   pr-title:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       pull-requests: read
     steps:

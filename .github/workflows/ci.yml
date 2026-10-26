@@ -19,6 +19,7 @@ concurrency:
 jobs:
   python:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -32,6 +33,7 @@ jobs:
 
   addon-server:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: addon/server
@@ -51,6 +53,7 @@ jobs:
 
   cards:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: cards
@@ -70,6 +73,7 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: addon/web
@@ -89,6 +93,7 @@ jobs:
 
   hassfest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -98,6 +103,7 @@ jobs:
 
   hacs:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: hacs/action@d556e736723344f83838d08488c983a15381059a  # 22.5.0
         with:
@@ -108,6 +114,7 @@ jobs:
 
   addon-lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -119,6 +126,7 @@ jobs:
   # As home-assistant/apps-example's build-app.yaml: one image per arch, each on its own runner.
   addon-build-prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       version: ${{ steps.image.outputs.version }}
@@ -154,6 +162,7 @@ jobs:
     name: addon-build (${{ matrix.arch }})
     needs: addon-build-prepare
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.addon-build-prepare.outputs.matrix) }}
@@ -179,6 +188,7 @@ jobs:
     needs: addon-build-arch
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - env:
           RESULT: ${{ needs.addon-build-arch.result }}
@@ -188,6 +198,7 @@ jobs:
 
   workflows:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

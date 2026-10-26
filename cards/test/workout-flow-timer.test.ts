@@ -6,6 +6,7 @@ import {
   queryByRole,
   queryByText,
 } from "@testing-library/dom";
+import { computeAccessibleName } from "dom-accessibility-api";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import "../src/index";
@@ -202,7 +203,7 @@ function whole(flow: FlowElement): HTMLElement {
 function ringState(flow: FlowElement) {
   const element = ring(flow);
   return {
-    name: element.getAttribute("aria-label"),
+    name: computeAccessibleName(element),
     min: element.getAttribute("aria-valuemin"),
     max: element.getAttribute("aria-valuemax"),
     now: element.getAttribute("aria-valuenow"),
@@ -541,7 +542,7 @@ test("the whole-workout bar's value stays within its maximum; the elapsed text d
 test("the whole-workout bar moves with the clock", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo());
-  expect(whole(flow).getAttribute("aria-label")).toBe("Hele træningen");
+  expect(computeAccessibleName(whole(flow))).toBe("Hele træningen");
   expect(whole(flow).getAttribute("aria-valuemin")).toBe("0");
   expect(whole(flow).getAttribute("aria-valuemax")).toBe("1740");
   expect(whole(flow).getAttribute("aria-valuenow")).toBe("360");
@@ -661,7 +662,7 @@ test("one-person and two-person layouts in work and switch", async () => {
   // the station, the exercise and the next line.
   const two = await mount(fakeHass("da"), view());
   const panels = getAllByRole(root(two.flow), "region");
-  expect(panels.map((panel) => panel.getAttribute("aria-label"))).toEqual(["Thomas", "Maria"]);
+  expect(panels.map((panel) => computeAccessibleName(panel))).toEqual(["Thomas", "Maria"]);
   expect(panels.map(text)).toEqual([
     "1 Thomas Station 1 Push-up Næste: station 2 · Squat",
     "2 Maria Station 2 Squat Næste: station 3 · Planke",

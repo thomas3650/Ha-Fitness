@@ -11,6 +11,7 @@ dev = [
   # The frontend pin of HA 2026.10.2: the `frontend` setup imports it and the test package does not bring it.
   "home-assistant-frontend==20260930.4",
   "pytest-cov",
+  "pytest-timeout",
   "ruff",
   "mypy",
   "pre-commit",
@@ -24,6 +25,10 @@ fail_under = 95
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# A hanging test fails instead of blocking the run; the slowest test takes about 1 s. The signal method fails
+# only the test and the run goes on; the thread method ends the whole run.
+timeout = 60
+timeout_method = "signal"
 
 [tool.mypy]
 python_version = "3.14"
