@@ -289,7 +289,7 @@ class Sessions:
         isn't `media_player.<name>`, an empty list, more than two, duplicates, or more people than stations.
         """
         with self._training_days.lock:
-            self._training_days.reconcile_now()
+            today = self._training_days.reconcile_now()
             if training_day_id is not None and date is not None:
                 raise SessionError(
                     422, "invalid", "Give a training day or a date, not both"
@@ -314,7 +314,9 @@ class Sessions:
                 if training_day_id is not None:
                     self._check_day(db_session, training_day_id, program_id)
                 if date is not None:
-                    training_day_id = self._open_early(db_session, program_id, date)
+                    training_day_id = self._open_early(
+                        db_session, program_id, date, today
+                    )
                 plan = build_plan(program, people, speaker)
                 first = phases(plan)[0]
                 row = WorkoutSession(
@@ -687,7 +689,8 @@ class Sessions:
 
         An open pause is closed first. It stores the participants, sets `counting_from` once, and a counted session
         with a training day closes the day as done. An uncounted one settles a day made early (today-ahead spec
-        §2.2.6), after its messages are built, so `session_ended` still carries the day's id.
+        §2.2.6), after its messages are built, so `session_ended` still carries the day's id. The settle uses the local
+        date of `now`, the request's one read of the clock.
         """
         plan = Plan.model_validate(row.plan)
         plan_phases = phases(plan)
@@ -745,7 +748,9 @@ class Sessions:
         if done is not None:
             messages.append(done)
         if not row.counted and row.training_day_id is not None:
-            due = self._training_days.settle_uncounted(db_session, row.training_day_id)
+            due = self._training_days.settle_uncounted(
+                db_session, row.training_day_id, self._training_days.local_date(now)
+            )
             if due is not None:
                 messages.append(due)
         return messages
@@ -797,11 +802,14 @@ class Sessions:
             (person.id, person.name) for person in stored if person.id in participants
         ]
 
-    def _open_early(self, db_session: Session, program_id: int, day: date) -> int:
-        """Make the program's day on its upcoming date `day`, open, and return its id; 409 unless it is startable."""
-        entry = TrainingDays.upcoming_for(
-            db_session, program_id, self._training_days.local_today()
-        )
+    def _open_early(
+        self, db_session: Session, program_id: int, day: date, today: date
+    ) -> int:
+        """Make the program's day on its upcoming date `day`, open, and return its id; 409 unless it is startable.
+
+        The upcoming date is the one after `today`, the date the start reconciled.
+        """
+        entry = TrainingDays.upcoming_for(db_session, program_id, today)
         if entry is None or entry.date != day or not entry.startable:
             raise SessionError(
                 409,

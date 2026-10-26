@@ -211,8 +211,13 @@ integration reads their codes. FastAPI's own validation 422 keeps its list; the 
 - The add-on publishes in batches. A reconcile's messages are one batch: its events, then `today` if it changed, then
   `stats` if they changed. A batch reaches each subscriber whole, so a long catch-up can't drop a client that keeps up
   (D58).
-- That `today` is for the date the reconcile handled, even if the clock passes midnight meanwhile. A write that
-  reconciles first (a skip) publishes its own `today` for that date too. The next reconcile handles the new date.
+- That `today` is for the date the reconcile handled, even if the clock passes midnight meanwhile. The `stats` in
+  its batch are for that date too. A write that reconciles first (a skip, a program write, a session start) uses
+  that date for its own checks and publishes its own `today` and `stats` for it. A session's finish doesn't
+  reconcile: it publishes them for the date reconciled last. The next reconcile handles the new date (#79).
+- The one exception is the finish of an uncounted early session (today-ahead spec §2.2.6). It settles the day on the
+  finish's own clock date. So just after midnight its `due` can be for the new date, next to a `today` for the date
+  reconciled last.
 - Not every change is one batch. A write that reconciles first publishes two: the reconcile's, then its own. A
   finished session publishes its session messages, then `today` and `stats`. Right after a catch-up of more than 100
   events, such a second batch can still drop the client (#61).
@@ -505,9 +510,10 @@ The design is the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §3
 - **Computed, not stored.** Each read computes every person's numbers from the training days, the counted sessions
   and their participants, `counting_from` and the people. There is no cache: a household has at most a few hundred
   days and sessions a year.
-- **Reads tick and reconcile first.** `GET /api/v1/stats`, `get_stats` and the connect snapshot tick the session,
-  then reconcile the training days, under the lock. So a read just after midnight already sees yesterday's open day as
-  missed.
+- **Reads tick and reconcile first.** `GET /api/v1/stats` and `get_stats` tick the session, then reconcile the
+  training days, under the lock. So a read just after midnight already sees yesterday's open day as missed. The
+  connect snapshot ticks the session, then reconciles once, for its `today`, and computes the stats for that date
+  (#79).
 - **REST:** `GET /api/v1/stats` → `Stats` (`counting_from`, `month` as `YYYY-MM` in the add-on's local time, and
   `people` in the people's order). Each person has `streak`, `all_time` and `this_month`; the totals are `done`,
   `extra`, `missed`, `skipped` and `time_trained` (whole seconds). `Stats` in `schemas.py` is the shape.

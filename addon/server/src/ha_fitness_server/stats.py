@@ -106,17 +106,18 @@ class StatsService:
         self._sessions = sessions
         self._published: Stats | None = None
 
-    def messages_if_changed(self) -> list[dict[str, Any]]:
-        """Return a `stats` message when they differ from the last ones published, else none; it counts as published.
+    def messages_if_changed(self, today: date) -> list[dict[str, Any]]:
+        """Return a `stats` message for the date `today` when they differ from the last ones published, else none.
 
-        The training days call it after each change and publish what it returns in their batch, after `today`. It is
-        the one memory of what was published. The connect snapshot (`view()`) leaves it alone, except that any failed
-        computation forgets it: a client that connected during the failure got no `stats`, so the first good
-        computation after it is published even when the numbers are the same. An error is raised for the caller to log.
+        What it returns counts as published. The training days call it after each change with the date of the `today`
+        they built, and publish what it returns in their batch, after `today`. It is the one memory of what was
+        published. The connect snapshot (`view()`) leaves it alone, except that any failed computation forgets it: a
+        client that connected during the failure got no `stats`, so the first good computation after it is published
+        even when the numbers are the same. An error is raised for the caller to log.
         """
         with self._training_days.lock:
             try:
-                stats = self.compute()
+                stats = self.compute(today)
             except Exception:
                 self._published = None
                 raise
@@ -125,8 +126,11 @@ class StatsService:
             self._published = stats
             return [{"type": "stats", "data": stats.model_dump(mode="json")}]
 
-    def view(self) -> Stats:
-        """Tick the session, then reconcile, then compute: the lifespan's order, under the lock (stats spec §4).
+    def view(self, today: date | None = None) -> Stats:
+        """Tick the session, then compute; without `today`, reconcile between: the lifespan's order (stats spec §4).
+
+        All under the lock. `today` is the date the caller's request already reconciled (the connect snapshot): the
+        stats are computed for it and nothing reconciles again, so one request uses one date (#79).
 
         A failed computation is logged with its exception, forgets what was published (see `messages_if_changed`) and
         is raised as `Unavailable`: REST answers 503, MCP a tool error, and the connect snapshot leaves the stats out.
@@ -134,9 +138,10 @@ class StatsService:
         """
         with self._training_days.lock:
             self._sessions.current()
-            self._training_days.reconcile_now()
+            if today is None:
+                today = self._training_days.reconcile_now()
             try:
-                return self.compute()
+                return self.compute(today)
             except Exception as error:
                 self._published = None
                 _LOGGER.exception("Computing the stats failed")
@@ -144,17 +149,17 @@ class StatsService:
                     "The stats are unavailable: they can't be computed right now"
                 ) from error
 
-    def compute(self) -> Stats:
-        """Compute the stats from what is stored now, without ticking or reconciling."""
+    def compute(self, today: date) -> Stats:
+        """Compute the stats for the date `today` from what is stored now, without ticking or reconciling."""
         with self._training_days.lock:
-            logs = self._read()
+            logs = self._read(today)
         return Stats(
             counting_from=logs.counting_from,
             month=f"{logs.today.year:04d}-{logs.today.month:02d}",
             people=[self._person(person, logs) for person in logs.people],
         )
 
-    def _read(self) -> _Logs:
+    def _read(self, today: date) -> _Logs:
         """Read the days, the counted sessions with their participants, and the people: one query each.
 
         The days aren't joined to the programs: a deleted program leaves closed days with a null `program_id`. A
@@ -192,7 +197,7 @@ class StatsService:
             entry.people.add(person_id)
         return _Logs(
             counting_from=counting_from,
-            today=self._training_days.local_today(),
+            today=today,
             days=days,
             sessions=list(counted.values()),
             people=people,
