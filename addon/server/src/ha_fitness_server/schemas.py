@@ -40,6 +40,7 @@ class Facets(BaseModel):
 
     equipment: list[str]
     body_part: list[str]
+    target: list[str]
 
 
 class ExerciseSearch(BaseModel):
