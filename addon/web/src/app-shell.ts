@@ -1,11 +1,18 @@
 import { mdiBookshelf, mdiFormatListBulleted, mdiHeartPulse, mdiTuneVariant } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
+import { keyed } from "lit/directives/keyed.js";
 
 import { ApiError, createApi, type Api } from "./api";
 import { confirmDialogStyles } from "./components/confirm-dialog";
+import { exerciseDetailsStyles } from "./components/exercise-details";
+import { exercisePickerStyles } from "./components/exercise-picker";
 import { t } from "./i18n";
 import { icon } from "./icons";
+import { newProgramStyles } from "./pages/new-program";
+import { programEditorStyles, type LeaveGuard } from "./pages/program-editor";
 import { programsPageStyles } from "./pages/programs-page";
+import "./pages/new-program";
+import "./pages/program-editor";
 import "./pages/status-page";
 import { theme } from "./theme";
 
@@ -13,6 +20,7 @@ import { theme } from "./theme";
 export type Route =
   | { page: "programs" }
   | { page: "new" }
+  | { page: "empty" }
   | { page: "copy"; id: number }
   | { page: "edit"; id: number }
   | { page: "library" }
@@ -36,6 +44,7 @@ export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "").replace(/\/+$/, "");
   let match: RegExpMatchArray | null;
   if (path === "programs/new") return { page: "new" };
+  if (path === "programs/new/empty") return { page: "empty" };
   if ((match = path.match(/^programs\/new\/copy\/(\d+)$/))) return { page: "copy", id: Number(match[1]) };
   if ((match = path.match(/^programs\/(\d+)$/))) return { page: "edit", id: Number(match[1]) };
   if (path === "library" || path === "setup" || path === "status") return { page: path };
@@ -44,7 +53,9 @@ export function parseRoute(hash: string): Route {
 
 /** The menu entry a route belongs to: the editor's routes belong to Programs. */
 function menuPage(route: Route): MenuPage {
-  return route.page === "new" || route.page === "copy" || route.page === "edit" ? "programs" : route.page;
+  return route.page === "new" || route.page === "empty" || route.page === "copy" || route.page === "edit"
+    ? "programs"
+    : route.page;
 }
 
 /** The site's shell: the menu with the four pages, and the page of the current hash route. */
@@ -58,8 +69,27 @@ export class AppShell extends LitElement {
   declare version: string | null;
 
   private readonly api: Api = createApi();
+  /** The hash of the page shown; it lags `location.hash` while the page asks whether to leave. */
+  private shownHash = location.hash;
   private readonly onHashChange = () => {
-    this.route = parseRoute(location.hash);
+    const hash = location.hash;
+    if (hash === this.shownHash) return;
+    const show = () => {
+      this.shownHash = hash;
+      this.route = parseRoute(hash);
+    };
+    const page = this.renderRoot.querySelector("main")?.firstElementChild as (Element & Partial<LeaveGuard>) | null;
+    const held = page?.guardLeave?.(() => {
+      // The user agreed to leave: go where they were going, without a second hashchange.
+      history.replaceState(null, "", hash || location.pathname);
+      show();
+    });
+    if (held) {
+      // Stay until the page's answer; replaceState fires no hashchange.
+      history.replaceState(null, "", this.shownHash || location.pathname);
+      return;
+    }
+    show();
   };
 
   constructor() {
@@ -70,6 +100,7 @@ export class AppShell extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    this.shownHash = location.hash;
     this.route = parseRoute(location.hash);
     window.addEventListener("hashchange", this.onHashChange);
     void this.loadVersion();
@@ -113,11 +144,21 @@ export class AppShell extends LitElement {
       case "programs":
         return html`<hf-programs-page .api=${this.api}></hf-programs-page>`;
       case "new":
-        return html`<h1>${t("editor.new_title")}</h1>`;
+        return html`<hf-new-program .api=${this.api}></hf-new-program>`;
+      case "empty":
+        return keyed(
+          "empty",
+          html`<hf-program-editor .api=${this.api} .mode=${{ kind: "new" }}></hf-program-editor>`,
+        );
       case "copy":
-        return html`<h1>${t("editor.copy_title")}</h1>`;
-      case "edit":
-        return html`<h1>${t("editor.edit_title")}</h1>`;
+      case "edit": {
+        // A new editor per program and per kind: it loads when it is connected.
+        const { page, id } = this.route;
+        return keyed(
+          `${page}-${id}`,
+          html`<hf-program-editor .api=${this.api} .mode=${{ kind: page, id }}></hf-program-editor>`,
+        );
+      }
       case "library":
         return html`<h1>${t("library.title")}</h1>`;
       case "setup":
@@ -340,6 +381,10 @@ export class AppShell extends LitElement {
     `,
     programsPageStyles,
     confirmDialogStyles,
+    newProgramStyles,
+    programEditorStyles,
+    exercisePickerStyles,
+    exerciseDetailsStyles,
   ];
 }
 

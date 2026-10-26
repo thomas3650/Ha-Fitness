@@ -5,6 +5,7 @@
  * It holds no program rules: a write is stored as it is sent. A test that needs a refusal sets it with `answer`.
  */
 import type {
+  Exercise,
   ExerciseSummary,
   Health,
   LibraryStatus,
@@ -39,6 +40,8 @@ export interface FakeState {
   exercises: ExerciseSummary[];
   speakers: SpeakerOut[];
   playlists: PlaylistOut[];
+  /** An exercise's details by id, for `GET api/v1/exercises/<id>`. */
+  details: Record<string, Exercise>;
 }
 
 const NOW = "2026-10-26T10:00:00Z";
@@ -82,6 +85,7 @@ export function defaultState(): FakeState {
     exercises: [],
     speakers: [],
     playlists: [],
+    details: {},
   };
 }
 
@@ -112,6 +116,7 @@ export function fakeApi(initial: Partial<FakeState> = {}) {
   function route(method: string, path: string, body: unknown): Answer {
     const [route, query = ""] = path.split("?");
     const params = new URLSearchParams(query);
+    const exerciseMatch = route.match(/^api\/v1\/exercises\/([^/]+)$/);
     const programMatch = route.match(/^api\/v1\/programs\/(\d+)(\/active)?$/);
     const key = `${method} ${route}`;
     switch (key) {
@@ -152,6 +157,10 @@ export function fakeApi(initial: Partial<FakeState> = {}) {
         return { status: 200, body: state.speakers };
       case "GET api/v1/music/playlists":
         return { status: 200, body: state.playlists };
+    }
+    if (exerciseMatch && method === "GET") {
+      const found = state.details[decodeURIComponent(exerciseMatch[1])];
+      return found ? { status: 200, body: found } : notFound;
     }
     if (programMatch) {
       const id = Number(programMatch[1]);
