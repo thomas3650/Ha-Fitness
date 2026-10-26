@@ -121,5 +121,6 @@ test("a version read that fails with a bug leaves the version empty and logs the
   const root = await mount("#/programs");
 
   await vi.waitFor(() => expect(logged).toHaveBeenCalledWith(expect.any(TypeError)));
-  expect(queryByText(root, "2.0.0")).toBeNull();
+  // The fake's version is 2.0.0; the bar would show it as the language file says.
+  expect(queryByText(root, en.menu.version.replace("{version}", "2.0.0"))).toBeNull();
 });

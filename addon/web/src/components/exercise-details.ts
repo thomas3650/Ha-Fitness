@@ -78,7 +78,9 @@ export class ExerciseDetails extends LitElement {
       const details = await this.api.exercise(id);
       if (this.exercise?.id === id) this.details = details;
     } catch (error) {
-      if (this.exercise?.id === id) this.error = failure(error);
+      // Always through failure(), so a bug is logged even when another exercise is shown by now.
+      const text = failure(error);
+      if (this.exercise?.id === id) this.error = text;
     }
   }
 

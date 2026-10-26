@@ -58,6 +58,7 @@ type Place = "equipment" | "playlists" | "speaker" | "page";
 
 /** A failed save's items: a refusal's own, or a bug's generic message without a field (above the card). */
 function itemsOf(error: unknown): ErrorItem[] {
+  // The code stays empty: nothing reads the code of an item without a field.
   return error instanceof ApiError ? error.items : [{ field: null, code: "", message: failure(error) }];
 }
 
