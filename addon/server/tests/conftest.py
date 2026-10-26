@@ -39,6 +39,28 @@ class FrozenClock:
         self._now += delta
 
 
+class MidnightClock(FrozenClock):
+    """A frozen clock that can cross midnight between a reconcile's own read and every read after it."""
+
+    def __init__(self, start: datetime) -> None:
+        """Start at `start`, with nothing armed."""
+        super().__init__(start)
+        self._then: datetime | None = None
+
+    def arm(self, first: datetime, then: datetime) -> None:
+        """Return `first` on the next read only, then `then` on every read after it."""
+        self.set(first)
+        self._then = then
+
+    def now(self) -> datetime:
+        """Return the frozen time; an armed clock moves on to its second time after this read."""
+        moment = super().now()
+        if self._then is not None:
+            self.set(self._then)
+            self._then = None
+        return moment
+
+
 def dataset_path(request: httpx.Request) -> str:
     """Return the dataset path a media request asks for (`videos/<file>.gif`, `images/<file>.jpg`)."""
     path = request.url.path

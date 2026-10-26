@@ -92,6 +92,10 @@ class TrainingDays:
 
     One re-entrant lock serialises every public method and every program write, which calls in here too. The writes
     here (a skip and the dev routes) reconcile first, so they act on the date now, and publish `today` after.
+
+    A request reads the clock's date once, in its reconcile, and carries that date into its own checks and into the
+    `today` and `stats` it publishes (#79). A change that doesn't reconcile (a session's finish, by a command or the
+    session loop) publishes them for the date reconciled last: a later date's days aren't made until a reconcile.
     """
 
     def __init__(
@@ -113,9 +117,12 @@ class TrainingDays:
         self._publish = publish
         self.lock = threading.RLock()
         self._published: TodayView | None = None
-        # Called after every `today` check, changed or not: a people change leaves `today` alone but not the stats.
-        # It returns the messages to publish after `today` in the same batch (the stats, if they changed).
-        self.on_change: Callable[[], list[dict[str, Any]]] = list
+        # The date the last reconcile handled; None until the first one.
+        self._reconciled: date | None = None
+        # Called after every `today` check, changed or not, with the date `today` was built for: a people change leaves
+        # `today` alone but not the stats. It returns the messages to publish after `today` in the same batch (the
+        # stats for that date, if they changed).
+        self.on_change: Callable[[date], list[dict[str, Any]]] = lambda _today: []
 
     def local_date(self, moment: datetime) -> date:
         """Return the local date of an aware `moment`."""
@@ -159,6 +166,7 @@ class TrainingDays:
                     day += timedelta(days=1)
                 if state.last_date is None or state.last_date < today:
                     state.last_date = today
+            self._reconciled = today
             self._publish_today(events, today)
 
     def _handle(
@@ -220,13 +228,20 @@ class TrainingDays:
         db_session.flush()
         return events
 
-    def publish_today(self) -> None:
-        """Publish `today` if it changed, then the stats if they changed, as one batch.
+    def reconciled_date(self) -> date:
+        """Return the date the last reconcile handled; the local date now before the first reconcile."""
+        with self.lock:
+            return self.local_today() if self._reconciled is None else self._reconciled
 
-        For writes elsewhere that close a day, after their commit.
+    def publish_today(self) -> None:
+        """Publish `today` if it changed, then the stats if they changed, as one batch, for `reconciled_date()`.
+
+        For writes elsewhere that close or make a day (a session's finish or early start), after their commit. Not the
+        clock's date: just after midnight, before a reconcile has made the new date's days, a `today` for the new date
+        would show the old date's days.
         """
         with self.lock:
-            self._publish_today()
+            self._publish_today(None, self.reconciled_date())
 
     def close_done(
         self, db_session: Session, day_id: int, at: datetime
@@ -261,18 +276,17 @@ class TrainingDays:
         return row.id
 
     def settle_uncounted(
-        self, db_session: Session, day_id: int
+        self, db_session: Session, day_id: int, today: date
     ) -> dict[str, Any] | None:
-        """Settle the open day of a session that ended uncounted, in the caller's session (today-ahead spec §2.2.6).
+        """Settle the open day of a session that ended uncounted on the date `today`, in the caller's session.
 
-        A day dated after today was made early and is removed. A day made early whose date is today now (the session
-        crossed midnight) stays as today's due day; its `due` event is returned, as reconcile sent none. Other days are
-        left as they are.
+        Today-ahead spec §2.2.6: a day dated after today was made early and is removed. A day made early whose
+        date is today now (the session crossed midnight) stays as today's due day; its `due` event is returned, as
+        reconcile sent none. Other days are left as they are.
         """
         day = db_session.get(TrainingDay, day_id)
         if day is None or day.status != TrainingDayStatus.OPEN:
             return None
-        today = self.local_today()
         if day.date > today:
             db_session.delete(day)
             db_session.flush()
@@ -281,25 +295,23 @@ class TrainingDays:
             return _event("due", day)
         return None
 
-    def _publish_today(
-        self, events: list[dict[str, Any]] | None = None, today: date | None = None
-    ) -> None:
+    def _publish_today(self, events: list[dict[str, Any]] | None, today: date) -> None:
         """Publish `events`, then `today` if it changed, then what `on_change` returns, as one batch.
 
-        `today` is built for the date `today`, the clock's date when None. A reconcile passes the date it handled: the
-        clock may have passed midnight since, and a `today` for that new date would show the old date's days.
+        `today` and the stats are built for the date `today`. A reconcile passes the date it handled: the clock may have
+        passed midnight since, and a `today` for that new date would show the old date's days.
 
         `today` goes out when what `/today` returns differs from what was published last. The write has committed by
         now, so an error in `on_change` (the stats) is logged and swallowed: it never turns the write into a failure,
         and the rest of the batch still goes out.
         """
         batch = list(events or [])
-        view = self._build_view(self.local_today() if today is None else today)
+        view = self._build_view(today)
         if view != self._published:
             self._published = view
             batch.append({"type": "today", "data": view.model_dump(mode="json")})
         try:
-            batch += self.on_change()
+            batch += self.on_change(today)
         except Exception:
             _LOGGER.exception("Updating the stats after a change failed")
         if batch:
@@ -569,7 +581,7 @@ class TrainingDays:
                 row.closed_at = None
                 db_session.flush()
                 out = _out(row)
-            self._publish_today(today=today)
+            self._publish_today(None, today)
             return out
 
     def delete_date(self, day: date) -> None:
@@ -578,7 +590,7 @@ class TrainingDays:
             today = self.reconcile_now()
             with session(self._engine) as db_session:
                 db_session.execute(delete(TrainingDay).where(TrainingDay.date == day))
-            self._publish_today(today=today)
+            self._publish_today(None, today)
 
     def on_program_written(
         self, db_session: Session, before: ProgramRow | None, after: ProgramRow | None

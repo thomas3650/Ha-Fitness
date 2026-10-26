@@ -18,7 +18,7 @@ from ha_fitness_server.push import Hub
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from tests.conftest import FrozenClock, MakeApp
+from tests.conftest import FrozenClock, MakeApp, MidnightClock
 from tests.test_scheduler import FIVE, ZONE, local
 
 WS = "/api/v1/ws"
@@ -234,28 +234,6 @@ def test_missed_event_when_next_day_begins(make_app: MakeApp) -> None:
         )
 
 
-class _MidnightClock(FrozenClock):
-    """A frozen clock that can cross midnight between a reconcile's own read and every read after it."""
-
-    def __init__(self, start: datetime) -> None:
-        """Start at `start`, with nothing armed."""
-        super().__init__(start)
-        self._then: datetime | None = None
-
-    def arm(self, first: datetime, then: datetime) -> None:
-        """Return `first` on the next read only, then `then` on every read after it."""
-        self.set(first)
-        self._then = then
-
-    def now(self) -> datetime:
-        """Return the frozen time; an armed clock moves on to its second time after this read."""
-        moment = super().now()
-        if self._then is not None:
-            self.set(self._then)
-            self._then = None
-        return moment
-
-
 @contextmanager
 def _quiet_client(make_app: MakeApp, clock: FrozenClock) -> Iterator[TestClient]:
     """Run an app in Copenhagen time where only requests read the clock.
@@ -276,7 +254,7 @@ def _quiet_client(make_app: MakeApp, clock: FrozenClock) -> Iterator[TestClient]
 
 def test_reconcile_publishes_today_for_the_date_it_handled(make_app: MakeApp) -> None:
     """A reconcile whose date ends while it runs pushes `today` for the date it handled, not the clock's new date."""
-    clock = _MidnightClock(local(2026, 10, 26, 23, 59))  # a Monday
+    clock = MidnightClock(local(2026, 10, 26, 23, 59))  # a Monday
     with _quiet_client(make_app, clock) as tc, tc.websocket_connect(WS) as ws:
         _connect_expect(ws, "2026-10-26")
         _create(tc, "Hver dag", ["mon", "tue"])
@@ -294,7 +272,7 @@ def test_reconcile_publishes_today_for_the_date_it_handled(make_app: MakeApp) ->
 
 def test_skip_publishes_today_for_the_date_it_reconciled(make_app: MakeApp) -> None:
     """A skip whose date ends while it runs pushes `today` for the date its reconcile handled."""
-    clock = _MidnightClock(local(2026, 10, 26, 9))  # a Monday
+    clock = MidnightClock(local(2026, 10, 26, 9))  # a Monday
     with _quiet_client(make_app, clock) as tc, tc.websocket_connect(WS) as ws:
         _connect_expect(ws, "2026-10-26")
         _create(tc, "Hver dag", ["mon", "tue"])

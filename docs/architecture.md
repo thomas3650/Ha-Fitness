@@ -211,8 +211,10 @@ integration reads their codes. FastAPI's own validation 422 keeps its list; the 
 - The add-on publishes in batches. A reconcile's messages are one batch: its events, then `today` if it changed, then
   `stats` if they changed. A batch reaches each subscriber whole, so a long catch-up can't drop a client that keeps up
   (D58).
-- That `today` is for the date the reconcile handled, even if the clock passes midnight meanwhile. A write that
-  reconciles first (a skip) publishes its own `today` for that date too. The next reconcile handles the new date.
+- That `today` is for the date the reconcile handled, even if the clock passes midnight meanwhile. The `stats` in
+  its batch are for that date too. A write that reconciles first (a skip, a program write, a session start) uses
+  that date for its own checks and publishes its own `today` and `stats` for it. A session's finish doesn't
+  reconcile: it publishes them for the date reconciled last. The next reconcile handles the new date (#79).
 - Not every change is one batch. A write that reconciles first publishes two: the reconcile's, then its own. A
   finished session publishes its session messages, then `today` and `stats`. Right after a catch-up of more than 100
   events, such a second batch can still drop the client (#61).
