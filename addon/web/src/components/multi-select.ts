@@ -1,4 +1,4 @@
-import { mdiCheck, mdiClose } from "@mdi/js";
+import { mdiCheck, mdiChevronDown, mdiClose } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
 import { t } from "../i18n";
@@ -14,9 +14,9 @@ export interface MultiSelectOption {
 
 /**
  * A searchable multi-select (WAI-ARIA combobox with a multi-selectable listbox): typing filters the options, a click
- * or Enter toggles one and keeps the list open, Escape or a click outside closes it. The chosen values show as tags
- * with a remove button, except the `fixed` ones, which are always chosen. Backspace in an empty field removes the last
- * value that isn't fixed.
+ * or Enter toggles one, clears the search and keeps the list open; Escape, a click outside or focus leaving closes it.
+ * The chosen values show as tags in the options' order, with a remove button, except the `fixed` ones, which are
+ * always chosen. Backspace in an empty field removes the last tag that isn't fixed.
  *
  * It fires `change` with the chosen values in `detail.selected` (the fixed ones included). The host is a group named
  * by `label`; the parts live in its own shadow root.
@@ -24,6 +24,7 @@ export interface MultiSelectOption {
 export class MultiSelect extends LitElement {
   static override properties = {
     label: {},
+    placeholder: {},
     options: { attribute: false },
     selected: { attribute: false },
     fixed: { attribute: false },
@@ -33,6 +34,8 @@ export class MultiSelect extends LitElement {
   };
 
   declare label: string;
+  /** The empty field's hint, such as "Any equipment". */
+  declare placeholder: string;
   declare options: MultiSelectOption[];
   declare selected: string[];
   declare fixed: string[];
@@ -50,6 +53,7 @@ export class MultiSelect extends LitElement {
   constructor() {
     super();
     this.label = "";
+    this.placeholder = "";
     this.options = [];
     this.selected = [];
     this.fixed = [];
@@ -61,11 +65,13 @@ export class MultiSelect extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     this.setAttribute("role", "group");
+    this.addEventListener("focusout", this.focusOut);
     document.addEventListener("pointerdown", this.outside);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.removeEventListener("focusout", this.focusOut);
     document.removeEventListener("pointerdown", this.outside);
   }
 
@@ -76,14 +82,23 @@ export class MultiSelect extends LitElement {
     active?.scrollIntoView?.({ block: "nearest" });
   }
 
-  /** Focus leaving the component (Tab to the next field) closes the list; focus on a tag's button doesn't. */
-  private onFocusOut(event: FocusEvent): void {
+  /** Focus leaving the component (Tab to the next field) closes the list; focus moving inside it doesn't. */
+  private readonly focusOut = (event: FocusEvent): void => {
     const next = event.relatedTarget;
     if (!(next instanceof Node && this.shadowRoot?.contains(next))) this.open = false;
+  };
+
+  private input(): HTMLInputElement | null {
+    return this.shadowRoot?.querySelector("input") ?? null;
   }
 
   private chosen(value: string): boolean {
     return this.fixed.includes(value) || this.selected.includes(value);
+  }
+
+  /** The chosen options, in the options' order: the tags. */
+  private tags(): MultiSelectOption[] {
+    return this.options.filter((option) => this.chosen(option.value));
   }
 
   /** The options the search keeps: their label has it, case-insensitive. */
@@ -97,10 +112,13 @@ export class MultiSelect extends LitElement {
     this.dispatchEvent(new CustomEvent("change", { detail: { selected } }));
   }
 
+  /** Toggle an option from the list; the search clears so every option shows again. */
   private toggle(value: string): void {
     if (this.fixed.includes(value)) return;
     const values = [...new Set([...this.fixed, ...this.selected])];
     this.commit(values.includes(value) ? values.filter((kept) => kept !== value) : [...values, value]);
+    this.query = "";
+    this.active = this.options.findIndex((option) => option.value === value);
   }
 
   private removeValue(value: string): void {
@@ -149,9 +167,10 @@ export class MultiSelect extends LitElement {
         return;
       case "Backspace": {
         if (this.query) return;
-        const removable = this.selected.filter((value) => !this.fixed.includes(value));
-        const last = removable.at(-1);
-        if (last !== undefined) this.removeValue(last);
+        const last = this.tags()
+          .filter((option) => !this.fixed.includes(option.value))
+          .at(-1);
+        if (last) this.removeValue(last.value);
         return;
       }
     }
@@ -162,7 +181,7 @@ export class MultiSelect extends LitElement {
     const active = this.open ? matching[this.active] : undefined;
     const listId = `${this.uid}-list`;
     const optionId = (index: number) => `${this.uid}-option-${index}`;
-    const tags = this.options.filter((option) => this.chosen(option.value));
+    const tags = this.tags();
     return html`
       <label for=${`${this.uid}-input`}>${this.label}</label>
       <div class="field">
@@ -175,12 +194,13 @@ export class MultiSelect extends LitElement {
           aria-expanded=${this.open ? "true" : "false"}
           aria-controls=${listId}
           aria-activedescendant=${active ? optionId(this.active) : nothing}
+          placeholder=${this.placeholder || nothing}
           .value=${this.query}
           @click=${() => (this.open = true)}
           @input=${(event: Event) => this.onInput(event)}
           @keydown=${(event: KeyboardEvent) => this.onKeyDown(event)}
-          @focusout=${(event: FocusEvent) => this.onFocusOut(event)}
         />
+        <span class=${this.open ? "chevron open" : "chevron"}>${icon(mdiChevronDown)}</span>
         ${this.open
           ? html`<div class="popup">
               <ul id=${listId} role="listbox" aria-multiselectable="true" aria-label=${this.label}>
@@ -203,7 +223,7 @@ export class MultiSelect extends LitElement {
                   </li>`,
                 )}
               </ul>
-              ${matching.length ? nothing : html`<p class="none">${t("multi_select.none")}</p>`}
+              ${matching.length ? nothing : html`<p class="none" role="status">${t("multi_select.none")}</p>`}
             </div>`
           : html`<ul id=${listId} role="listbox" aria-multiselectable="true" aria-label=${this.label} hidden></ul>`}
       </div>
@@ -217,7 +237,10 @@ export class MultiSelect extends LitElement {
                   : html`<button
                       type="button"
                       aria-label=${t("multi_select.remove", { value: option.label })}
-                      @click=${() => this.removeValue(option.value)}
+                      @click=${() => {
+                        this.removeValue(option.value);
+                        this.input()?.focus();
+                      }}
                     >
                       ${icon(mdiClose)}
                     </button>`}
@@ -244,6 +267,7 @@ export class MultiSelect extends LitElement {
         color: var(--hf-text-secondary);
         font-size: 12px;
         font-weight: 500;
+        line-height: 16px;
         text-transform: uppercase;
       }
       .field {
@@ -252,7 +276,8 @@ export class MultiSelect extends LitElement {
       input {
         box-sizing: border-box;
         width: 100%;
-        padding: 9px 12px;
+        height: 36px;
+        padding: 0 36px 0 12px;
         border: 1px solid var(--hf-border);
         border-radius: 8px;
         background: var(--hf-card);
@@ -262,6 +287,22 @@ export class MultiSelect extends LitElement {
       }
       input:focus {
         border-color: var(--hf-primary);
+      }
+      .chevron {
+        position: absolute;
+        top: 6px;
+        right: 8px;
+        display: inline-flex;
+        pointer-events: none;
+      }
+      .chevron .icon {
+        width: 24px;
+        height: 24px;
+        color: var(--hf-text-secondary);
+        transition: transform 0.15s;
+      }
+      .chevron.open .icon {
+        transform: rotate(180deg);
       }
       .popup {
         position: absolute;

@@ -1,4 +1,12 @@
-import { findByRole, fireEvent, getByRole, queryByRole, queryByText, within } from "@testing-library/dom";
+import {
+  findByRole,
+  fireEvent,
+  getByPlaceholderText,
+  getByRole,
+  queryByRole,
+  queryByText,
+  within,
+} from "@testing-library/dom";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { Exercise, ExerciseSummary } from "../src/api";
@@ -41,6 +49,11 @@ const GOBLET: Exercise = {
   secondary_muscles: ["calves", "core"],
   attribution: "Gym visual, test attribution",
 };
+
+/** The name of a multi-select tag's remove button. */
+function removeName(value: string): string {
+  return en.multi_select.remove.replace("{value}", value);
+}
 
 function text(element: Element): string {
   return (element.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -155,8 +168,9 @@ test("the search finds exercises by name, names that start with it first", async
   expect(text(getByRole(root, "status"))).toContain(en.library.none);
 });
 
-test("the filters offer every value as the dataset names it", async () => {
+test("with Show all the filters offer every value as the dataset names it", async () => {
   const root = await openLibrary(newFake());
+  showAll(root);
 
   const values = async (name: string) => (await options(root, name)).map(text);
   expect(await values(en.library.equipment)).toEqual(["body weight", "cable", "dumbbell", "sofa"]);
@@ -169,6 +183,48 @@ test("the filters offer every value as the dataset names it", async () => {
   expect(within(row).getByText("pectorals")).toBeTruthy();
 });
 
+test("each filter's empty field says it takes any value", async () => {
+  const root = await openLibrary(newFake());
+
+  expect(getByPlaceholderText(filter(root, en.library.equipment), en.library.any_equipment)).toBeTruthy();
+  expect(getByPlaceholderText(filter(root, en.library.body_part), en.library.any_body_part)).toBeTruthy();
+  expect(getByPlaceholderText(filter(root, en.library.target), en.library.any_target)).toBeTruthy();
+});
+
+test("without Show all the equipment filter offers what the household's exercises use", async () => {
+  const root = await openLibrary(newFake());
+
+  // The household has dumbbells; body weight always, and the custom exercises always show (the sofa).
+  expect((await options(root, en.library.equipment)).map(text)).toEqual(["body weight", "dumbbell", "sofa"]);
+  showAll(root);
+  await vi.waitFor(async () =>
+    expect((await options(root, en.library.equipment)).map(text)).toEqual(["body weight", "cable", "dumbbell", "sofa"]),
+  );
+});
+
+test("an equipment chosen with Show all is dropped from the filter when the household filter comes back", async () => {
+  const root = await openLibrary(newFake());
+  showAll(root);
+  await vi.waitFor(async () => expect((await options(root, en.library.equipment)).map(text)).toContain("cable"));
+
+  await toggle(root, en.library.equipment, "cable");
+  await toggle(root, en.library.equipment, "dumbbell");
+  await vi.waitFor(() => expect(names(root).sort()).toEqual(["cable row", "dumbbell row", "goblet squat"]));
+
+  showAll(root);
+  await vi.waitFor(() => expect(names(root).sort()).toEqual(["dumbbell row", "goblet squat"]));
+  const equipment = filter(root, en.library.equipment);
+  expect(queryByRole(equipment, "button", { name: removeName("cable") })).toBeNull();
+  expect(getByRole(equipment, "button", { name: removeName("dumbbell") })).toBeTruthy();
+
+  // Show all again: cable is offered, but no longer chosen.
+  showAll(root);
+  await vi.waitFor(() => expect(names(root).sort()).toEqual(["dumbbell row", "goblet squat"]));
+  expect((await options(root, en.library.equipment)).find((option) => text(option) === "cable")?.getAttribute("aria-selected")).toBe(
+    "false",
+  );
+});
+
 test("several values in one filter show either, and a second filter narrows them", async () => {
   const root = await openLibrary(newFake());
   showAll(root);
@@ -178,7 +234,7 @@ test("several values in one filter show either, and a second filter narrows them
   await vi.waitFor(() =>
     expect(getByRole(filter(root, en.library.body_part), "option", { name: "back", selected: true })).toBeTruthy(),
   );
-  expect(getByRole(filter(root, en.library.body_part), "button", { name: "Remove back" })).toBeTruthy();
+  expect(getByRole(filter(root, en.library.body_part), "button", { name: removeName("back") })).toBeTruthy();
 
   await toggle(root, en.library.body_part, "upper legs");
   await vi.waitFor(() => expect(names(root).sort()).toEqual(["cable row", "dumbbell row", "goblet squat", "squat"]));
@@ -198,7 +254,7 @@ test("several values in one filter show either, and a second filter narrows them
   await toggle(root, en.library.body_part, "back");
   await vi.waitFor(() => expect(names(root)).toEqual(["goblet squat"]));
   expect(getByRole(filter(root, en.library.body_part), "option", { name: "back", selected: false })).toBeTruthy();
-  expect(queryByRole(filter(root, en.library.body_part), "button", { name: "Remove back" })).toBeNull();
+  expect(queryByRole(filter(root, en.library.body_part), "button", { name: removeName("back") })).toBeNull();
 });
 
 test("the filters and the household filter work together", async () => {

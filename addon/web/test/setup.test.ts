@@ -1,4 +1,4 @@
-import { findByRole, fireEvent, getByRole, queryByRole, within } from "@testing-library/dom";
+import { findByRole, fireEvent, getByPlaceholderText, getByRole, queryByRole, within } from "@testing-library/dom";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ExerciseSummary, PeopleView, Setup } from "../src/api";
@@ -61,6 +61,11 @@ function newFake(extra: Parameters<typeof fakeApi>[0] = {}): FakeApi {
     ],
     ...extra,
   });
+}
+
+/** The name of a multi-select tag's remove button. */
+function removeName(value: string): string {
+  return en.multi_select.remove.replace("{value}", value);
 }
 
 function text(element: Element): string {
@@ -148,7 +153,8 @@ test("the equipment options are every equipment of the exercises, the stored one
   expect(await chosen(root, "dumbbell")).toBe(true);
   expect(await chosen(root, "kettlebell")).toBe(false);
   expect(await chosen(root, "band")).toBe(false);
-  expect(getByRole(equipment(root), "button", { name: "Remove dumbbell" })).toBeTruthy();
+  expect(getByRole(equipment(root), "button", { name: removeName("dumbbell") })).toBeTruthy();
+  expect(getByPlaceholderText(equipment(root), en.setup.add_equipment)).toBeTruthy();
 });
 
 test("body weight is always on and can't be turned off", async () => {
@@ -156,7 +162,7 @@ test("body weight is always on and can't be turned off", async () => {
   const root = await openSetup(fake);
 
   expect(await chosen(root, "body weight")).toBe(true);
-  expect(queryByRole(equipment(root), "button", { name: "Remove body weight" })).toBeNull();
+  expect(queryByRole(equipment(root), "button", { name: removeName("body weight") })).toBeNull();
   await toggle(root, "body weight");
   expect(await chosen(root, "body weight")).toBe(true);
   save(root);
@@ -180,7 +186,7 @@ test("the band option stores both band and resistance band, and taking it off re
     "resistance band",
   ]);
 
-  fireEvent.click(getByRole(equipment(root), "button", { name: "Remove band" }));
+  fireEvent.click(getByRole(equipment(root), "button", { name: removeName("band") }));
   await vi.waitFor(async () => expect(await chosen(root, "band")).toBe(false));
   save(root);
   await vi.waitFor(() => expect(writes(fake, "api/v1/setup")).toHaveLength(2));
@@ -283,7 +289,7 @@ test("a favourite playlist is added from Music Assistant's playlists and another
   fireEvent.change(add, { target: { value: "library://playlist/2" } });
   await vi.waitFor(() => expect(favouriteNames(root)).toEqual(["Workout Mix", "Run 160 bpm"]));
 
-  fireEvent.click(within(playlists).getByRole("button", { name: "Remove Workout Mix" }));
+  fireEvent.click(within(playlists).getByRole("button", { name: removeName("Workout Mix") }));
   await vi.waitFor(() => expect(favouriteNames(root)).toEqual(["Run 160 bpm"]));
   save(root);
 
@@ -409,8 +415,8 @@ test("removing a person asks first and says what it means", async () => {
   const root = await openSetup(fake);
   const people = region(root, en.setup.people);
 
-  fireEvent.click(within(people).getByRole("button", { name: "Remove Elin" }));
-  const dialog = await findByRole(root, "dialog", { name: "Remove “Elin”?" });
+  fireEvent.click(within(people).getByRole("button", { name: removeName("Elin") }));
+  const dialog = await findByRole(root, "dialog", { name: removeName("“Elin”?") });
   expect(within(dialog).getByText(en.setup.remove_stats)).toBeTruthy();
   expect(within(dialog).getByText(en.setup.remove_sensors)).toBeTruthy();
   expect(within(dialog).getByText(en.setup.remove_new)).toBeTruthy();
@@ -419,7 +425,7 @@ test("removing a person asks first and says what it means", async () => {
   await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
   expect(peopleNames(root)).toEqual(["Thomas", "Elin"]);
 
-  fireEvent.click(within(people).getByRole("button", { name: "Remove Elin" }));
+  fireEvent.click(within(people).getByRole("button", { name: removeName("Elin") }));
   fireEvent.click(within(await findByRole(root, "dialog")).getByRole("button", { name: en.setup.remove_confirm }));
   await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
   expect(peopleNames(root)).toEqual(["Thomas"]);

@@ -1,4 +1,4 @@
-import { fireEvent, getByRole, queryByRole, within } from "@testing-library/dom";
+import { fireEvent, getByPlaceholderText, getByRole, queryByRole, within } from "@testing-library/dom";
 import { afterEach, expect, test } from "vitest";
 
 import { MultiSelect } from "../src/components/multi-select";
@@ -11,12 +11,17 @@ afterEach(() => {
 
 const OPTIONS = ["band", "body weight", "cable", "dumbbell", "kettlebell"].map((value) => ({ value, label: value }));
 
+/** The name of a multi-select tag's remove button. */
+function removeName(value: string): string {
+  return en.multi_select.remove.replace("{value}", value);
+}
+
 function text(element: Element): string {
   return (element.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
 /** Put a multi-select in the page and return its shadow root and the `change` events it fires. */
-async function place(props: Partial<Pick<MultiSelect, "label" | "options" | "selected" | "fixed">> = {}) {
+async function place(props: Partial<Pick<MultiSelect, "label" | "placeholder" | "options" | "selected" | "fixed">> = {}) {
   const element = new MultiSelect();
   Object.assign(element, { label: "Equipment", options: OPTIONS, ...props });
   const changes: string[][] = [];
@@ -33,7 +38,7 @@ function combobox(root: HTMLElement): HTMLInputElement {
 
 /** The chosen values' tags. */
 function tags(root: HTMLElement): string[] {
-  const list = queryByRole(root, "list", { name: "Chosen Equipment" });
+  const list = queryByRole(root, "list", { name: en.multi_select.chosen.replace("{label}", "Equipment") });
   return list ? within(list).queryAllByRole("listitem").map(text) : [];
 }
 
@@ -77,30 +82,30 @@ test("a click on an option chooses it, keeps the list open and fires change", as
   expect(getByRole(root, "option", { name: "dumbbell", selected: false })).toBeTruthy();
   expect(getByRole(root, "listbox")).toBeTruthy();
   // The chosen values show as tags.
-  expect(getByRole(root, "button", { name: "Remove cable" })).toBeTruthy();
+  expect(getByRole(root, "button", { name: removeName("cable") })).toBeTruthy();
 
   // A second click takes it off again.
   fireEvent.click(getByRole(root, "option", { name: "cable" }));
   await settle(element);
   expect(changes.at(-1)).toEqual(["band"]);
-  expect(queryByRole(root, "button", { name: "Remove cable" })).toBeNull();
+  expect(queryByRole(root, "button", { name: removeName("cable") })).toBeNull();
 });
 
 test("the tag's remove button takes the value off", async () => {
   const { element, root, changes } = await place({ selected: ["band", "dumbbell"] });
 
-  fireEvent.click(getByRole(root, "button", { name: "Remove dumbbell" }));
+  fireEvent.click(getByRole(root, "button", { name: removeName("dumbbell") }));
   await settle(element);
   expect(changes).toEqual([["band"]]);
-  expect(queryByRole(root, "button", { name: "Remove dumbbell" })).toBeNull();
-  expect(getByRole(root, "button", { name: "Remove band" })).toBeTruthy();
+  expect(queryByRole(root, "button", { name: removeName("dumbbell") })).toBeNull();
+  expect(getByRole(root, "button", { name: removeName("band") })).toBeTruthy();
 });
 
 test("a fixed value is always chosen and has no remove button", async () => {
   const { element, root, changes } = await place({ selected: ["dumbbell"], fixed: ["body weight"] });
 
   expect(tags(root)).toEqual(["body weight", "dumbbell"]);
-  expect(queryByRole(root, "button", { name: "Remove body weight" })).toBeNull();
+  expect(queryByRole(root, "button", { name: removeName("body weight") })).toBeNull();
   fireEvent.click(combobox(root));
   await settle(element);
   const fixed = getByRole(root, "option", { name: "body weight", selected: true });
@@ -152,7 +157,7 @@ test("a search that finds nothing says so", async () => {
   fireEvent.input(combobox(root), { target: { value: "trampoline" } });
   await settle(element);
   expect(optionNames(root)).toEqual([]);
-  expect(within(root).getByText(en.multi_select.none)).toBeTruthy();
+  expect(text(getByRole(root, "status"))).toBe(en.multi_select.none);
 });
 
 test("a click outside closes the list", async () => {
@@ -168,7 +173,7 @@ test("a click outside closes the list", async () => {
   expect(queryByRole(root, "listbox")).toBeNull();
 });
 
-test("focus leaving the field closes the list; focus on a tag's remove button keeps it open", async () => {
+test("focus leaving the component closes the list; focus on a tag's remove button keeps it open", async () => {
   const { element, root } = await place({ selected: ["cable"] });
   const outside = document.createElement("button");
   document.body.append(outside);
@@ -176,11 +181,67 @@ test("focus leaving the field closes the list; focus on a tag's remove button ke
   fireEvent.click(input);
   await settle(element);
 
-  fireEvent.focusOut(input, { relatedTarget: getByRole(root, "button", { name: "Remove cable" }) });
+  fireEvent.focusOut(input, { relatedTarget: getByRole(root, "button", { name: removeName("cable") }) });
   await settle(element);
   expect(getByRole(root, "listbox")).toBeTruthy();
 
   fireEvent.focusOut(input, { relatedTarget: outside });
   await settle(element);
   expect(queryByRole(root, "listbox")).toBeNull();
+
+  // Focus leaving from a tag's button closes it as well.
+  fireEvent.click(input);
+  await settle(element);
+  fireEvent.focusOut(getByRole(root, "button", { name: removeName("cable") }), { relatedTarget: outside });
+  await settle(element);
+  expect(queryByRole(root, "listbox")).toBeNull();
+});
+
+test("the field shows the caller's placeholder", async () => {
+  const { root } = await place({ placeholder: "Any equipment" });
+
+  expect(getByPlaceholderText(root, "Any equipment")).toBe(combobox(root));
+});
+
+test("choosing an option clears the search and shows every option again, the list open", async () => {
+  const { element, root, changes } = await place();
+  const input = combobox(root);
+
+  fireEvent.input(input, { target: { value: "kettle" } });
+  await settle(element);
+  expect(optionNames(root)).toEqual(["kettlebell"]);
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await settle(element);
+
+  expect(changes).toEqual([["kettlebell"]]);
+  expect(input.value).toBe("");
+  expect(optionNames(root)).toEqual(["band", "body weight", "cable", "dumbbell", "kettlebell"]);
+
+  fireEvent.input(input, { target: { value: "cab" } });
+  await settle(element);
+  fireEvent.click(getByRole(root, "option", { name: "cable" }));
+  await settle(element);
+  expect(input.value).toBe("");
+  expect(optionNames(root)).toHaveLength(OPTIONS.length);
+});
+
+test("Backspace removes the last tag shown, which follows the options' order", async () => {
+  const { element, root, changes } = await place({ selected: ["dumbbell", "band"] });
+
+  expect(tags(root)).toEqual(["band", "dumbbell"]);
+  fireEvent.keyDown(combobox(root), { key: "Backspace" });
+  await settle(element);
+  expect(changes).toEqual([["band"]]);
+  expect(tags(root)).toEqual(["band"]);
+});
+
+test("a tag's remove button gives the focus back to the field", async () => {
+  const { element, root } = await place({ selected: ["band", "cable"] });
+
+  const remove = getByRole(root, "button", { name: removeName("cable") });
+  remove.focus();
+  fireEvent.click(remove);
+  await settle(element);
+  expect((root as unknown as ShadowRoot).activeElement).toBe(combobox(root));
 });

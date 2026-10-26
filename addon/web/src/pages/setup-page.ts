@@ -375,6 +375,7 @@ export class SetupPage extends LitElement {
       ${this.exercisesError ? html`<p class="error" role="alert">${this.exercisesError}</p>` : nothing}
       <hf-multi-select
         .label=${t("setup.equipment_have")}
+        .placeholder=${t("setup.add_equipment")}
         .options=${[
           { value: BODY_WEIGHT, label: BODY_WEIGHT },
           ...all.map((choice) => ({

@@ -94,6 +94,27 @@ export class LibraryPage extends LitElement {
     this.filters = { ...this.filters, [facet]: new Set(selected) };
   }
 
+  /**
+   * A filter's values. Without Show all, the equipment filter offers only what the household's exercises use (body
+   * weight, the setup's equipment, the custom exercises'), so a choice never empties the list.
+   */
+  private values(exercises: ExerciseSummary[], facet: Facet): string[] {
+    const shown =
+      facet === "equipment" && !this.showAll
+        ? exercises.filter((exercise) => inHousehold(exercise, this.household))
+        : exercises;
+    return facetValues(shown, facet);
+  }
+
+  /** Show all on or off; turning it off drops the chosen equipment the household filter no longer offers. */
+  private setShowAll(exercises: ExerciseSummary[], on: boolean): void {
+    this.showAll = on;
+    if (on) return;
+    const offered = new Set(this.values(exercises, "equipment"));
+    const kept = [...this.filters.equipment].filter((value) => offered.has(value));
+    if (kept.length !== this.filters.equipment.size) this.choose("equipment", kept);
+  }
+
   protected override render() {
     return html`
       <h1>${t("library.title")}</h1>
@@ -117,22 +138,25 @@ export class LibraryPage extends LitElement {
     const found = this.found(exercises);
     return html`
       <div class="library-tools">
-        <label class="search">
-          ${icon(mdiMagnify)}
-          <input
-            type="search"
-            aria-label=${t("library.search")}
-            placeholder=${t("library.search")}
-            .value=${this.query}
-            @input=${(event: Event) => (this.query = (event.target as HTMLInputElement).value)}
-          />
-        </label>
+        <div class="library-search">
+          <span class="library-label" aria-hidden="true">${t("library.name")}</span>
+          <label class="search">
+            ${icon(mdiMagnify)}
+            <input
+              type="search"
+              aria-label=${t("library.search")}
+              placeholder=${t("library.search")}
+              .value=${this.query}
+              @input=${(event: Event) => (this.query = (event.target as HTMLInputElement).value)}
+            />
+          </label>
+        </div>
         ${FACETS.map((facet) => this.renderFacet(exercises, facet))}
         <label class="check">
           <input
             type="checkbox"
             .checked=${this.showAll}
-            @change=${(event: Event) => (this.showAll = (event.target as HTMLInputElement).checked)}
+            @change=${(event: Event) => this.setShowAll(exercises, (event.target as HTMLInputElement).checked)}
           />
           <span>${t("library.show_all")}</span>
         </label>
@@ -162,7 +186,8 @@ export class LibraryPage extends LitElement {
   private renderFacet(exercises: ExerciseSummary[], facet: Facet) {
     return html`<hf-multi-select
       .label=${t(`library.${facet}`)}
-      .options=${facetValues(exercises, facet).map((value) => ({ value, label: value }))}
+      .placeholder=${t(`library.any_${facet}`)}
+      .options=${this.values(exercises, facet).map((value) => ({ value, label: value }))}
       .selected=${[...this.filters[facet]]}
       @change=${(event: CustomEvent<{ selected: string[] }>) => this.choose(facet, event.detail.selected)}
     ></hf-multi-select>`;
@@ -207,20 +232,39 @@ export const libraryPageStyles = css`
     gap: 16px;
     margin-bottom: 12px;
   }
-  /* The filters have their name above the field; the search and Show all line up with the fields. */
-  .library-tools .search,
-  .library-tools label.check {
-    margin-top: 22px;
+  /* Every field has its name above it, as the filters have, and is 36px high. */
+  .library-search {
+    display: flex;
+    flex: 1 1 220px;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 320px;
+  }
+  .library-label {
+    color: var(--hf-text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    text-transform: uppercase;
+  }
+  .library-tools .search {
+    box-sizing: border-box;
+    flex: none;
+    height: 36px;
+  }
+  .library-tools .search input {
+    padding: 0;
+  }
+  .library-tools hf-multi-select {
+    flex: 1 1 180px;
+    max-width: 280px;
   }
   .library-tools label.check {
     display: flex;
     align-items: center;
     gap: 6px;
-    min-height: 40px;
-  }
-  .library-tools hf-multi-select {
-    flex: 1 1 180px;
-    max-width: 280px;
+    height: 36px;
+    margin-top: 20px;
   }
   td button.library-name {
     color: var(--hf-text);
