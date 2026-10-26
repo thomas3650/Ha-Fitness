@@ -37,6 +37,7 @@ interface Line {
 export class EquipmentFilter extends LitElement {
   static override properties = {
     label: {},
+    hideLabel: { type: Boolean },
     values: { attribute: false },
     home: { attribute: false },
     counts: { attribute: false },
@@ -47,6 +48,8 @@ export class EquipmentFilter extends LitElement {
   };
 
   declare label: string;
+  /** Hide the label from sight; it still names the field (the editor's library panel, W7). */
+  declare hideLabel: boolean;
   /** Every kind to pick from, band folded (`equipmentValues`). */
   declare values: string[];
   /** The household's equipment. */
@@ -68,6 +71,7 @@ export class EquipmentFilter extends LitElement {
   constructor() {
     super();
     this.label = "";
+    this.hideLabel = false;
     this.values = [];
     this.home = [];
     this.counts = { mine: 0, all: 0 };
@@ -248,7 +252,7 @@ export class EquipmentFilter extends LitElement {
     const listId = `${this.uid}-list`;
     const optionId = (index: number) => `${this.uid}-option-${index}`;
     return html`
-      <label for=${`${this.uid}-input`}>${this.label}</label>
+      <label for=${`${this.uid}-input`} class=${this.hideLabel ? "hidden-label" : ""}>${this.label}</label>
       <div class="field">
         ${this.renderTags()}
         <input
@@ -370,6 +374,14 @@ export class EquipmentFilter extends LitElement {
         font-weight: 500;
         line-height: 16px;
         text-transform: uppercase;
+      }
+      label.hidden-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
       }
       .field {
         position: relative;

@@ -628,7 +628,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         <hf-exercise-picker
           .exercises=${this.exercises}
           .error=${this.exercisesError}
-          .household=${this.setup.equipment}
+          .setup=${this.setupError ? null : this.setup}
+          .setupError=${this.setupError}
           .inProgram=${new Set(form.stations.map((station) => station.exercise))}
           @pick=${(event: CustomEvent<string>) => this.addStation(event.detail)}
           @details=${(event: CustomEvent<ExerciseSummary>) => (this.details = event.detail)}

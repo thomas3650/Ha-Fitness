@@ -24,6 +24,7 @@ export interface MultiSelectOption {
 export class MultiSelect extends LitElement {
   static override properties = {
     label: {},
+    hideLabel: { type: Boolean },
     placeholder: {},
     options: { attribute: false },
     selected: { attribute: false },
@@ -34,6 +35,8 @@ export class MultiSelect extends LitElement {
   };
 
   declare label: string;
+  /** Hide the label from sight; it still names the field (the editor's library panel, W7). */
+  declare hideLabel: boolean;
   /** The empty field's hint, such as "Any equipment". */
   declare placeholder: string;
   declare options: MultiSelectOption[];
@@ -53,6 +56,7 @@ export class MultiSelect extends LitElement {
   constructor() {
     super();
     this.label = "";
+    this.hideLabel = false;
     this.placeholder = "";
     this.options = [];
     this.selected = [];
@@ -183,7 +187,7 @@ export class MultiSelect extends LitElement {
     const optionId = (index: number) => `${this.uid}-option-${index}`;
     const tags = this.tags();
     return html`
-      <label for=${`${this.uid}-input`}>${this.label}</label>
+      <label for=${`${this.uid}-input`} class=${this.hideLabel ? "hidden-label" : ""}>${this.label}</label>
       <div class="field">
         <input
           id=${`${this.uid}-input`}
@@ -269,6 +273,14 @@ export class MultiSelect extends LitElement {
         font-weight: 500;
         line-height: 16px;
         text-transform: uppercase;
+      }
+      label.hidden-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
       }
       .field {
         position: relative;

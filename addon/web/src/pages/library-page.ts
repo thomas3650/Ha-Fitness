@@ -1,12 +1,26 @@
 import { mdiDumbbell, mdiMagnify } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
-import { ApiError, createApi, thumbnailUrl, type Api, type ExerciseSummary } from "../api";
+import { ApiError, createApi, thumbnailUrl, type Api, type ExerciseSummary, type Setup } from "../api";
+import "../components/equipment-filter";
 import "../components/exercise-details";
 import "../components/multi-select";
 import { t } from "../i18n";
 import { icon } from "../icons";
-import { facetValues, FACETS, inHousehold, searchByName, type Facet } from "../library-filter";
+import {
+  equipmentValues,
+  facetValues,
+  household,
+  matchesEquipment,
+  searchByName,
+  type EquipmentChoice,
+  type Facet,
+} from "../library-filter";
+
+/** The filters besides equipment: multi-selects of the dataset's values. */
+type ValueFacet = Exclude<Facet, "equipment">;
+
+const VALUE_FACETS: ValueFacet[] = ["body_part", "target"];
 
 function failure(error: unknown): string {
   if (error instanceof ApiError) return error.message;
@@ -15,32 +29,32 @@ function failure(error: unknown): string {
 
 /**
  * The Library page (website spec §2.3, W4): every exercise, searched by name and filtered by equipment, body part and
- * target, several values each (either value of a filter, and every filter). The household filter is on by default
- * and shares its rule with the editor's library panel; "Show all" turns it off. A click on a name opens the details.
+ * target (either value of a filter, and every filter). The equipment filter starts on My equipment and shares its rule
+ * with the editor's library panel (D66). A click on a name opens the details.
  *
- * Without the setup the household is body weight and the custom exercises, and the page says why.
+ * Without the setup My equipment is body weight and the custom exercises, and the page says why.
  */
 export class LibraryPage extends LitElement {
   static override properties = {
     api: { attribute: false },
     exercises: { state: true },
-    household: { state: true },
+    setup: { state: true },
     errors: { state: true },
     query: { state: true },
+    equipment: { state: true },
     filters: { state: true },
-    showAll: { state: true },
     missing: { state: true },
     details: { state: true },
   };
 
   declare api: Api;
   declare exercises: ExerciseSummary[] | null;
-  /** The setup's equipment. */
-  declare household: ReadonlySet<string>;
+  /** The household's setup; null until read, or when it couldn't be. */
+  declare setup: Setup | null;
   declare errors: string[];
   declare query: string;
-  declare filters: Record<Facet, ReadonlySet<string>>;
-  declare showAll: boolean;
+  declare equipment: EquipmentChoice;
+  declare filters: Record<ValueFacet, ReadonlySet<string>>;
   /** Exercises whose thumbnail didn't load. */
   declare missing: ReadonlySet<string>;
   declare details: ExerciseSummary | null;
@@ -49,11 +63,11 @@ export class LibraryPage extends LitElement {
     super();
     this.api = createApi();
     this.exercises = null;
-    this.household = new Set();
+    this.setup = null;
     this.errors = [];
     this.query = "";
-    this.filters = { equipment: new Set(), body_part: new Set(), target: new Set() };
-    this.showAll = false;
+    this.equipment = { mode: "mine" };
+    this.filters = { body_part: new Set(), target: new Set() };
     this.missing = new Set();
     this.details = null;
   }
@@ -70,49 +84,28 @@ export class LibraryPage extends LitElement {
   private async load(): Promise<void> {
     const [setup, exercises] = await Promise.allSettled([this.api.setup(), this.api.allExercises()]);
     const errors: string[] = [];
-    if (setup.status === "fulfilled") this.household = new Set(setup.value.equipment);
+    if (setup.status === "fulfilled") this.setup = setup.value;
     else errors.push(failure(setup.reason));
     if (exercises.status === "fulfilled") this.exercises = exercises.value;
     else errors.push(failure(exercises.reason));
     this.errors = [...new Set(errors)];
   }
 
-  /** The exercises the search, the filters and the household filter keep. */
-  private found(exercises: ExerciseSummary[]): ExerciseSummary[] {
+  /** The exercises the search and the filters keep. */
+  private found(exercises: ExerciseSummary[], home: ReadonlySet<string>): ExerciseSummary[] {
     const kept = exercises.filter(
       (exercise) =>
-        FACETS.every((facet) => {
+        matchesEquipment(exercise, this.equipment, home) &&
+        VALUE_FACETS.every((facet) => {
           const chosen = this.filters[facet];
           return !chosen.size || (exercise[facet] !== null && chosen.has(exercise[facet]));
-        }) &&
-        (this.showAll || inHousehold(exercise, this.household)),
+        }),
     );
     return searchByName(kept, this.query);
   }
 
-  private choose(facet: Facet, selected: string[]): void {
+  private choose(facet: ValueFacet, selected: string[]): void {
     this.filters = { ...this.filters, [facet]: new Set(selected) };
-  }
-
-  /**
-   * A filter's values. Without Show all, the equipment filter offers only what the household's exercises use (body
-   * weight, the setup's equipment, the custom exercises'), so a choice never empties the list.
-   */
-  private values(exercises: ExerciseSummary[], facet: Facet): string[] {
-    const shown =
-      facet === "equipment" && !this.showAll
-        ? exercises.filter((exercise) => inHousehold(exercise, this.household))
-        : exercises;
-    return facetValues(shown, facet);
-  }
-
-  /** Show all on or off; turning it off drops the chosen equipment the household filter no longer offers. */
-  private setShowAll(exercises: ExerciseSummary[], on: boolean): void {
-    this.showAll = on;
-    if (on) return;
-    const offered = new Set(this.values(exercises, "equipment"));
-    const kept = [...this.filters.equipment].filter((value) => offered.has(value));
-    if (kept.length !== this.filters.equipment.size) this.choose("equipment", kept);
   }
 
   protected override render() {
@@ -135,7 +128,9 @@ export class LibraryPage extends LitElement {
   }
 
   private renderLibrary(exercises: ExerciseSummary[]) {
-    const found = this.found(exercises);
+    const home = household(this.setup);
+    const found = this.found(exercises, home);
+    const mine = exercises.filter((exercise) => matchesEquipment(exercise, { mode: "mine" }, home)).length;
     return html`
       <div class="library-tools">
         <div class="library-search">
@@ -151,15 +146,15 @@ export class LibraryPage extends LitElement {
             />
           </label>
         </div>
-        ${FACETS.map((facet) => this.renderFacet(exercises, facet))}
-        <label class="check">
-          <input
-            type="checkbox"
-            .checked=${this.showAll}
-            @change=${(event: Event) => this.setShowAll(exercises, (event.target as HTMLInputElement).checked)}
-          />
-          <span>${t("library.show_all")}</span>
-        </label>
+        <hf-equipment-filter
+          .label=${t("library.equipment")}
+          .values=${equipmentValues(exercises)}
+          .home=${[...home]}
+          .counts=${{ mine, all: exercises.length }}
+          .choice=${this.equipment}
+          @change=${(event: CustomEvent<{ choice: EquipmentChoice }>) => (this.equipment = event.detail.choice)}
+        ></hf-equipment-filter>
+        ${VALUE_FACETS.map((facet) => this.renderFacet(exercises, facet))}
       </div>
       <p class="secondary">
         ${t("library.count", { count: found.length })}
@@ -183,11 +178,11 @@ export class LibraryPage extends LitElement {
     `;
   }
 
-  private renderFacet(exercises: ExerciseSummary[], facet: Facet) {
+  private renderFacet(exercises: ExerciseSummary[], facet: ValueFacet) {
     return html`<hf-multi-select
       .label=${t(`library.${facet}`)}
       .placeholder=${t(`library.any_${facet}`)}
-      .options=${this.values(exercises, facet).map((value) => ({ value, label: value }))}
+      .options=${facetValues(exercises, facet).map((value) => ({ value, label: value }))}
       .selected=${[...this.filters[facet]]}
       @change=${(event: CustomEvent<{ selected: string[] }>) => this.choose(facet, event.detail.selected)}
     ></hf-multi-select>`;
@@ -255,16 +250,10 @@ export const libraryPageStyles = css`
   .library-tools .search input {
     padding: 0;
   }
-  .library-tools hf-multi-select {
+  .library-tools hf-multi-select,
+  .library-tools hf-equipment-filter {
     flex: 1 1 180px;
     max-width: 280px;
-  }
-  .library-tools label.check {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 36px;
-    margin-top: 20px;
   }
   td button.library-name {
     color: var(--hf-text);

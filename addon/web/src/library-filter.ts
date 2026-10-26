@@ -7,7 +7,7 @@ export const BODY_WEIGHT = "body weight";
 export const BAND = "band";
 
 /** The names `BAND` stands for. */
-const BAND_NAMES: readonly string[] = ["band", "resistance band"];
+export const BAND_NAMES: readonly string[] = ["band", "resistance band"];
 
 /**
  * The equipment filter's choice (D66): the household's equipment (custom exercises always show), no equipment filter,
@@ -63,15 +63,6 @@ export function matchesEquipment(
 }
 
 /**
- * Whether the household can do an exercise, as the add-on's household search decides it: its equipment is in the
- * setup's (body weight always), or it is custom. A library exercise without equipment is not one.
- */
-export function inHousehold(exercise: ExerciseSummary, household: ReadonlySet<string>): boolean {
-  const equipment = exercise.equipment;
-  return exercise.custom || (equipment !== null && (equipment === BODY_WEIGHT || household.has(equipment)));
-}
-
-/**
  * The exercises whose name has every word of the search, those that start with the whole search first; the order
  * is kept otherwise.
  */
@@ -85,8 +76,6 @@ export function searchByName(exercises: ExerciseSummary[], search: string): Exer
 }
 
 export type Facet = "equipment" | "body_part" | "target";
-
-export const FACETS: Facet[] = ["equipment", "body_part", "target"];
 
 /** The values one facet has among the exercises, sorted, as the dataset names them. */
 export function facetValues(exercises: ExerciseSummary[], facet: Facet): string[] {

@@ -29,16 +29,13 @@ import "../components/multi-select";
 import { applySelectValues } from "../components/select-value";
 import { t } from "../i18n";
 import { icon } from "../icons";
-import { facetValues } from "../library-filter";
-
-/** Body weight needs no equipment: always on, never a choice (website spec §2.4.1). */
-const BODY_WEIGHT = "body weight";
+import { BAND, BAND_NAMES, BODY_WEIGHT, facetValues } from "../library-filter";
 
 /**
  * Equipment the household chooses as one: the dataset names a band both ways, and the household filter compares
  * exactly, so the "band" chip stores both (website spec §2.4.1).
  */
-const GROUPS: Record<string, string[]> = { band: ["band", "resistance band"] };
+const GROUPS: Record<string, readonly string[]> = { [BAND]: BAND_NAMES };
 
 /** The people's colours, by people order, as the cards have them (design §3.4). */
 const PERSON_COLORS = ["#B18CFF", "#3DD6C6"];
