@@ -1,6 +1,7 @@
 import { html, LitElement, nothing } from "lit";
 
 import { ApiError, createApi, type Api, type Health, type LibraryStatus, type Person, type ProgramOut } from "../api";
+import { minutes } from "../format";
 import { t } from "../i18n";
 
 /** What the page read; a read that was refused stays null, and its message is in `errors`. */
@@ -18,11 +19,6 @@ function settled<T>(result: PromiseSettledResult<T>, errors: string[]): T | null
   if (!(result.reason instanceof ApiError)) throw result.reason;
   if (!errors.includes(result.reason.message)) errors.push(result.reason.message);
   return null;
-}
-
-/** A program's length in whole minutes, a half minute up, as the old status page showed it. */
-function minutes(seconds: number): number {
-  return Math.floor((seconds + 30) / 60);
 }
 
 /**

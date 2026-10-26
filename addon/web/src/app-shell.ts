@@ -2,8 +2,10 @@ import { mdiBookshelf, mdiFormatListBulleted, mdiHeartPulse, mdiTuneVariant } fr
 import { css, html, LitElement, nothing } from "lit";
 
 import { ApiError, createApi, type Api } from "./api";
+import { confirmDialogStyles } from "./components/confirm-dialog";
 import { t } from "./i18n";
 import { icon } from "./icons";
+import { programsPageStyles } from "./pages/programs-page";
 import "./pages/status-page";
 import { theme } from "./theme";
 
@@ -109,7 +111,7 @@ export class AppShell extends LitElement {
   private renderPage() {
     switch (this.route.page) {
       case "programs":
-        return html`<h1>${t("programs.title")}</h1>`;
+        return html`<hf-programs-page .api=${this.api}></hf-programs-page>`;
       case "new":
         return html`<h1>${t("editor.new_title")}</h1>`;
       case "copy":
@@ -232,7 +234,112 @@ export class AppShell extends LitElement {
       a {
         color: var(--hf-primary);
       }
+      button {
+        font: inherit;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.6;
+      }
+      .button,
+      button.danger,
+      button.text,
+      button.link,
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: none;
+        text-decoration: none;
+        font-weight: 500;
+      }
+      .button,
+      button.danger {
+        padding: 10px 20px;
+        border-radius: 20px;
+      }
+      .button.primary {
+        background: var(--hf-primary);
+        color: #fff;
+      }
+      .button .icon,
+      button.danger .icon {
+        width: 18px;
+        height: 18px;
+        color: inherit;
+      }
+      button.danger {
+        background: var(--hf-error);
+        color: #fff;
+      }
+      button.text,
+      button.link {
+        padding: 8px;
+        background: none;
+        color: var(--hf-primary);
+      }
+      button.link {
+        padding: 0;
+      }
+      .chip {
+        padding: 6px 14px;
+        border-radius: 16px;
+        background: #eeeeee;
+        color: var(--hf-text);
+      }
+      .chip[aria-pressed="true"] {
+        background: var(--hf-primary);
+        color: #fff;
+      }
+      .icon-button {
+        display: inline-flex;
+        padding: 4px;
+        border: none;
+        border-radius: 50%;
+        background: none;
+        color: var(--hf-text-secondary);
+      }
+      .icon-button:hover {
+        background: var(--hf-background);
+      }
+      .switch {
+        position: relative;
+        width: 36px;
+        height: 20px;
+        padding: 0;
+        border: none;
+        border-radius: 10px;
+        background: #bdbdbd;
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        transition: left 0.15s;
+      }
+      .switch[aria-checked="true"] {
+        background: var(--hf-primary);
+      }
+      .switch[aria-checked="true"]::after {
+        left: 18px;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
     `,
+    programsPageStyles,
+    confirmDialogStyles,
   ];
 }
 

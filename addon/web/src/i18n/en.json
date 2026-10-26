@@ -9,7 +9,40 @@
     "version": "HA Fitness {version}"
   },
   "programs": {
-    "title": "Programs"
+    "title": "Programs",
+    "loading": "Loading…",
+    "new": "New program",
+    "search": "Search programs",
+    "filters": "Show",
+    "filter_all": "All {count}",
+    "filter_active": "Active {count}",
+    "filter_off": "Off {count}",
+    "none": "No programs yet.",
+    "no_match": "No programs match.",
+    "col_name": "Name",
+    "col_days": "Days",
+    "col_exercises": "Exercises",
+    "col_music": "Music",
+    "col_created_by": "Created by",
+    "col_active": "Active",
+    "col_actions": "Actions",
+    "minutes": "{minutes} min",
+    "no_weekdays": "No weekdays",
+    "no_music": "None",
+    "created_by_claude": "Claude",
+    "created_by_you": "You",
+    "active": "Active: {name}",
+    "edit": "Edit {name}",
+    "copy": "Copy {name}",
+    "delete": "Delete {name}",
+    "delete_title": "Delete “{name}”?",
+    "delete_message": "The program disappears from Today and Workout.",
+    "delete_history": "History and stats stay as they are.",
+    "delete_open_days": "The program's open training days are removed.",
+    "delete_undo": "It can't be undone.",
+    "delete_pause": "Just a pause?",
+    "turn_off": "Turn it off instead",
+    "delete_confirm": "Delete"
   },
   "editor": {
     "new_title": "New program",
@@ -58,7 +91,19 @@
     "sat": "Sat",
     "sun": "Sun"
   },
+  "weekday_letter": {
+    "mon": "M",
+    "tue": "T",
+    "wed": "W",
+    "thu": "T",
+    "fri": "F",
+    "sat": "S",
+    "sun": "S"
+  },
   "list_separator": ", ",
+  "dialog": {
+    "cancel": "Cancel"
+  },
   "error": {
     "unknown": "The add-on answered with an error ({status}).",
     "network": "The add-on can't be reached."
