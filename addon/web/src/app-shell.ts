@@ -12,9 +12,11 @@ import { libraryPageStyles } from "./pages/library-page";
 import { newProgramStyles } from "./pages/new-program";
 import { programEditorStyles, type LeaveGuard } from "./pages/program-editor";
 import { programsPageStyles } from "./pages/programs-page";
+import { setupPageStyles } from "./pages/setup-page";
 import "./pages/library-page";
 import "./pages/new-program";
 import "./pages/program-editor";
+import "./pages/setup-page";
 import "./pages/status-page";
 import { theme } from "./theme";
 
@@ -164,7 +166,7 @@ export class AppShell extends LitElement {
       case "library":
         return html`<hf-library-page .api=${this.api}></hf-library-page>`;
       case "setup":
-        return html`<h1>${t("setup.title")}</h1>`;
+        return html`<hf-setup-page .api=${this.api}></hf-setup-page>`;
       case "status":
         return html`<hf-status-page .api=${this.api}></hf-status-page>`;
     }
@@ -388,6 +390,7 @@ export class AppShell extends LitElement {
     exercisePickerStyles,
     exerciseDetailsStyles,
     libraryPageStyles,
+    setupPageStyles,
   ];
 }
 
