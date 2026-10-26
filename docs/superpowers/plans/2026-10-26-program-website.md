@@ -75,7 +75,8 @@ Model: sonnet · Review: no
 Model: opus · Review: yes
 
 **Files:** `scripts/build_library.py`, `addon/server/src/ha_fitness_server/library/exercises.json` (rebuilt),
-`library/NOTICE.md`, `docs/notes.md` (the 721/1,442 note), `addon/DOCS.md` (the media size), the tests that assume
+`library/NOTICE.md`, `docs/notes.md` (the 721/1,442 note), `addon/DOCS.md` (the media size),
+`docs/architecture.md` ("the 721 filtered exercises"), `docs/domain-language.md` ("filtered from"), the tests that assume
 the old counts (`grep -rn "721\|1442" addon/server/tests`; `test_media.py`'s `TOTAL = 1442` becomes 2,648).
 
 - [ ] **Step 1:** In `scripts/build_library.py` drop the equipment filter (keep every record) and update its docstring
@@ -106,10 +107,13 @@ update it for the added keys), and the program/people tests.
 - Codes and fields: `name_taken` (`name`); `session_running` (null); `weekday_needed` (`weekdays`, for `set_active`);
   `station_unknown` / `station_shared` (`stations.<index from 0>`); `too_many_people`, `person_twice`, `person_unknown`
   (`people`); `ha_unavailable` (null); `changed_elsewhere` (null).
-- The weekday rule moves from the model validator to `field_validator("weekdays")` reading `info.data["active"]` (it is
-  declared before `weekdays`), still raising `ValueError` with the same message, so a REST 422 item has
-  `loc: ["body", "weekdays"]`. **Ruling (to record in the PR):** MCP's text for this one rule changes only its location
-  line (from the program to `weekdays`).
+- The weekday rule moves from the model validator into the existing `_week_order` field validator on `weekdays`
+  (`schemas.py:223`), reading `info.data.get("active")` (it is declared before `weekdays`) and skipping the check when
+  `active` is absent (pydantic already reports `active`'s own error). It raises
+  `PydanticCustomError("weekday_needed", "Value error, an active program needs at least one weekday")`, so a REST 422
+  item has `loc: ["body", "weekdays"]` and `type: "weekday_needed"`. **Ruling (to record in the PR):** MCP's text for
+  this one rule changes its location (`program` → `program.weekdays`), its `input_value`/`input_type` (the list, not
+  the program) and its type tag (`value_error` → `weekday_needed`); the message stays.
 - `Programs.replace(program_id, document, client, if_updated_at: datetime | None = None)`; the check runs inside
   `_replace`'s transaction, under the training-days lock, comparing instants. `PUT /api/v1/programs/{id}` takes the
   query parameter `if_updated_at: datetime | None`. Given and different → 409 `changed_elsewhere`; omitted → as today.
@@ -117,7 +121,8 @@ update it for the added keys), and the program/people tests.
 - [ ] **Step 1: Write the failing tests** in `test_errors.py` (REST unless named):
   - taken name on create and replace → 409, `code == "name_taken"`, `field == "name"`, `detail` the same string;
   - delete and `active: false` during a running session → 409 `session_running`, `field is None`;
-  - active without weekdays on create → 422 with an item whose `loc == ["body", "weekdays"]`; `PUT /active` on a
+  - active without weekdays on create → 422 with an item whose `loc == ["body", "weekdays"]` and
+    `type == "weekday_needed"`; `"active": "x"` with no weekdays → a 422 for `active`, not a 500; `PUT /active` on a
     program without weekdays → 422 `code == "weekday_needed"`, `field == "weekdays"`;
   - unknown third station → 422 `station_unknown`, `field == "stations.2"`, `detail` the same dict;
   - three people → `too_many_people`; the same person twice → `person_twice`; an unknown HA person →
@@ -199,13 +204,14 @@ Model: opus · Review: yes
 - `Settings.web_dir: Path`, default `Path("/opt/ha-fitness/web")`, from `HA_FITNESS_WEB_DIR`.
 - `GET`/`HEAD /`: `web_dir/index.html`, read on each request, with `Cache-Control: no-cache`; when it doesn't exist,
   the English fallback page ("The HA Fitness website isn't built." and the version).
-- `StaticFiles` mounted at `/web` on `web_dir / "web"` with `check_dir=False` (so a missing folder doesn't fail app
-  creation), after the `/api` catch-all and before the MCP mount.
+- `StaticFiles` mounted at `/web` on `web_dir / "web"` only when that folder exists when the app is created (Starlette
+  checks the folder on the first request even with `check_dir=False`), after the `/api` catch-all and before the MCP
+  mount.
 
 - [ ] **Step 1: Write the failing tests:** with a temp `web_dir` holding `index.html` and `web/app.js`: `/` returns the
   HTML with `no-cache`; `/web/app.js` returns the file; `/web/missing.js` → 404 whose body isn't MCP's plain text
   (assert the JSON `{"detail": "Not Found"}`); with an explicit missing `web_dir`: `/` returns the fallback with the
-  version; `/mcp` still answers MCP; an unknown `/api/x` still a JSON 404.
+  version and `/web/x` returns 404 (status only); `/mcp` still answers MCP; an unknown `/api/x` still a JSON 404.
 - [ ] **Step 2–4:** fail, implement, run the add-on gates.
 - [ ] **Step 5: Commit** `feat(addon): serve the website at the panel's root, with a fallback page`.
 
@@ -223,12 +229,15 @@ hook), `eslint.config.js` (ignores `node_modules/` and `dist/`), `vite.config.ts
 - Tool versions as `cards/package.json` (lit 3.3.3, vite, vitest, happy-dom, @testing-library/dom, typescript 6.0.3,
   eslint, typescript-eslint) plus `@mdi/js`. Scripts: `build` (vite build, then `node scripts/check-dist.mjs`), `watch`,
   `test`, `lint`.
-- `check-dist.mjs` fails the build when any `src`/`href` in `dist/index.html` doesn't start with `./web/`.
+- `check-dist.mjs` fails the build when any `src`/`href` in `dist/index.html` doesn't start with `./web/`. It uses
+  imports only (`node:fs`, `node:url`) and fails with `throw`, so it needs no node globals for ESLint.
 - `api.ts`: `createApi(fetchFn = fetch)` with typed functions for every route the site uses; paths relative
   (`api/v1/...`). Errors: `class ApiError { status; code: string | null; field: string | null; message: string;
-  detail: unknown }`. `message`: a string `detail`; else `detail.message`; else the first 422 item's `msg`. For a 422
-  list: `field` is the first item's `loc` without `body`, joined with `.` (null when only `body`), `code` its `type`;
-  otherwise `code` and `field` from the body.
+  detail: unknown; items: { field: string | null; code: string; message: string }[] }`. `message`: a string `detail`;
+  else `detail.message`; else the first 422 item's `msg`. For a 422 list: `items` holds every item (`field` its `loc`
+  without `body` joined with `.`, null when only `body`; `code` its `type`; `message` its `msg`), and `code`/`field` are
+  the first item's; otherwise `items` has one entry and `code`/`field` come from the body. Forms show every item at its
+  field.
 - `app-shell.ts`: `<hf-app>` with the menu **Programs, Library, Setup, Status** and hash routes `#/programs`,
   `#/programs/new`, `#/programs/new/copy/<id>`, `#/programs/<id>`, `#/library`, `#/setup`, `#/status` (default
   `#/programs`); it renders the route of the hash it starts with.
@@ -259,14 +268,14 @@ stop it in `stop_background`, and start the server with `HA_FITNESS_WEB_DIR="$ro
 `docs/testing.md` (the site in the fast loop).
 
 **Interfaces:** a stage `FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:<the multi-arch index digest from
-docker buildx imagetools inspect node:24-alpine> AS web` that runs `npm ci` and `npm run build` in the site's folder;
-the final stage `COPY --from=web <site>/dist /opt/ha-fitness/web`.
+docker buildx imagetools inspect node:24-alpine> AS web` with `WORKDIR /web`, copying the site's folder there and running `npm ci` and `npm run build`;
+the final stage `COPY --from=web /web/dist /opt/ha-fitness/web`.
 
 - [ ] **Step 1:** Make the changes.
 - [ ] **Step 2: Check:** `docker build -t ha-fitness-web-check addon` and `docker run --rm --entrypoint ls
   ha-fitness-web-check /opt/ha-fitness/web /opt/ha-fitness/web/web` lists `index.html` and the assets; remove the
   image. `uv run actionlint && uv run zizmor --offline .github/workflows`; `bash -n` on the changed scripts;
-  `scripts/develop` serves the site at `http://localhost:8765/`.
+  `scripts/develop` (run in the background, as its macOS note says) serves the site at `http://localhost:8765/`.
 - [ ] **Step 3: Commit** `ci: build the website into the add-on image, with its CI job and scripts`.
 
 ### Task 8: Programs list, switch and delete (web)
