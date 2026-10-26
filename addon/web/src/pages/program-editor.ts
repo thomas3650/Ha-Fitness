@@ -451,7 +451,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         this.justSaved = true;
       } else {
         const stored = await this.api.createProgram(document);
-        this.saved = sent;
+        // The stored program opens for editing; anything typed during the request isn't kept, so nothing asks.
+        this.saved = this.form ? JSON.stringify(documentOf(this.form)) : sent;
         location.hash = `#/programs/${stored.id}`;
       }
     } catch (error) {
@@ -534,7 +535,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private renderFieldError(place: string) {
     const errors = this.fieldErrors.get(place);
     if (!errors) return nothing;
-    return html`<p class="field-error" id=${this.errorId(place)}>${errors.join(" ")}</p>`;
+    return html`<p class="field-error" id=${this.errorId(place)}>${errors.join(t("sentence_separator"))}</p>`;
   }
 
   private pageTitle(): string {
@@ -565,15 +566,15 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
           @details=${(event: CustomEvent<ExerciseSummary>) => (this.details = event.detail)}
         ></hf-exercise-picker>
       </div>
-      ${this.renderDialogs(form)}`;
+      ${this.renderDialogs()}`;
   }
 
   private renderHeader(form: Form) {
     return html`<header class="editor-header">
       <div>
         <nav class="breadcrumb" aria-label=${t("editor.breadcrumb")}>
-          <a href="#/programs">${t("menu.programs")}</a> ›
-          <span>${form.name || t("editor.untitled")}</span>
+          <a href="#/programs">${t("menu.programs")}</a> <span aria-hidden="true">${t("breadcrumb_separator")}</span>
+          <span class="crumb">${form.name || t("editor.untitled")}</span>
           ${this.mode.kind === "edit" && this.createdBy === "claude"
             ? html`<span class="badge claude">${icon(mdiCreation)}<span>${t("editor.created_by_claude")}</span></span>`
             : this.mode.kind === "edit" && this.createdBy === "you"
@@ -789,7 +790,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private renderStation(id: string, index: number, count: number) {
     const name = this.nameOf(id);
     const summary = this.summaryOf(id);
-    const meta = summary ? [summary.equipment, summary.body_part].filter(Boolean).join(" · ") : "";
+    const meta = summary ? [summary.equipment, summary.body_part].filter(Boolean).join(t("meta_separator")) : "";
     const place = `stations.${index}`;
     return html`<li
       draggable="true"
@@ -876,13 +877,13 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     </p>`;
   }
 
-  private renderDialogs(form: Form) {
+  private renderDialogs() {
     return html`
       ${this.details
         ? html`<hf-exercise-details
             .api=${this.api}
             .exercise=${this.details}
-            .canAdd=${!form.stations.some((station) => station.exercise === this.details?.id)}
+            .canAdd=${true}
             @close=${() => (this.details = null)}
             @add=${() => {
               if (this.details) this.addStation(this.details.id);
@@ -955,7 +956,7 @@ export const programEditorStyles = css`
     gap: 6px;
     color: var(--hf-text-secondary);
   }
-  .breadcrumb > span:first-of-type {
+  .breadcrumb .crumb {
     color: var(--hf-text);
     font-weight: 500;
   }

@@ -509,19 +509,41 @@ test("the panel searches by name and filters", async () => {
   await vi.waitFor(() => expect(panelNames(root)).toEqual(["squat", "goblet squat"]));
 });
 
-test("✓ marks the exercises already in the program", async () => {
+test("✓ marks the exercises already in the program, and + still adds one again", async () => {
   const fake = newFake({ programs: [fullBody()] });
   const root = await openEditor(fake, "#/programs/1");
   await vi.waitFor(() => expect(panelNames(root)).toContain("push-up"));
 
   const list = within(panel(root)).getByRole("list", { name: en.picker.results });
-  const pushUp = within(list)
-    .getAllByRole("listitem")
-    .find((item) => text(within(item).getAllByRole("button")[0]) === "push-up");
-  expect(pushUp).toBeTruthy();
-  expect(within(pushUp!).getByRole("img", { name: en.picker.in_program })).toBeTruthy();
-  expect(within(pushUp!).queryByRole("button", { name: "Add push-up" })).toBeNull();
-  expect(within(panel(root)).getByRole("button", { name: "Add goblet squat" })).toBeTruthy();
+  const itemOf = (name: string) =>
+    within(list)
+      .getAllByRole("listitem")
+      .find((item) => text(within(item).getAllByRole("button")[0]) === name);
+  expect(within(itemOf("push-up")!).getByRole("img", { name: en.picker.in_program })).toBeTruthy();
+  expect(within(itemOf("goblet squat")!).queryByRole("img", { name: en.picker.in_program })).toBeNull();
+
+  fireEvent.click(within(itemOf("push-up")!).getByRole("button", { name: "Add push-up" }));
+  await vi.waitFor(() => expect(stationNames(root)).toEqual(["push-up", "squat", "plank", "push-up"]));
+  await save(root, fake);
+  expect((lastWrite(fake).body as ProgramDocument).stations).toEqual([
+    { exercise: "0001" },
+    { exercise: "0002" },
+    { exercise: "0006" },
+    { exercise: "0001" },
+  ]);
+});
+
+test("the details dialog adds an exercise that is already in the program", async () => {
+  const details: Exercise = { ...EXERCISES[0], steps: ["Push."], secondary_muscles: [], attribution: null };
+  const fake = newFake({ programs: [fullBody()], details: { "0001": details } });
+  const root = await openEditor(fake, "#/programs/1");
+  await vi.waitFor(() => expect(panelNames(root)).toContain("push-up"));
+
+  fireEvent.click(within(panel(root)).getByRole("button", { name: "push-up" }));
+  const dialog = await findByRole(root, "dialog", { name: "push-up" });
+  fireEvent.click(within(dialog).getByRole("button", { name: en.details.add }));
+
+  await vi.waitFor(() => expect(stationNames(root)).toEqual(["push-up", "squat", "plank", "push-up"]));
 });
 
 test("a click on a panel exercise opens its details: the GIF with its attribution, the muscles and the steps", async () => {

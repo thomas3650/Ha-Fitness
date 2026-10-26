@@ -146,6 +146,9 @@
     "sun": "S"
   },
   "list_separator": ", ",
+  "meta_separator": " · ",
+  "sentence_separator": " ",
+  "breadcrumb_separator": "›",
   "dialog": {
     "cancel": "Cancel"
   },

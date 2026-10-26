@@ -63,7 +63,9 @@ export class NewProgramPage extends LitElement {
   protected override render() {
     return html`
       <nav class="breadcrumb" aria-label=${t("editor.breadcrumb")}>
-        <a href="#/programs">${t("menu.programs")}</a> › <span>${t("editor.new_title")}</span>
+        <a href="#/programs">${t("menu.programs")}</a>
+        <span aria-hidden="true">${t("breadcrumb_separator")}</span>
+        <span class="crumb">${t("editor.new_title")}</span>
       </nav>
       <h1>${t("editor.new_title")}</h1>
       <p class="lead">${t("new_program.heading")}</p>

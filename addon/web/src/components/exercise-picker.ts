@@ -27,7 +27,7 @@ function values(exercises: ExerciseSummary[], facet: Facet): string[] {
  * always, and every custom one; "Show all" shows the rest.
  *
  * It fires `pick` (+, the exercise's id in `detail`) and `details` (a click on the name, the summary in `detail`).
- * An exercise in `inProgram` gets a ✓ instead of +.
+ * An exercise in `inProgram` gets a ✓ beside its +: a program may have an exercise twice, the add-on decides.
  */
 export class ExercisePicker extends LitElement {
   static override properties = {
@@ -158,7 +158,7 @@ export class ExercisePicker extends LitElement {
   }
 
   private renderItem(exercise: ExerciseSummary) {
-    const meta = [exercise.equipment, exercise.body_part].filter(Boolean).join(" · ");
+    const meta = [exercise.equipment, exercise.body_part].filter(Boolean).join(t("meta_separator"));
     return html`<li>
       ${this.missing.has(exercise.id)
         ? html`<span class="thumb placeholder" aria-hidden="true">${icon(mdiDumbbell)}</span>`
@@ -177,14 +177,15 @@ export class ExercisePicker extends LitElement {
       </span>
       ${this.inProgram.has(exercise.id)
         ? html`<span class="picker-in" role="img" aria-label=${t("picker.in_program")}>${icon(mdiCheckCircle)}</span>`
-        : html`<button
-            type="button"
-            class="icon-button picker-add"
-            aria-label=${t("picker.add", { name: exercise.name })}
-            @click=${() => this.fire("pick", exercise.id)}
-          >
-            ${icon(mdiPlusCircle)}
-          </button>`}
+        : nothing}
+      <button
+        type="button"
+        class="icon-button picker-add"
+        aria-label=${t("picker.add", { name: exercise.name })}
+        @click=${() => this.fire("pick", exercise.id)}
+      >
+        ${icon(mdiPlusCircle)}
+      </button>
     </li>`;
   }
 }
