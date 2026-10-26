@@ -6,7 +6,7 @@ import type { Exercise, ExerciseSummary, ProgramDocument } from "../src/api";
 import en from "../src/i18n/en.json";
 import "../src/main";
 import { brokenAt, fakeApi, program, type FakeApi } from "./fake-api";
-import { mount, unmount } from "./mount";
+import { mount, pageOf, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
@@ -1031,12 +1031,13 @@ test("Not saved shows while there are changes, and the list says Saved after a s
   const fake = newFake({ programs: [fullBody()] });
   const root = await openEditor(fake, "#/programs/1");
 
-  expect(queryByRole(root, "status")).toBeNull();
+  expect(queryByRole(pageOf(root), "status")).toBeNull();
+  expect(within(root).queryByText(/^Saved /)).toBeNull();
   rename(root, "Changed");
   expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
   await save(root, fake);
   await findByRole(root, "heading", { level: 1, name: en.programs.title });
-  expect(text(getByRole(root, "status"))).toBe("Saved Changed");
+  expect(within(root).getByText("Saved Changed").getAttribute("role")).toBe("status");
   expect(within(root).queryByText(en.editor.not_saved)).toBeNull();
 });
 
@@ -1271,6 +1272,8 @@ test("Save goes back to the Programs page, which says the program was saved; no 
   const note = await within(root).findByText("Saved Full body 2");
   expect(note.getAttribute("role")).toBe("status");
   expect(lastWrite(fake).body).toMatchObject({ name: "Full body 2" });
+  const heading = getByRole(root, "heading", { level: 1, name: en.programs.title });
+  await vi.waitFor(() => expect((root as unknown as ShadowRoot).activeElement).toBe(heading));
 
   const unload = new Event("beforeunload", { cancelable: true });
   window.dispatchEvent(unload);
@@ -1371,4 +1374,33 @@ test("a save that answers after the user left doesn't pull them off the page the
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(location.hash).toBe("#/library");
   expect(getByRole(root, "heading", { level: 1, name: en.library.title })).toBeTruthy();
+});
+
+test("a save that lands while the leave dialog is open, with nothing typed since, goes where the user was going", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let put = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "PUT") {
+      put = true;
+      await gate;
+    }
+    return fake.fetch(input, init);
+  });
+  const root = await mount("#/programs/1");
+  await findByRole(root, "textbox", { name: en.editor.name });
+
+  rename(root, "Renamed");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  await vi.waitFor(() => expect(put).toBe(true));
+  location.hash = "#/library";
+  await findByRole(root, "dialog", { name: en.editor.leave_title });
+  release();
+
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+  expect(location.hash).toBe("#/library");
+  expect(queryByRole(root, "dialog")).toBeNull();
+  expect(within(root).queryByText("Saved Renamed")).toBeNull();
+  expect(lastWrite(fake).body).toMatchObject({ name: "Renamed" });
 });

@@ -506,10 +506,12 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       // The user left while the request ran: they stay on the page they went to.
       if (!this.isConnected) return;
       if (!this.dirty) {
-        // Saved as it is shown: back to the Programs page, which says so (#96). Nothing is unsaved, so nothing asks.
+        // Saved as it is shown: back to the Programs page, where the shell says so (#96). Nothing is unsaved, so
+        // nothing asks. With the leave dialog open the user was going elsewhere: go there (the shell drops the note).
         const note = t("programs.saved", { name: stored.program.name });
         this.dispatchEvent(new CustomEvent("program-saved", { bubbles: true, detail: note }));
-        location.hash = "#/programs";
+        if (this.leaving) this.leave();
+        else location.hash = "#/programs";
         return;
       }
       const route = `#/programs/${stored.id}`;

@@ -5,7 +5,7 @@ import type { ExerciseSummary, PeopleView, Setup } from "../src/api";
 import en from "../src/i18n/en.json";
 import "../src/main";
 import { brokenAt, fakeApi, type FakeApi } from "./fake-api";
-import { mount, unmount } from "./mount";
+import { mount, pageOf, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
@@ -124,7 +124,7 @@ function save(root: HTMLElement): void {
 /** Save, and wait until the add-on's answer shows. */
 async function saveAndWait(root: HTMLElement): Promise<void> {
   save(root);
-  await findByRole(root, "status");
+  await findByRole(pageOf(root), "status");
 }
 
 function savePeople(root: HTMLElement): void {
@@ -221,7 +221,7 @@ test("a change made while the setup saves stays, unsaved", async () => {
   const saveButton = getByRole(root, "button", { name: en.setup.save });
   await vi.waitFor(() => expect(saveButton.hasAttribute("disabled")).toBe(false));
   expect(await chosen(root, "kettlebell")).toBe(true);
-  expect(queryByRole(root, "status")).toBeNull();
+  expect(queryByRole(pageOf(root), "status")).toBeNull();
 });
 
 test("a stored resistance band alone shows the band option chosen", async () => {
@@ -246,8 +246,8 @@ test("Save sends the setup's equipment, favourites and default speaker, and only
     default_speaker: "media_player.kitchen",
   });
   expect(writes(fake, "api/v1/people")).toHaveLength(0);
-  expect(await findByRole(root, "status")).toBeTruthy();
-  expect(text(getByRole(root, "status"))).toBe(en.setup.saved);
+  expect(await findByRole(pageOf(root), "status")).toBeTruthy();
+  expect(text(getByRole(pageOf(root), "status"))).toBe(en.setup.saved);
 });
 
 test("the add-on's equipment refusal shows at the equipment, and the choice stays", async () => {

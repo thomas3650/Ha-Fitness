@@ -12,7 +12,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import en from "../src/i18n/en.json";
 import "../src/main";
 import { brokenAt, fakeApi, program, type FakeApi } from "./fake-api";
-import { mount, unmount } from "./mount";
+import { mount, pageOf, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
@@ -171,8 +171,8 @@ test("the search narrows the rows by name, sending nothing", async () => {
   await vi.waitFor(() => expect(names(root)).toEqual(["Active: Core"]));
 
   fireEvent.click(getByRole(root, "button", { name: "Off 1" }));
-  await vi.waitFor(() => expect(getByRole(root, "status")).toBeTruthy());
-  expect(text(getByRole(root, "status"))).toBe(en.programs.no_match);
+  await vi.waitFor(() => expect(getByRole(pageOf(root), "status")).toBeTruthy());
+  expect(text(getByRole(pageOf(root), "status"))).toBe(en.programs.no_match);
   expect(fake.requests.length).toBe(before);
 });
 
@@ -346,7 +346,7 @@ test("without programs the page says so and offers New program", async () => {
   vi.stubGlobal("fetch", fakeApi().fetch);
   const root = await mount("#/programs");
 
-  expect(text(await findByRole(root, "status"))).toBe(en.programs.none);
+  expect(text(await findByRole(pageOf(root), "status"))).toBe(en.programs.none);
   expect(getByRole(root, "link", { name: en.programs.new })).toBeTruthy();
 });
 
@@ -543,4 +543,23 @@ test("a click on a row's refusal message doesn't open the program", async () => 
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(location.hash).toBe("#/programs");
   expect(getByRole(root, "heading", { level: 1, name: en.programs.title })).toBeTruthy();
+});
+
+test("a click in the Active or Actions cell beside its controls doesn't open the program", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
+
+  // The cells themselves, as a click on their padding hits them.
+  const cells = within(rowOf(root, "Core")).getAllByRole("cell");
+  const cellWith = (control: HTMLElement) => cells.find((cell) => cell.contains(control)) as HTMLElement;
+  const activeCell = cellWith(switchOf(root, "Core"));
+  const actionsCell = cellWith(getByRole(root, "button", { name: "Delete Core" }));
+  fireEvent.click(activeCell);
+  fireEvent.click(actionsCell);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(location.hash).toBe("#/programs");
+  expect(queryByRole(root, "dialog")).toBeNull();
+  expect(switchOf(root, "Core").getAttribute("aria-checked")).toBe("true");
+  expect(writes(fake)).toEqual([]);
 });

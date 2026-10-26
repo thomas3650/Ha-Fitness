@@ -53,8 +53,6 @@ export class ProgramsPage extends LitElement {
     rowErrors: { state: true },
     missing: { state: true },
     deleting: { state: true },
-    note: { attribute: false },
-    noteShown: { state: true },
   };
 
   declare api: Api;
@@ -69,10 +67,6 @@ export class ProgramsPage extends LitElement {
   /** Exercises whose thumbnail didn't load. */
   declare missing: ReadonlySet<string>;
   declare deleting: Deleting | null;
-  /** The shell's note after a save in the editor ("Saved …"); it goes on the next navigation. */
-  declare note: string | null;
-  /** False on the first render: the note's live region is in the page empty first, so screen readers announce it. */
-  declare noteShown: boolean;
 
   constructor() {
     super();
@@ -85,12 +79,6 @@ export class ProgramsPage extends LitElement {
     this.rowErrors = new Map();
     this.missing = new Set();
     this.deleting = null;
-    this.note = null;
-    this.noteShown = false;
-  }
-
-  protected override firstUpdated(): void {
-    this.noteShown = true;
   }
 
   protected override createRenderRoot(): HTMLElement {
@@ -210,9 +198,6 @@ export class ProgramsPage extends LitElement {
         <h1 tabindex="-1">${t("programs.title")}</h1>
         <a class="button primary" href="#/programs/new">${icon(mdiPlus)}<span>${t("programs.new")}</span></a>
       </header>
-      ${this.note
-        ? html`<p class="saved-note" role="status">${this.noteShown ? this.note : nothing}</p>`
-        : nothing}
       ${this.renderBody()}
       ${this.renderDialog()}
     `;
@@ -471,10 +456,7 @@ export const programsPageStyles = css`
   .programs a.program-name:hover {
     text-decoration: underline;
   }
-  .saved-note {
-    margin: 0 0 16px;
-    color: var(--hf-text-secondary);
-  }
+
   .programs tr.off strong {
     color: var(--hf-text-secondary);
   }
