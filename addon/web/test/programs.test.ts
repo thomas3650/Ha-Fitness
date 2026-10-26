@@ -454,3 +454,22 @@ test("under a search, deleting its only match focuses the heading", async () => 
     expect(focused(root)).toBe(getByRole(root, "heading", { level: 1, name: en.programs.title })),
   );
 });
+
+test("while the next row's switch waits for the add-on, the focus goes to its edit link", async () => {
+  const fake = fakeApi({ programs: programs() });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "PUT" && String(input) === "api/v1/programs/3/active") await gate;
+    return fake.fetch(input, init);
+  });
+  const root = await mount("#/programs");
+  await findByRole(root, "table", { name: en.programs.title });
+  fireEvent.click(switchOf(root, "Legs"));
+  await vi.waitFor(() => expect((switchOf(root, "Legs") as HTMLButtonElement).disabled).toBe(true));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() => expect(focused(root)).toBe(getByRole(root, "link", { name: "Edit Legs" })));
+  release();
+});
