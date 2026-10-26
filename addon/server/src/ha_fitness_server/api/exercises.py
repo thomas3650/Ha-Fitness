@@ -10,6 +10,7 @@ from ha_fitness_server.library.media import MediaKind
 from ha_fitness_server.schemas import (
     Exercise,
     ExerciseSearch,
+    ExerciseSummary,
     NewCustomExercise,
     SearchLimit,
 )
@@ -31,9 +32,25 @@ def search_exercises(
     equipment: str | None = None,
     body_part: str | None = None,
     limit: Annotated[SearchLimit, Query()] = 20,
+    household: bool = False,
 ) -> ExerciseSearch:
-    """Search the library and custom exercises; the facets come with an empty search."""
-    return services.library.search_with_facets(q, equipment, body_part, limit)
+    """Search the library and custom exercises; the facets come with an empty search.
+
+    `household` keeps the exercises with the setup's equipment, and every custom one (D63).
+    """
+    return services.library.search_with_facets(
+        q,
+        equipment,
+        body_part,
+        limit,
+        services.setup.get().equipment if household else None,
+    )
+
+
+@router.get("/all")
+def all_exercises(services: ServicesDep) -> list[ExerciseSummary]:
+    """Return every library and custom exercise as a summary, sorted by name (website spec §2.3.3)."""
+    return services.library.summaries()
 
 
 @router.get("/{exercise_id}")

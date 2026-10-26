@@ -1,10 +1,16 @@
 """REST routes for the programs (spec §5, §7)."""
 
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from ha_fitness_server.schemas import ProgramActive, ProgramDocument, ProgramOut
+from ha_fitness_server.schemas import (
+    ProgramActive,
+    ProgramDefaults,
+    ProgramDocument,
+    ProgramOut,
+)
 from ha_fitness_server.services import Services
 
 from .deps import client_from_request, get_services
@@ -29,6 +35,12 @@ def create_program(
     return services.programs.create(program, client)
 
 
+@router.get("/defaults")
+def get_program_defaults() -> ProgramDefaults:
+    """Return what a program gets for each field it leaves out; before `/{program_id}`, which would take the path."""
+    return ProgramDefaults()
+
+
 @router.get("/{program_id}")
 def get_program(services: ServicesDep, program_id: int) -> ProgramOut:
     """Return one program."""
@@ -37,10 +49,17 @@ def get_program(services: ServicesDep, program_id: int) -> ProgramOut:
 
 @router.put("/{program_id}")
 def replace_program(
-    services: ServicesDep, client: ClientDep, program_id: int, program: ProgramDocument
+    services: ServicesDep,
+    client: ClientDep,
+    program_id: int,
+    program: ProgramDocument,
+    if_updated_at: datetime | None = None,
 ) -> ProgramOut:
-    """Replace a program's whole document."""
-    return services.programs.replace(program_id, program, client)
+    """Replace a program's whole document; with `if_updated_at` only while it is the stored `updated_at`.
+
+    A different one is a 409 with the code `changed_elsewhere` (spec §2.2.6).
+    """
+    return services.programs.replace(program_id, program, client, if_updated_at)
 
 
 @router.put("/{program_id}/active")

@@ -66,17 +66,22 @@ claude mcp add --transport http ha-fitness-house http://<your-home-assistant>:87
 
 Sessions in the repository then never see your real data.
 
-## The add-on's page
+## The website
 
-The add-on has a small status page (Ingress): its version, the exercise library, the people and the programs. Open it
-from the add-on's page with *Open web UI*, or turn on *Show in sidebar* to get *HA Fitness* in the sidebar. The page is
-in Danish when your browser prefers Danish, otherwise in English.
+The add-on has a website (Ingress). Open it from the add-on's page with *Open web UI*, or turn on *Show in sidebar*
+to get *HA Fitness* in the sidebar. It is in English, and for administrators.
+
+- **Programs:** make, edit, switch on or off and delete programs.
+- **Library:** browse every exercise, with its picture and instructions.
+- **Setup:** choose the equipment you have, the people who train, your favourite playlists and a default speaker.
+  Claude reads the setup when it suggests exercises and music.
+- **Status:** the version, the exercise library, the people and the programs.
 
 ## The exercise library
 
-The exercise data is built into the add-on. The GIFs and thumbnails (about 72 MB) are downloaded into the add-on's
+The exercise data is built into the add-on. The GIFs and thumbnails (about 137 MB) are downloaded into the add-on's
 data folder in the background at every start, when any are missing. A failed file is tried again at the next start.
-The status page shows how many are there.
+The Status page shows how many are there.
 
 ## Backups
 

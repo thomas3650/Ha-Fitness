@@ -93,7 +93,7 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Source:** [spec](superpowers/specs/2026-10-23-ha-fitness-design.md) §7
 
 ### D13: Exercise GIFs are downloaded, never in the repo or the image
-- **Date:** 2026-10-23 · **Status:** active
+- **Date:** 2026-10-23 · **Status:** active; the filtered part superseded by D64
 - **Decision:** The add-on downloads the filtered GIF set from a pinned commit of `hasaneyldrm/exercises-dataset` into
   `/data` on first start. The GIFs are never committed and never built into the image. The 12 mockup GIFs in
   `docs/mockups/gifs/` are the one exception.
@@ -224,7 +224,7 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   (Thomas's delegation for the night)
 
 ### D30: The library's data is built in; its media is downloaded
-- **Date:** 2026-10-24 · **Status:** active
+- **Date:** 2026-10-24 · **Status:** active; the filtered part superseded by D64
 - **Decision:** The filtered exercise data (721 records, English steps) is committed as
   `addon/server/src/ha_fitness_server/library/exercises.json` and ships in the image. Only the GIFs and thumbnails are
   downloaded, into the data folder (D13).
@@ -519,3 +519,36 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** The household wants to see what is coming and to train ahead when a day doesn't fit. One at a time keeps a
   program to one early training.
 - **Source:** [today ahead spec](superpowers/specs/2026-10-25-today-ahead-and-start-beep-design.md) §2.2
+
+### D62: The add-on's website is built into the image, English only, with its own icons
+- **Date:** 2026-10-26 · **Status:** active
+- **Decision:** The add-on serves a website at the Ingress panel's root, built in the add-on image, with its assets under
+  `/web/`. It is for administrators only in v2. Its texts are English only in v2, an exception to hard rule 6. It
+  inlines its own `mdi:` icons and defines HA's light-theme values itself, an exception to D51's "no icon package".
+- **Why:** Inside the Ingress iframe `<ha-icon>` and HA's CSS variables don't exist. Thomas chose English only for v2;
+  texts in one language file keep Danish possible later.
+- **Source:** [website spec](superpowers/specs/2026-10-26-program-website-design.md) §2.1; Thomas, 2026-10-26
+
+### D63: The household setup is kept in the add-on and read by Claude
+- **Date:** 2026-10-26 · **Status:** active
+- **Decision:** The household setup holds the equipment, the people on the website, the favourite playlists and the
+  default speaker. Claude reads it through the MCP tool `get_setup` and the `household` flag of `search_exercises`.
+- **Why:** Claude suggests exercises and music that fit the house, without asking each time. The flag defaults to false,
+  so today's search stays the same.
+- **Source:** [website spec](superpowers/specs/2026-10-26-program-website-design.md) §2.4
+
+### D64: The library holds the whole dataset
+- **Date:** 2026-10-26 · **Status:** active
+- **Decision:** The built-in library takes every exercise of the dataset at its pinned commit (1,324 exercises, 28
+  equipment values), not only the 721 with home equipment. The household's equipment filters at search time. This
+  replaces the filtered set in D13 and D30.
+- **Why:** The household sets its equipment on the website, so the library no longer needs to guess it at build time.
+- **Source:** [website spec](superpowers/specs/2026-10-26-program-website-design.md) §2.3a; Thomas, 2026-10-26
+
+### D65: REST refusals carry a stable code and field
+- **Date:** 2026-10-26 · **Status:** active
+- **Decision:** REST refusals the website can meet carry a stable `code`, and a `field` where there is one, beside
+  `detail`. This is additive; `api_version` stays 1. The session routes keep their `{code, message}` detail.
+- **Why:** The website reacts to the code and places the add-on's message at the field. The integration reads the
+  session routes' codes, so they stay.
+- **Source:** [website spec](superpowers/specs/2026-10-26-program-website-design.md) §2.6

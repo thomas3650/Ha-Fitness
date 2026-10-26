@@ -288,7 +288,11 @@ async def test_program_off_put_active_false_or_delete_during_session_is_409(
         deleted = await client.delete(f"{PROGRAMS}/{program_id}")
     for case, response in refused.items():
         assert response.status_code == 409, (case, response.text)
-        assert response.json() == {"detail": "A session for this program is running"}
+        assert response.json() == {
+            "detail": "A session for this program is running",
+            "code": "session_running",
+            "field": None,
+        }
     assert still["program"]["active"] is True
     assert renamed.status_code == 200, renamed.text
     assert other_off.status_code == 200, other_off.text

@@ -25,9 +25,9 @@ The cards are built into the integration: one bundle, released and versioned wit
   [stats spec](superpowers/specs/2026-10-24-stats-design.md); the code is the source for the details.
   - **Database:** SQLite in `<data folder>/ha_fitness.db`, in WAL mode (D4, D5). Alembic migrations ship in the
     package and run to `head` at start. A database at a revision the code doesn't know stops the start.
-  - **Exercise library:** the 721 filtered exercises are built into the package; their GIFs and thumbnails are
-    downloaded into `<data folder>/library/media/` in the background at every start (D13, D30). Custom exercises live
-    in their own table.
+  - **Exercise library:** the whole dataset's 1,324 exercises are built into the package (D64); their GIFs and
+    thumbnails are downloaded into `<data folder>/library/media/` in the background at every start (D13, D30). Custom
+    exercises live in their own table.
   - **People** (at most 2) linked to HA person entities, **programs** (one validated JSON document each, D4) and the
     **change log** of every write.
     - Each person has `added_at`, the UTC time their row was created (migration 0004). A person kept by a people write
@@ -49,6 +49,9 @@ The cards are built into the integration: one bundle, released and versioned wit
     adds the [session routes](#sessions). The stats add `GET /api/v1/stats` ([below](#stats)). The music step adds
     `GET /api/v1/music`, `GET /api/v1/music/speakers` and `GET /api/v1/music/playlists?search=`
     ([below](#music-assistants-speakers-and-playlists)).
+  - **Website routes** ([spec](superpowers/specs/2026-10-26-program-website-design.md) §2, [below](#the-website)).
+    `GET /api/v1/programs/defaults`, `GET` and `PUT /api/v1/setup`, `GET /api/v1/exercises/all` and the `household`
+    flag on the search. The routes are additive, so `api_version` stays 1.
   - **UI-refresh fields** ([spec](superpowers/specs/2026-10-24-ui-refresh-design.md) §3). `GET /api/v1/today` and the
     `today` message carry `week: {done, planned}`: household numbers for the current local week, Monday to Sunday. A
     program (REST and MCP) carries `equipment`, the distinct equipment of its stations without "body weight". A
@@ -62,14 +65,14 @@ The cards are built into the integration: one bundle, released and versioned wit
   - **MCP** at `/mcp` (the tools are step 3 spec §8, plus `get_today` and `skip_training_day` from step 4 spec §3.5,
     the read-only `get_session` and `list_sessions` from step 5 spec §3.5, the read-only `get_stats` from the
     stats spec §4, and the read-only `list_speakers` and `list_playlists` from the
-    [music spec](superpowers/specs/2026-10-24-music-design.md) §4.3). No MCP tool starts or steers a workout.
+    [music spec](superpowers/specs/2026-10-24-music-design.md) §4.3), and the read-only `get_setup` (D63). No MCP tool starts or steers a workout.
   - **The push channel** `GET /api/v1/ws`, a websocket (D6, D35; [below](#the-push-channel)).
   - **Supervisor discovery:** at every start under the Supervisor the add-on posts the service `ha_fitness` with its
     hostname and port 8765 (D28, step 4 spec §3.7). Outside the Supervisor it does nothing. A failure is logged and
     doesn't stop the server.
   - **Dev routes** under `/api/v1/dev/` exist only with `HA_FITNESS_DEV=1`, which only `scripts/develop` sets
     ([`testing.md`](testing.md#fast-loop)).
-  - **The Ingress page** at `/`: a status page, in English or Danish after the browser's language (D27).
+  - **The website** at `/`, the Ingress panel's root ([below](#the-website), D62). It replaces the old status page.
   - **Hot backups** through a consistent snapshot, `<data folder>/backup/snapshot.db` (D31). The snapshot is also
     written at every shutdown (D43).
 - **Integration** (the [step 4 spec](superpowers/specs/2026-10-24-training-today-design.md) §4; the code is the
@@ -136,6 +139,35 @@ The cards are built into the integration: one bundle, released and versioned wit
     - The exact texts and their order are in the [stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.2
       and the language files in [`cards/src/i18n/`](../cards/src/i18n/).
 
+### The website
+
+The site is Lit and TypeScript in `addon/web/` (Vite, Vitest). It has four pages: Programs, Library, Setup and Status.
+Its texts are English only (D62). It is built into the image at `/opt/ha-fitness/web` (`Settings.web_dir`), and its
+icons and theme values are its own. Today it is for administrators only. Its page for Status shows what the old status
+page showed.
+
+- **Programs:** list, create, edit and delete a program. `GET /api/v1/programs/defaults` gives what a field gets when
+  left out. `PUT /api/v1/programs/{id}?if_updated_at=<URL-encoded time>` is opt-in: with it, a program changed since
+  that `updated_at` is refused with `changed_elsewhere`; without it, the write goes through as before.
+  `ProgramOut.created_by` is `claude` for a program made over MCP, `you` for any other client, and null for a program
+  from before the field. It is also in MCP's program outputs.
+- **Library:** `GET /api/v1/exercises/all` gives a summary of every exercise, library and custom, in one call, so the
+  page filters in the browser. The search has `household=true` (REST and MCP): it keeps the exercises with the
+  setup's equipment, and every custom one.
+- **Setup:** `GET /api/v1/setup` and `PUT /api/v1/setup` hold the household's equipment (body weight is always in),
+  the favourite playlists and the default speaker (D63). A `PUT` with equipment no exercise has is refused
+  with `equipment_unknown`. The people are written with `PUT /api/v1/people`. Claude reads the setup with the MCP
+  tool `get_setup`.
+
+#### Refusals
+
+A REST refusal is `{detail, code, field}` (D65), for not found (404), conflict (409), invalid (422) and unavailable
+(503). `field` is null when no field is meant. The codes: `name_taken`, `session_running`, `weekday_needed`,
+`station_unknown`, `station_shared`, `too_many_people`, `person_twice`, `person_unknown`, `ha_unavailable`,
+`changed_elsewhere` and `equipment_unknown`. The session routes keep `{detail: {code, message}}`, because the
+integration reads their codes. FastAPI's own validation 422 keeps its list; the weekday rule's item has `loc`
+`body.weekdays` and `type` `weekday_needed`.
+
 ### Routing in the add-on server
 
 - The MCP app is mounted at `/`, after every other route, and serves `/mcp` itself (D26). So any path no route
@@ -145,7 +177,10 @@ The cards are built into the integration: one bundle, released and versioned wit
 - A wrong method on a known `/api` path also gets that 404, not a 405. The catch-all matches the path and the method,
   and Starlette prefers it over a route that matches only the path.
 - The dev router (only with `HA_FITNESS_DEV=1`) is included right after the `/api` routes, above the catch-all.
-- The Ingress page `GET /` sits after the catch-all and before the MCP mount.
+- `GET /` sits after the catch-all and before the MCP mount. It serves `web_dir/index.html`, read on each request and
+  sent with `Cache-Control: no-cache`, or an English fallback page when the site isn't built.
+- `/web/` serves the site's assets with `StaticFiles`. It is mounted only when `web_dir/web` exists at start, because
+  Starlette checks the folder on the first request.
 
 ## The contract between the add-on and the integration
 

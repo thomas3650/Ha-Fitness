@@ -253,6 +253,18 @@ async def test_resolve_ambiguous_name_needs_id(client: httpx.AsyncClient) -> Non
     assert len({match["id"] for match in matches}) == 2
 
 
+async def test_shared_name_asks_for_the_id(client: httpx.AsyncClient) -> None:
+    """A name two exercises of the whole dataset share is refused until the id is given."""
+    name = "lever chest press"
+    response = await client.post(PROGRAMS, json=_program(stations=[{"exercise": name}]))
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["station"] == 1
+    assert "give the id" in detail["message"]
+    assert {match["name"] for match in detail["close_matches"]} == {name}
+    assert len({match["id"] for match in detail["close_matches"]}) == 2
+
+
 async def test_create_with_unknown_exercise_lists_close_matches(
     client: httpx.AsyncClient,
 ) -> None:

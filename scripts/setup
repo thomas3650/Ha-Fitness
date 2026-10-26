@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install everything the dev loop needs: the root dev environment (Home Assistant, test and lint tools),
-# the add-on server's environment, the cards' node modules, and the git hooks.
+# the add-on server's environment, the cards' and the website's node modules, and the git hooks.
 # `uv sync` removes the runtime packages Home Assistant installs into .venv on its first start
 # (default_config); it reinstalls them on the next start, which is then slower. That is expected.
 set -euo pipefail
@@ -10,4 +10,5 @@ cd "$(dirname "$0")/.."
 uv sync
 uv sync --project addon/server
 npm ci --prefix cards
+npm ci --prefix addon/web
 uv run pre-commit install

@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # The fast loop: dev Home Assistant on http://localhost:8123 with the ha_fitness integration and the fake
-# Music Assistant, the add-on server on http://localhost:8765, and the cards rebuilt on every change.
+# Music Assistant, the add-on server and its website on http://localhost:8765, and the cards and the website
+# rebuilt on every change.
 #
-#   scripts/develop               build the cards once, start the cards watch and the add-on server in the
-#                                 background, then Home Assistant in the foreground
-#   scripts/develop stop          stop all three (from another shell)
+#   scripts/develop               build the cards and the website once, start their watches and the add-on server
+#                                 in the background, then Home Assistant in the foreground
+#   scripts/develop stop          stop them all (from another shell)
 #   scripts/develop --setup-only  prepare config/ and stop (scripts/smoke uses it)
 #
-# config/ and local/ are git-ignored and hold only dev data: never commit them. The watch and the server
+# config/ and local/ are git-ignored and hold only dev data: never commit them. The watches and the server
 # log to local/ and have pidfiles there. Stopping Home Assistant (`pkill -f "hass -c config"`) stops the
-# other two as well (the EXIT trap below).
+# others as well (the EXIT trap below).
 # macOS: started with `&` in a non-interactive shell, hass crashes in Bluetooth. Run this script in a
 # terminal, or with Claude Code's Bash `run_in_background`.
 set -euo pipefail
@@ -19,6 +20,7 @@ root="$(pwd)"
 
 mkdir -p local
 watch_pidfile=local/cards-watch.pid
+web_watch_pidfile=local/web-watch.pid
 server_pidfile=local/addon-server.pid
 
 # Stop the process in a pidfile, if it still runs, and remove the pidfile.
@@ -32,6 +34,7 @@ stop_pidfile() {
 
 stop_background() {
   stop_pidfile "$watch_pidfile"
+  stop_pidfile "$web_watch_pidfile"
   stop_pidfile "$server_pidfile"
 }
 
@@ -66,6 +69,7 @@ if pgrep -fq "hass -c config"; then
 fi
 
 npm run build --prefix cards
+npm run build --prefix addon/web
 
 trap stop_background EXIT
 trap 'exit 130' INT
@@ -81,10 +85,18 @@ echo $! > "$watch_pidfile"
   export HA_FITNESS_DEV=1 HA_FITNESS_TIMEZONE=Europe/Copenhagen
   # The server reads the token file at each call, so a token that dev_onboard.py writes later needs no restart.
   export HA_FITNESS_HA_URL=http://localhost:8123 HA_FITNESS_HA_TOKEN_FILE="$root/local/dev-ha-token"
+  # The website as the watch builds it.
+  export HA_FITNESS_WEB_DIR="$root/addon/web/dist"
   exec addon/server/.venv/bin/python -m ha_fitness_server
 ) >local/addon-server.log 2>&1 &
 echo $! > "$server_pidfile"
-echo "develop: cards watch and add-on server (http://localhost:8765) started; logs in local/."
+# The server mounts the website's assets only if addon/web/dist/web exists when it starts, and the watch's first
+# build empties dist/ before it writes it again. So the watch starts once the server answers (up to 30 s).
+curl -sf -o /dev/null --retry 30 --retry-delay 1 --retry-connrefused --retry-all-errors --max-time 2 \
+  http://localhost:8765/api/v1/health || echo "develop: the add-on server isn't answering; see local/addon-server.log." >&2
+(cd addon/web && exec ./node_modules/.bin/vite build --watch) >local/web-watch.log 2>&1 &
+echo $! > "$web_watch_pidfile"
+echo "develop: cards and website watches and add-on server (http://localhost:8765) started; logs in local/."
 
 # Not exec: the EXIT trap must run when Home Assistant stops.
 uv run hass -c config

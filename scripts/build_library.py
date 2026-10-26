@@ -3,8 +3,9 @@
 Usage: `uv run python scripts/build_library.py [--source <file>]`
 
 Downloads `data/exercises.json` of https://github.com/hasaneyldrm/exercises-dataset at the commit pinned as
-`DATASET_COMMIT` in `addon/server/src/ha_fitness_server/library/__init__.py` (or reads `--source <file>`). Keeps the
-records whose equipment needs no gym, keeps the fields the server uses, and writes
+`DATASET_COMMIT` in `addon/server/src/ha_fitness_server/library/__init__.py`, today
+`7455efae41b330c265e7cd4b78dfa848e7ce5ebd` (or reads `--source <file>`). Keeps every record of the whole dataset (D64),
+keeps the fields the server uses, and writes
 `addon/server/src/ha_fitness_server/library/exercises.json`, sorted by id. The output is deterministic, so a re-run
 gives no diff. Only the data is used; the media is downloaded by the add-on at runtime.
 """
@@ -20,9 +21,6 @@ ROOT = Path(__file__).resolve().parent.parent
 LIBRARY = ROOT / "addon" / "server" / "src" / "ha_fitness_server" / "library"
 OUTPUT = LIBRARY / "exercises.json"
 SOURCE_URL = "https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/{commit}/data/exercises.json"
-EQUIPMENT = frozenset(
-    {"body weight", "band", "resistance band", "dumbbell", "kettlebell"}
-)
 
 
 def dataset_commit() -> str:
@@ -80,7 +78,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     exercises = sorted(
-        (record(raw) for raw in load(args.source) if raw["equipment"] in EQUIPMENT),
+        (record(raw) for raw in load(args.source)),
         key=lambda exercise: exercise["id"],
     )
     OUTPUT.write_text(

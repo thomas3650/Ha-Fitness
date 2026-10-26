@@ -4,8 +4,7 @@
 
 - **Source:** https://github.com/hasaneyldrm/exercises-dataset
 - **Commit:** `7455efae41b330c265e7cd4b78dfa848e7ce5ebd`
-- **File:** `data/exercises.json`, filtered to the equipment `body weight`, `band`, `resistance band`, `dumbbell` and
-  `kettlebell`, with a subset of each record's fields.
+- **File:** `data/exercises.json`, the whole dataset (1,324 exercises), with a subset of each record's fields.
 
 ## Media
 

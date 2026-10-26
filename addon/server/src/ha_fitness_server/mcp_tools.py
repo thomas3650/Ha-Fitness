@@ -29,6 +29,7 @@ from .schemas import (
     SearchLimit,
     SessionHistory,
     SessionView,
+    Setup,
     SpeakerOut,
     Stats,
     TodayView,
@@ -42,7 +43,13 @@ _DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 # Adds, or changes something that can be changed back.
 _ADDS = ToolAnnotations(read_only_hint=False, destructive_hint=False)
 
-_PROGRAM_RULES = """\
+_HOUSEHOLD = """\
+The household: get_setup returns the household's equipment, its favourite playlists and its default speaker. When
+suggesting exercises, prefer the household's equipment: search_exercises with household: true, or check get_setup.
+When asking about music, offer the favourite playlists and the default speaker first."""
+
+_PROGRAM_RULES = (
+    """\
 The program document:
 - name: 1-60 characters, unique ignoring case.
 - weekdays: the days it is due, from mon, tue, wed, thu, fri, sat, sun; each day once. An active program needs at
@@ -63,7 +70,11 @@ The program document:
 Omitted fields get their defaults.
 
 Music: when creating a program, and when updating one that has no music, always ask the user which playlist
-(list_playlists) and which speaker (list_speakers) to use. No music is a valid answer: then leave music out."""
+(list_playlists) and which speaker (list_speakers) to use. No music is a valid answer: then leave music out.
+
+"""
+    + _HOUSEHOLD
+)
 
 _YES_PROGRAM = """\
 Before the yes, show the user a summary of the program: the stations, the rounds, the timings (work, the break
@@ -113,23 +124,42 @@ def build_mcp(holder: ServicesHolder) -> FastMCP:
     """Build the MCP server; its tools read the services from `holder` at call time."""
     mcp = FastMCP("HA Fitness")
 
-    @mcp.tool(annotations=_READ)
+    @mcp.tool(
+        annotations=_READ,
+        description=f"""Search the exercise library and the custom exercises by name.
+
+Every word of `query` must be in the name; names that start with it come first. `equipment` and `body_part` filter by
+an exact value. `limit` is 1-100, default 20. `household: true` keeps only the exercises with the household's
+equipment (body weight always) and every custom exercise. With an empty query and no equipment or body-part filter the
+answer also has `facets`: the equipment, body-part and target values to filter by.
+
+{_HOUSEHOLD}""",
+    )
     def search_exercises(
         query: str,
         equipment: str | None = None,
         body_part: str | None = None,
         limit: SearchLimit = 20,
+        household: bool = False,
     ) -> ExerciseSearch:
-        """Search the exercise library and the custom exercises by name.
+        with _tool_errors():
+            services = holder.get()
+            return services.library.search_with_facets(
+                query,
+                equipment,
+                body_part,
+                limit,
+                services.setup.get().equipment if household else None,
+            )
 
-        Every word of `query` must be in the name; names that start with it come first. `equipment` and `body_part`
-        filter by an exact value. `limit` is 1-100, default 20. With an empty query and no filters the answer also
-        has `facets`: the equipment and body-part values to filter by.
+    @mcp.tool(annotations=_READ)
+    def get_setup() -> Setup:
+        """Return the household's setup: its equipment (body weight always in), favourite playlists and default speaker.
+
+        Prefer exercises with this equipment, and offer these playlists and this speaker first when asking about music.
         """
         with _tool_errors():
-            return holder.get().library.search_with_facets(
-                query, equipment, body_part, limit
-            )
+            return holder.get().setup.get()
 
     @mcp.tool(annotations=_READ)
     def get_exercise(exercise_id: str) -> Exercise:

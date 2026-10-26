@@ -21,6 +21,8 @@ MAX_LATE_DAYS = 6
 OPTIONS_FILE = "options.json"
 UTC_ZONE = ZoneInfo("UTC")
 DEFAULT_DATA_DIR = Path("/data")
+# Where the add-on image holds the built website (website spec §6).
+DEFAULT_WEB_DIR = Path("/opt/ha-fitness/web")
 SUPERVISOR_HA_URL = "http://supervisor/core"
 DEFAULT_MEDIA_BASE_URL = (
     f"https://raw.githubusercontent.com/hasaneyldrm/exercises-dataset/{DATASET_COMMIT}"
@@ -35,7 +37,8 @@ class Settings:
     each call. Without a URL HA is not configured. `timezone` gives the local dates of training days (spec §3.2);
     `supervisor_token` is for the Supervisor's discovery API. The session loop wakes at a phase's deadline, and at
     least every `session_tick_max` seconds (step 5 spec §3.2). A late training day stays open at most `late_days` days
-    after its date (today-ahead spec §2.1.5).
+    after its date (today-ahead spec §2.1.5). `web_dir` holds the built website: `index.html` and the `web/` assets
+    (website spec §6).
     """
 
     port: int
@@ -50,6 +53,7 @@ class Settings:
     session_tick_max: float = DEFAULT_SESSION_TICK_MAX
     supervisor_token: str | None = None
     late_days: int = DEFAULT_LATE_DAYS
+    web_dir: Path = DEFAULT_WEB_DIR
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -76,6 +80,7 @@ class Settings:
             dev=os.environ.get("HA_FITNESS_DEV") == "1",
             supervisor_token=supervisor_token or None,
             late_days=_late_days(data_dir),
+            web_dir=Path(os.environ.get("HA_FITNESS_WEB_DIR") or DEFAULT_WEB_DIR),
         )
 
 

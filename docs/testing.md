@@ -13,13 +13,15 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
 
 1. `scripts/setup` once per clone, and after a dependency change.
 2. `scripts/develop`. Claude starts it with the Bash tool's `run_in_background` ([why](ha-notes.md#macos)). It builds
-   the cards, then starts:
+   the cards and the add-on's website, then starts:
    - the cards watch build (log `local/cards-watch.log`);
-   - the add-on server on `http://localhost:8765`, data in `local/addon-data/` (log `local/addon-server.log`). It
-     reaches the dev HA with the token in `local/dev-ha-token` (D32), which it reads at each call. It runs with
-     `HA_FITNESS_DEV=1` (the dev routes, below) and `HA_FITNESS_TIMEZONE=Europe/Copenhagen` (D36). It takes the
-     `late_days` option from `options.json` in its data folder, or from `HA_FITNESS_LATE_DAYS` in the environment
-     `scripts/develop` is started from (that wins); without either it is 2;
+   - the website's watch build into `addon/web/dist/` (log `local/web-watch.log`);
+   - the add-on server on `http://localhost:8765`, with the website at its root, data in `local/addon-data/` (log
+     `local/addon-server.log`). It serves the website from `addon/web/dist/` (`HA_FITNESS_WEB_DIR`); reload the page
+     after a change. It reaches the dev HA with the token in `local/dev-ha-token` (D32), which it reads at each call.
+     It runs with `HA_FITNESS_DEV=1` (the dev routes, below) and `HA_FITNESS_TIMEZONE=Europe/Copenhagen` (D36). It
+     takes the `late_days` option from `options.json` in its data folder, or from `HA_FITNESS_LATE_DAYS` in the
+     environment `scripts/develop` is started from (that wins); without either it is 2;
    - dev Home Assistant on `http://localhost:8123`, config in `config/` (git-ignored), with
      `config/custom_components/ha_fitness` linked to the repo. `config/custom_components/music_assistant` links the
      [fake Music Assistant](#the-fake-music-assistant).
@@ -108,8 +110,9 @@ Desktop must run.
 5. `scripts/seed --ha-url http://localhost:7123` creates the persons and the sample program there. Then
    `curl -s http://localhost:8765/api/v1/people` lists them: the add-on reaches its HA through the Supervisor.
    `GET /api/v1/library` reaches media state `done`.
-6. Check Ingress in Chrome (below): the add-on's page at `http://localhost:7123/app/local_ha_fitness`, in Danish for
-   the Danish user. Then the integration:
+6. Check Ingress in Chrome (below): the add-on's website at `http://localhost:7123/app/local_ha_fitness`. Its texts
+   are English only (D62), so they stay English for the Danish user. Check that the Programs, Library, Setup and
+   Status pages load, and that `/web/` assets come through the panel. Then the integration:
    - install it ([how](ha-notes.md#the-supervisor): copy `custom_components/ha_fitness`, with the built cards, and
      restart HA);
    - the Discovered card reads "HA Fitness", and setting it up from there creates the entry with no URL to type;
@@ -201,6 +204,10 @@ For every UI change, in the fast loop (and in the full loop before a release):
   `<screen>-<landscape|portrait>.png` (for example `screenshots/2026-10-25-paused-blue/timer-paused-landscape.png`).
   The folder is git-ignored: screenshots show exercise-library pictures, which stay out of the public repo. The PR
   description lists the screens checked and the folder. Screenshots show the dev HA only, never the real one.
+
+For a change to the add-on's website, open it at `http://localhost:8765/` in the fast loop (the site is English only,
+D62, and the panel has no Danish to check). Its pages are Programs, Library, Setup and Status. Screenshots follow the
+same folder rule.
 
 For a card change, open each card's editor as well. Check the Layout tab and the language field.
 

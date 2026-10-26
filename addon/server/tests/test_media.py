@@ -10,7 +10,7 @@ import httpx
 from tests.conftest import MakeApp, dataset_path, fake_media_bytes, running
 
 LIBRARY = "/api/v1/library"
-TOTAL = 1442
+TOTAL = 2648
 TEST_BOUND = 30
 GIF_0001_PATH = "videos/0001-2gPfomN.gif"
 GIF_0001_NAME = "0001-2gPfomN.gif"

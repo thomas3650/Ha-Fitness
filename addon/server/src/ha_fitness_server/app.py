@@ -7,8 +7,9 @@ import logging
 from typing import TypedDict
 
 import anyio
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastmcp.utilities.lifespan import combine_lifespans
 import httpx
 
@@ -18,7 +19,7 @@ from .api.dev import router as dev_router
 from .clock import Clock, SystemClock
 from .db import open_database
 from .ha import HaClient
-from .ingress import render as render_ingress
+from .ingress import render_fallback
 from .library.media import MediaStore
 from .library.service import Library
 from .mcp_tools import build_mcp
@@ -29,6 +30,7 @@ from .push import Hub, Message
 from .services import Services, ServicesHolder
 from .sessions import Sessions
 from .settings import Settings
+from .setup import SetupService
 from .stats import StatsService
 from .training_days import TrainingDays
 
@@ -150,6 +152,7 @@ def create_app(
                 people=people,
                 programs=programs,
                 sessions=sessions,
+                setup=SetupService(engine, library),
                 stats=stats,
                 training_days=training_days,
             )
@@ -210,16 +213,29 @@ def create_app(
         """
         raise HTTPException(status_code=404)
 
+    index = settings.web_dir / "index.html"
+
     @app.api_route(
         "/",
         methods=["GET", "HEAD"],
         response_class=HTMLResponse,
         include_in_schema=False,
     )
-    def ingress_page(request: Request) -> HTMLResponse:
-        """The Ingress page (spec §9); before the MCP mount, which would answer `/` otherwise."""
-        page = render_ingress(holder.get(), request.headers.get("accept-language"))
-        return HTMLResponse(page)
+    def site_page() -> HTMLResponse:
+        """The website's HTML, read on each request so a rebuilt site shows at once (website spec §6).
+
+        Without a built site it is the fallback page. The route is before the MCP mount, which would answer `/`.
+        """
+        try:
+            page = index.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return HTMLResponse(render_fallback())
+        return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
+
+    # Starlette checks the folder on the first request even with `check_dir=False`, so it mounts only when it exists.
+    assets = settings.web_dir / "web"
+    if assets.is_dir():
+        app.mount("/web", StaticFiles(directory=assets), name="web")
 
     # Mounted at the root and last, after every route: the MCP app serves `/mcp` itself, with no redirect (D26).
     app.mount("/", mcp_app)

@@ -62,12 +62,23 @@ class People:
         `Unavailable` when HA can't be asked.
         """
         if len(people) > MAX_PEOPLE:
-            raise Invalid(f"At most {MAX_PEOPLE} people, got {len(people)}")
+            raise Invalid(
+                f"At most {MAX_PEOPLE} people, got {len(people)}",
+                code="too_many_people",
+                field="people",
+            )
         counts = Counter(person.person_entity_id for person in people)
         shared = [entity_id for entity_id, count in counts.items() if count > 1]
         if shared:
-            raise Invalid(f"'{shared[0]}' is given for more than one person")
-        ha_persons = self._ha.persons()
+            raise Invalid(
+                f"'{shared[0]}' is given for more than one person",
+                code="person_twice",
+                field="people",
+            )
+        try:
+            ha_persons = self._ha.persons()
+        except Unavailable as error:
+            raise Unavailable(str(error), code="ha_unavailable") from error
         known = {ha_person.entity_id for ha_person in ha_persons}
         for person in people:
             if person.person_entity_id not in known:
@@ -78,7 +89,9 @@ class People:
                         "ha_persons": [
                             ha_person.model_dump() for ha_person in ha_persons
                         ],
-                    }
+                    },
+                    code="person_unknown",
+                    field="people",
                 )
         with self._training_days.lock:
             stored = self._write(people, counts, client)

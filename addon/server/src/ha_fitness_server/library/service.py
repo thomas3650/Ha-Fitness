@@ -4,6 +4,7 @@ Library exercises come from `exercises.json`, loaded once; custom exercises live
 with `str.casefold()`.
 """
 
+from collections.abc import Collection
 import difflib
 from importlib import resources
 import json
@@ -82,6 +83,11 @@ def _custom_exercise(row: CustomExercise) -> Exercise:
     )
 
 
+def _summary(exercise: Exercise) -> ExerciseSummary:
+    """Return an exercise's summary fields."""
+    return ExerciseSummary.model_validate(exercise.model_dump(include=_SUMMARY_FIELDS))
+
+
 def _sort_key(exercise: Exercise) -> tuple[str, str]:
     """Order by name, then id, so a shared name always sorts the same way."""
     return (exercise.name.casefold(), exercise.id)
@@ -114,14 +120,22 @@ class Library:
         """Return library and custom exercises, sorted by name."""
         return sorted([*self._library, *self._customs()], key=_sort_key)
 
+    def summaries(self) -> list[ExerciseSummary]:
+        """Return every library and custom exercise as a summary, sorted by name."""
+        return [_summary(exercise) for exercise in self._all()]
+
     def search(
         self,
         query: str = "",
         equipment: str | None = None,
         body_part: str | None = None,
         limit: int = 20,
+        household: Collection[str] | None = None,
     ) -> list[ExerciseSummary]:
-        """Return the exercises whose name has every word of `query`; names that start with it first."""
+        """Return the exercises whose name has every word of `query`; names that start with it first.
+
+        With `household` (the setup's equipment) only exercises with that equipment are kept, and every custom one.
+        """
         needle = query.strip().casefold()
         words = needle.split()
         found = [
@@ -130,13 +144,13 @@ class Library:
             if all(word in exercise.name.casefold() for word in words)
             and (equipment is None or exercise.equipment == equipment)
             and (body_part is None or exercise.body_part == body_part)
+            and (
+                household is None or exercise.custom or exercise.equipment in household
+            )
         ]
         # A stable sort keeps the name order within each group.
         found.sort(key=lambda exercise: not exercise.name.casefold().startswith(needle))
-        return [
-            ExerciseSummary.model_validate(exercise.model_dump(include=_SUMMARY_FIELDS))
-            for exercise in found[:limit]
-        ]
+        return [_summary(exercise) for exercise in found[:limit]]
 
     def search_with_facets(
         self,
@@ -144,19 +158,24 @@ class Library:
         equipment: str | None = None,
         body_part: str | None = None,
         limit: int = 20,
+        household: Collection[str] | None = None,
     ) -> ExerciseSearch:
-        """Return `search`'s results, with the facets when the query and the filters are empty."""
-        results = self.search(query, equipment, body_part, limit)
+        """Return `search`'s results, with the facets when the query and the filters are empty.
+
+        The facets list every value, whether or not `household` is given.
+        """
+        results = self.search(query, equipment, body_part, limit, household)
         empty = not query.strip() and equipment is None and body_part is None
         facets = Facets.model_validate(self.facets()) if empty else None
         return ExerciseSearch(results=results, facets=facets)
 
     def facets(self) -> dict[str, list[str]]:
-        """Return the equipment and body-part values to filter by, sorted."""
+        """Return the equipment, body-part and target values to filter by, sorted."""
         exercises = [*self._library, *self._customs()]
         return {
             "equipment": sorted({e.equipment for e in exercises if e.equipment}),
             "body_part": sorted({e.body_part for e in exercises if e.body_part}),
+            "target": sorted({e.target for e in exercises if e.target}),
         }
 
     def get(self, exercise_id: str) -> Exercise:
@@ -178,7 +197,8 @@ class Library:
     def resolve(self, ref: str, station: int) -> Exercise:
         """Return the exercise a station names by id or by a name only one exercise has.
 
-        Otherwise raise `Invalid` with the 1-based `station` and the close matches (spec §3.5).
+        Otherwise raise `Invalid` with the 1-based `station` and the close matches (spec §3.5); its code is
+        `station_shared` or `station_unknown` and its field `stations.<index from 0>` (D65).
         """
         by_id = self._by_id.get(ref) or self._get_custom(ref)
         if by_id is not None:
@@ -213,13 +233,17 @@ class Library:
                     {"id": exercise.id, "name": exercise.name}
                     for exercise in matches[:MAX_CLOSE_MATCHES]
                 ],
-            }
+            },
+            code="station_shared" if named else "station_unknown",
+            field=f"stations.{station - 1}",
         )
 
     def add_custom(self, new: NewCustomExercise, client: str) -> Exercise:
         """Store a custom exercise as `custom-<n>` and log it; raise `Conflict` if the name is taken."""
         name_key = new.name.casefold()
-        taken = Conflict(f"Exercise name '{new.name}' is taken")
+        taken = Conflict(
+            f"Exercise name '{new.name}' is taken", code="name_taken", field="name"
+        )
         if name_key in self._library_names:
             raise taken
         try:

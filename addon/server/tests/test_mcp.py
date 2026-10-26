@@ -41,6 +41,7 @@ READ_TOOLS = {
     "get_session",
     "list_sessions",
     "get_stats",
+    "get_setup",
 }
 DESTRUCTIVE_TOOLS = {
     "update_program",
@@ -84,11 +85,11 @@ def _program(name: str = "Onsdag", **fields: Any) -> dict[str, Any]:
 
 
 async def test_tool_names_are_exactly_the_spec_list(make_app: MakeApp) -> None:
-    """The server has the twelve tools of spec §8, step 4's two, step 5's two, step 6's one, step 7's two, and no others."""
+    """The server has the twelve tools of spec §8, step 4's two, step 5's two, step 6's one, step 7's two, the website's `get_setup`, and no others."""
     async with mcp_client(make_app()) as session:
         names = {tool.name for tool in await session.list_tools()}
     assert names == READ_TOOLS | DESTRUCTIVE_TOOLS | ADDING_TOOLS
-    assert len(names) == 19
+    assert len(names) == 20
 
 
 async def test_annotations(make_app: MakeApp) -> None:
@@ -356,6 +357,78 @@ async def test_search_exercises_and_facets_via_mcp(make_app: MakeApp) -> None:
     assert filtered["facets"] is None
     assert len(filtered["results"]) == 3
     assert all(r["equipment"] == "body weight" for r in filtered["results"])
+
+
+async def test_get_setup_returns_the_stored_setup(make_app: MakeApp) -> None:
+    """`get_setup` answers what `GET /setup` does: the defaults first, then the stored setup."""
+    setup = {
+        "equipment": ["dumbbell", "kettlebell"],
+        "favourite_playlists": [{"uri": "library://playlist/1", "name": "Morgen"}],
+        "default_speaker": "media_player.kitchen",
+    }
+    app = make_app()
+    async with (
+        running(app) as http_client,
+        fastmcp.Client(
+            app.state.mcp, client_info=Implementation(name="claude-code", version="1")
+        ) as session,
+    ):
+        before = await call(session, "get_setup")
+        stored = await http_client.put("/api/v1/setup", json=setup)
+        assert stored.status_code == 200, stored.text
+        after = await call(session, "get_setup")
+        rest = (await http_client.get("/api/v1/setup")).json()
+    assert before == {
+        "equipment": ["body weight"],
+        "favourite_playlists": [],
+        "default_speaker": None,
+    }
+    assert after == rest
+    assert after["equipment"] == ["body weight", "dumbbell", "kettlebell"]
+    assert after["favourite_playlists"] == setup["favourite_playlists"]
+    assert after["default_speaker"] == "media_player.kitchen"
+
+
+async def test_search_exercises_household_matches_rest(make_app: MakeApp) -> None:
+    """`search_exercises` with `household` answers what the REST search does, and leaves out other equipment."""
+    app = make_app()
+    async with (
+        running(app) as http_client,
+        fastmcp.Client(
+            app.state.mcp, client_info=Implementation(name="claude-code", version="1")
+        ) as session,
+    ):
+        stored = await http_client.put(
+            "/api/v1/setup", json={"equipment": ["dumbbell"]}
+        )
+        assert stored.status_code == 200, stored.text
+        household = await call(
+            session, "search_exercises", query="fly", household=True, limit=100
+        )
+        rest = (
+            await http_client.get(
+                "/api/v1/exercises",
+                params={"q": "fly", "household": "true", "limit": 100},
+            )
+        ).json()
+        everything = await call(session, "search_exercises", query="fly", limit=100)
+    assert household == rest
+    assert household["results"]
+    assert {r["equipment"] for r in household["results"]} <= {"body weight", "dumbbell"}
+    assert len(everything["results"]) > len(household["results"])
+    assert "cable" in {r["equipment"] for r in everything["results"]}
+
+
+async def test_descriptions_point_to_the_household_setup(make_app: MakeApp) -> None:
+    """The program tools and the search tell Claude to use the household's equipment and favourites."""
+    async with mcp_client(make_app()) as session:
+        tools = {tool.name: tool for tool in await session.list_tools()}
+    for name in ("create_program", "update_program", "search_exercises"):
+        description = tools[name].description or ""
+        assert "get_setup" in description, name
+        assert "household" in description, name
+        assert "favourite playlists" in description, name
+        assert "default speaker" in description, name
 
 
 async def test_get_and_add_custom_exercise_via_mcp(make_app: MakeApp) -> None:

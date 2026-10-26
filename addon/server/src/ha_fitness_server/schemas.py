@@ -2,7 +2,7 @@
 
 import datetime as dt
 from datetime import UTC, datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -10,9 +10,10 @@ from pydantic import (
     Field,
     PlainSerializer,
     StringConstraints,
+    ValidationInfo,
     field_validator,
-    model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 
 class ExerciseSummary(BaseModel):
@@ -39,10 +40,15 @@ class Facets(BaseModel):
 
     equipment: list[str]
     body_part: list[str]
+    target: list[str]
 
 
 class ExerciseSearch(BaseModel):
-    """A search result; `facets` only when the query and the filters are empty."""
+    """A search result; `facets` only when the query and the filters are empty.
+
+    `household` doesn't count as a filter here: a household search with no query still gets the facets, and they
+    list every value.
+    """
 
     results: list[ExerciseSummary]
     facets: Facets | None
@@ -202,6 +208,54 @@ class Music(BaseModel):
     shuffle: bool = False
 
 
+# Body weight needs nothing, so a household always has it (website spec §2.4).
+BODY_WEIGHT = "body weight"
+MAX_FAVOURITE_PLAYLISTS = 20
+
+
+class FavouritePlaylist(BaseModel):
+    """A favourite playlist: what is played and the name the screens show."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    uri: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]
+
+
+class Setup(BaseModel):
+    """The household setup (website spec §2.4, D63); `equipment` is checked against the exercises on write."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    equipment: list[str] = [BODY_WEIGHT]
+    favourite_playlists: Annotated[
+        list[FavouritePlaylist], Field(max_length=MAX_FAVOURITE_PLAYLISTS)
+    ] = []
+    default_speaker: (
+        Annotated[str, StringConstraints(pattern=SPEAKER_PATTERN)] | None
+    ) = None
+
+    @field_validator("equipment")
+    @classmethod
+    def _with_body_weight(cls, equipment: list[str]) -> list[str]:
+        """Return the equipment sorted, each once, body weight always in."""
+        return sorted({*equipment, BODY_WEIGHT})
+
+    @field_validator("favourite_playlists")
+    @classmethod
+    def _unique_uris(
+        cls, playlists: list[FavouritePlaylist]
+    ) -> list[FavouritePlaylist]:
+        """Refuse a playlist given twice."""
+        if len({playlist.uri for playlist in playlists}) != len(playlists):
+            raise ValueError("a playlist is given more than once")
+        return playlists
+
+
 class ProgramDocument(BaseModel):
     """One program, as REST, MCP, storage and export use it (spec §5.1); defaults are filled in on write."""
 
@@ -222,18 +276,22 @@ class ProgramDocument(BaseModel):
 
     @field_validator("weekdays")
     @classmethod
-    def _week_order(cls, weekdays: list[Weekday]) -> list[Weekday]:
-        """Refuse a weekday given twice; keep the rest in week order."""
+    def _week_order(
+        cls, weekdays: list[Weekday], info: ValidationInfo
+    ) -> list[Weekday]:
+        """Refuse a weekday given twice, and none for an active program; keep the rest in week order.
+
+        The weekday rule sits here, not on the model, so its error is at `weekdays` (D65). `active` is declared
+        first; when it is itself invalid it is missing here and has its own error.
+        """
         if len(set(weekdays)) != len(weekdays):
             raise ValueError("a weekday is given more than once")
+        if info.data.get("active") and not weekdays:
+            raise PydanticCustomError(
+                "weekday_needed",
+                "Value error, an active program needs at least one weekday",
+            )
         return sorted(weekdays, key=WEEK_ORDER.index)
-
-    @model_validator(mode="after")
-    def _active_needs_a_weekday(self) -> Self:
-        """An active program needs at least one weekday."""
-        if self.active and not self.weekdays:
-            raise ValueError("an active program needs at least one weekday")
-        return self
 
 
 class ProgramActive(BaseModel):
@@ -242,6 +300,10 @@ class ProgramActive(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     active: bool
+
+
+# Who created a program (website spec §2.2.2).
+type CreatedBy = Literal["claude", "you"]
 
 
 class ProgramOut(BaseModel):
@@ -254,6 +316,24 @@ class ProgramOut(BaseModel):
     total_seconds: int
     created_at: datetime
     updated_at: datetime
+    # `claude` for an MCP create, `you` for any other; null for an old program the change log can't place.
+    created_by: CreatedBy | None
+
+
+def _document_default(field: str) -> int:
+    """Return the default `ProgramDocument` gives a field it is written without."""
+    default: int = ProgramDocument.model_fields[field].default
+    return default
+
+
+class ProgramDefaults(BaseModel):
+    """Body of `GET /api/v1/programs/defaults`: what a program gets for each field it leaves out."""
+
+    rounds: int = _document_default("rounds")
+    work_seconds: int = _document_default("work_seconds")
+    switch_seconds: int = _document_default("switch_seconds")
+    round_rest_seconds: int = _document_default("round_rest_seconds")
+    countdown_seconds: int = _document_default("countdown_seconds")
 
 
 class ProgramSummary(BaseModel):
