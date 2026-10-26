@@ -52,3 +52,10 @@ table and drops the old one. With foreign keys on, that drop fires the actions o
 `sessions` deletes every `session_participants` row on cascade, `training_days` sets `sessions.training_day_id` to
 null, and `programs` sets `training_days.program_id` to null. Drop a column with a native
 `ALTER TABLE … DROP COLUMN` instead (SQLite 3.35 or later; the add-on image has 3.53).
+
+## 2026-10-26: The website's node image is bumped by hand
+
+The add-on's `Dockerfile` builds the website in a `node:24-alpine` stage, pinned to the multi-arch index digest.
+Dependabot doesn't watch the Dockerfile, so bump the pin by hand: take the new digest from
+`docker buildx imagetools inspect node:24-alpine`. The website (`addon/web/package.json`) holds TypeScript at 6.0.x
+too, for the same reason as the cards.

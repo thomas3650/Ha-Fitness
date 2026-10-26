@@ -13,13 +13,15 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
 
 1. `scripts/setup` once per clone, and after a dependency change.
 2. `scripts/develop`. Claude starts it with the Bash tool's `run_in_background` ([why](ha-notes.md#macos)). It builds
-   the cards, then starts:
+   the cards and the add-on's website, then starts:
    - the cards watch build (log `local/cards-watch.log`);
-   - the add-on server on `http://localhost:8765`, data in `local/addon-data/` (log `local/addon-server.log`). It
-     reaches the dev HA with the token in `local/dev-ha-token` (D32), which it reads at each call. It runs with
-     `HA_FITNESS_DEV=1` (the dev routes, below) and `HA_FITNESS_TIMEZONE=Europe/Copenhagen` (D36). It takes the
-     `late_days` option from `options.json` in its data folder, or from `HA_FITNESS_LATE_DAYS` in the environment
-     `scripts/develop` is started from (that wins); without either it is 2;
+   - the website's watch build into `addon/web/dist/` (log `local/web-watch.log`);
+   - the add-on server on `http://localhost:8765`, with the website at its root, data in `local/addon-data/` (log
+     `local/addon-server.log`). It serves the website from `addon/web/dist/` (`HA_FITNESS_WEB_DIR`); reload the page
+     after a change. It reaches the dev HA with the token in `local/dev-ha-token` (D32), which it reads at each call.
+     It runs with `HA_FITNESS_DEV=1` (the dev routes, below) and `HA_FITNESS_TIMEZONE=Europe/Copenhagen` (D36). It
+     takes the `late_days` option from `options.json` in its data folder, or from `HA_FITNESS_LATE_DAYS` in the
+     environment `scripts/develop` is started from (that wins); without either it is 2;
    - dev Home Assistant on `http://localhost:8123`, config in `config/` (git-ignored), with
      `config/custom_components/ha_fitness` linked to the repo. `config/custom_components/music_assistant` links the
      [fake Music Assistant](#the-fake-music-assistant).

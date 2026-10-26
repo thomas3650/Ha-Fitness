@@ -3,3 +3,5 @@ server/.venv
 **/.mypy_cache
 **/.pytest_cache
 **/.ruff_cache
+web/node_modules
+web/dist

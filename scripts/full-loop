@@ -90,7 +90,7 @@ install() {
   mkdir -p "$stage"
   rsync -a --delete \
     --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude .mypy_cache \
-    --exclude .ruff_cache --exclude .coverage --exclude .DS_Store \
+    --exclude .ruff_cache --exclude .coverage --exclude .DS_Store --exclude node_modules --exclude dist \
     addon/ "$stage/ha_fitness/"
   # Without `image:` the Supervisor builds the app from the staged Dockerfile instead of pulling it.
   sed -i.bak '/^image:/d' "$stage/ha_fitness/config.yaml"

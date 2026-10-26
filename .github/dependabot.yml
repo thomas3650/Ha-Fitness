@@ -28,7 +28,9 @@ updates:
       - dependency-name: home-assistant-frontend
       - dependency-name: homeassistant
   - package-ecosystem: npm
-    directory: /cards
+    directories:
+      - /cards
+      - /addon/web
     commit-message:
       prefix: chore
       include: scope
