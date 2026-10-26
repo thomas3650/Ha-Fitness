@@ -1,4 +1,4 @@
-import { mdiBookshelf, mdiFormatListBulleted, mdiHeartPulse, mdiTuneVariant } from "@mdi/js";
+import { mdiBookshelf, mdiDumbbell, mdiFormatListBulleted, mdiHeartPulse, mdiTuneVariant } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 
@@ -62,7 +62,7 @@ function menuPage(route: Route): MenuPage {
     : route.page;
 }
 
-/** The site's shell: the menu with the four pages, and the page of the current hash route. */
+/** The site's shell: the top bar with the four pages, and the page of the current hash route. */
 export class AppShell extends LitElement {
   static override properties = {
     route: { state: true },
@@ -110,7 +110,7 @@ export class AppShell extends LitElement {
     void this.loadVersion();
   }
 
-  /** The add-on's version for the foot of the menu (W1); without an answer the foot stays empty. */
+  /** The add-on's version for the bar (W1); without an answer the version stays empty. */
   private async loadVersion(): Promise<void> {
     try {
       this.version = (await this.api.health()).version;
@@ -128,6 +128,7 @@ export class AppShell extends LitElement {
     const current = menuPage(this.route);
     return html`
       <nav class="menu" aria-label=${t("menu.label")}>
+        <span class="brand">${icon(mdiDumbbell)}<span>${t("title")}</span></span>
         <ul>
           ${MENU.map(
             (entry) => html`<li>
@@ -177,6 +178,7 @@ export class AppShell extends LitElement {
     css`
       :host {
         display: flex;
+        flex-direction: column;
         min-height: 100vh;
         background: var(--hf-background);
         color: var(--hf-text);
@@ -185,30 +187,50 @@ export class AppShell extends LitElement {
       }
       .menu {
         display: flex;
-        flex-direction: column;
-        flex: 0 0 210px;
-        padding: 16px 8px;
-        border-right: 1px solid var(--hf-border);
+        align-items: stretch;
+        gap: 8px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--hf-border);
         background: var(--hf-card);
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .menu .brand {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 8px;
+        padding-right: 16px;
+        font-size: 16px;
+        font-weight: 500;
+      }
+      .menu .brand .icon {
+        color: var(--hf-primary);
       }
       .menu ul {
-        flex: 1;
+        display: flex;
+        flex: 1 0 auto;
+        gap: 4px;
         list-style: none;
         margin: 0;
         padding: 0;
       }
-      .version {
+      .menu .version {
+        flex: none;
+        align-self: center;
         margin: 0;
-        padding: 12px;
+        padding: 0 0 0 12px;
         color: var(--hf-text-secondary);
         font-size: 12px;
       }
       .menu a {
         display: flex;
         align-items: center;
-        gap: 16px;
-        padding: 10px 12px;
-        border-radius: 8px;
+        gap: 8px;
+        height: 100%;
+        box-sizing: border-box;
+        padding: 14px 12px 12px;
+        border-bottom: 2px solid transparent;
         color: var(--hf-text);
         font-weight: 500;
         text-decoration: none;
@@ -217,7 +239,7 @@ export class AppShell extends LitElement {
         background: var(--hf-background);
       }
       .menu a[aria-current="page"] {
-        background: var(--hf-primary-light);
+        border-bottom-color: var(--hf-primary);
         color: var(--hf-primary);
       }
       .icon {

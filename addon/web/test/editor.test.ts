@@ -126,6 +126,36 @@ function panelNames(root: HTMLElement): string[] {
     .map((item) => text(within(item).getAllByRole("button")[0]));
 }
 
+/** A dropdown (the equipment filter or a multi-select): the group named `name`, its parts in its own shadow root. */
+function dropdown(scope: HTMLElement, name: string): HTMLElement {
+  return getByRole(scope, "group", { name }).shadowRoot as unknown as HTMLElement;
+}
+
+/** Open a dropdown's list and return it. */
+async function openList(scope: HTMLElement, name: string): Promise<HTMLElement> {
+  const parts = dropdown(scope, name);
+  fireEvent.click(getByRole(parts, "combobox", { name }));
+  return findByRole(parts, "listbox", { name });
+}
+
+/** Choose an option of a dropdown by its accessible name. */
+async function choose(scope: HTMLElement, name: string, option: string | RegExp): Promise<void> {
+  fireEvent.click(within(await openList(scope, name)).getByRole("option", { name: option }));
+}
+
+/** A dropdown's options by their accessible names. */
+async function optionNames(scope: HTMLElement, name: string): Promise<string[]> {
+  return within(await openList(scope, name))
+    .getAllByRole("option")
+    .map((option) => option.getAttribute("aria-label") ?? text(option));
+}
+
+/** A dropdown's tags. */
+function tags(scope: HTMLElement, name: string): string[] {
+  const list = getByRole(dropdown(scope, name), "list", { name: en.multi_select.chosen.replace("{label}", name) });
+  return within(list).queryAllByRole("listitem").map(text);
+}
+
 function rename(root: HTMLElement, name: string): void {
   fireEvent.input(field(root, "textbox", en.editor.name), { target: { value: name } });
 }
@@ -456,7 +486,7 @@ test("a refused station shows the add-on's message at that station", async () =>
 
 // The library panel and the details.
 
-test("the panel shows the household's exercises by default, and Show all shows the rest", async () => {
+test("the panel starts on My equipment: the household's exercises and every custom one; All equipment shows the rest", async () => {
   const fake = newFake({
     programs: [fullBody()],
     setup: { equipment: ["dumbbell"], favourite_playlists: [], default_speaker: null },
@@ -468,61 +498,91 @@ test("the panel shows the household's exercises by default, and Show all shows t
   expect(names).toContain("towel slide");
   expect(names).toContain("plank");
   expect(names).not.toContain("cable row");
+  expect(text(panel(root))).toContain("6 exercises");
+  expect(tags(panel(root), en.picker.equipment)).toEqual([en.equipment_filter.mine]);
 
-  fireEvent.click(within(panel(root)).getByRole("checkbox", { name: en.picker.show_all }));
+  await choose(panel(root), en.picker.equipment, /^All equipment/);
   await vi.waitFor(() => expect(panelNames(root)).toContain("cable row"));
+  expect(panelNames(root)).toHaveLength(EXERCISES.length);
+  expect(text(panel(root))).toContain(`${EXERCISES.length} exercises`);
 });
 
-test("the panel searches by name and filters", async () => {
+test("picking a kind shows its exercises even when it isn't at home, and a custom exercise only when it matches", async () => {
+  const swing = summary("0008", "kettlebell swing", "kettlebell", "upper legs", "glutes");
+  const fake = newFake({ programs: [fullBody()], exercises: [...EXERCISES, swing] });
+  const root = await openEditor(fake, "#/programs/1");
+  await vi.waitFor(() => expect(panelNames(root)).toContain("push-up"));
+  expect(panelNames(root)).not.toContain("kettlebell swing");
+
+  await choose(panel(root), en.picker.equipment, "kettlebell, not at home");
+  await vi.waitFor(() => expect(panelNames(root)).toEqual(["kettlebell swing"]));
+  expect(text(panel(root))).toContain("1 exercise");
+
+  await choose(panel(root), en.picker.equipment, "dumbbell");
+  await vi.waitFor(() => expect(panelNames(root)).toEqual(["goblet squat", "dumbbell row", "kettlebell swing"]));
+  expect(tags(panel(root), en.picker.equipment)).toEqual(["dumbbell", "kettlebell"]);
+
+  await choose(panel(root), en.picker.equipment, /^All equipment/);
+  await vi.waitFor(() => expect(panelNames(root)).toHaveLength(EXERCISES.length + 1));
+  expect(panelNames(root)).toContain("towel slide");
+});
+
+test("the panel searches by name and filters by body part; it has no target filter and no native selects", async () => {
   const fake = newFake({ programs: [fullBody()] });
   const root = await openEditor(fake, "#/programs/1");
   await vi.waitFor(() => expect(panelNames(root)).toContain("squat"));
-  fireEvent.click(within(panel(root)).getByRole("checkbox", { name: en.picker.show_all }));
+  expect(within(panel(root)).queryByRole("group", { name: en.library.target })).toBeNull();
+  expect(within(panel(root)).queryByRole("checkbox")).toBeNull();
+  expect(within(panel(root)).queryAllByRole("combobox")).toEqual([]);
 
   fireEvent.input(within(panel(root)).getByRole("searchbox", { name: en.picker.search }), {
     target: { value: "squat" },
   });
   await vi.waitFor(() => expect(panelNames(root)).toEqual(["squat", "goblet squat"]));
-
   fireEvent.input(within(panel(root)).getByRole("searchbox", { name: en.picker.search }), {
     target: { value: "" },
   });
-  fireEvent.change(within(panel(root)).getByRole("combobox", { name: en.picker.body_part }), {
-    target: { value: "back" },
-  });
-  await vi.waitFor(() => expect(panelNames(root)).toEqual(["cable row", "dumbbell row"]));
 
-  fireEvent.change(within(panel(root)).getByRole("combobox", { name: en.picker.equipment }), {
-    target: { value: "cable" },
-  });
-  await vi.waitFor(() => expect(panelNames(root)).toEqual(["cable row"]));
+  await choose(panel(root), en.picker.body_part, "back");
+  // My equipment is on: the cable row isn't the household's.
+  await vi.waitFor(() => expect(panelNames(root)).toEqual(["dumbbell row"]));
+  await choose(panel(root), en.picker.body_part, "waist");
+  await vi.waitFor(() => expect(panelNames(root)).toEqual(["dumbbell row", "plank"]));
+  expect(text(panel(root))).toContain("2 exercises");
 
-  fireEvent.change(within(panel(root)).getByRole("combobox", { name: en.picker.body_part }), {
-    target: { value: "" },
-  });
-  fireEvent.change(within(panel(root)).getByRole("combobox", { name: en.picker.equipment }), {
-    target: { value: "" },
-  });
-  fireEvent.change(within(panel(root)).getByRole("combobox", { name: en.picker.target }), {
-    target: { value: "quads" },
-  });
-  await vi.waitFor(() => expect(panelNames(root)).toEqual(["squat", "goblet squat"]));
+  await choose(panel(root), en.picker.equipment, /^All equipment/);
+  await vi.waitFor(() => expect(panelNames(root)).toEqual(["cable row", "dumbbell row", "plank"]));
 });
 
-test("✓ marks the exercises already in the program, and + still adds one again", async () => {
+test("with a search typed and a body part chosen, the panel's mode lines still count the whole library", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  const root = await openEditor(fake, "#/programs/1");
+  await vi.waitFor(() => expect(panelNames(root)).toContain("squat"));
+
+  fireEvent.input(within(panel(root)).getByRole("searchbox", { name: en.picker.search }), {
+    target: { value: "row" },
+  });
+  await choose(panel(root), en.picker.body_part, "back");
+  await vi.waitFor(() => expect(panelNames(root)).toEqual(["dumbbell row"]));
+
+  expect((await optionNames(panel(root), en.picker.equipment)).slice(0, 2)).toEqual([
+    "My equipment, body weight, dumbbell · 6",
+    `All equipment, ${EXERCISES.length}`,
+  ]);
+});
+
+test("an exercise already in the program is added again with its own button, and it adds a station", async () => {
   const fake = newFake({ programs: [fullBody()] });
   const root = await openEditor(fake, "#/programs/1");
   await vi.waitFor(() => expect(panelNames(root)).toContain("push-up"));
 
   const list = within(panel(root)).getByRole("list", { name: en.picker.results });
-  const itemOf = (name: string) =>
-    within(list)
-      .getAllByRole("listitem")
-      .find((item) => text(within(item).getAllByRole("button")[0]) === name);
-  expect(within(itemOf("push-up")!).getByRole("img", { name: en.picker.in_program })).toBeTruthy();
-  expect(within(itemOf("goblet squat")!).queryByRole("img", { name: en.picker.in_program })).toBeNull();
+  expect(within(list).queryByRole("button", { name: "Add push-up" })).toBeNull();
+  expect(within(list).getByRole("button", { name: "Add goblet squat" })).toBeTruthy();
+  // One button per row: the tick is the add button, not a second mark beside it.
+  expect(within(list).queryAllByRole("img")).toEqual([]);
 
-  fireEvent.click(within(itemOf("push-up")!).getByRole("button", { name: "Add push-up" }));
+  fireEvent.click(within(list).getByRole("button", { name: "Add push-up again (in the program)" }));
   await vi.waitFor(() => expect(stationNames(root)).toEqual(["push-up", "squat", "plank", "push-up"]));
   await save(root, fake);
   expect((lastWrite(fake).body as ProgramDocument).stations).toEqual([
@@ -531,6 +591,35 @@ test("✓ marks the exercises already in the program, and + still adds one again
     { exercise: "0006" },
     { exercise: "0001" },
   ]);
+});
+
+test("a failed setup read shows at the top of the panel; My equipment is then body weight and the custom exercises", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  fake.answer("GET", "api/v1/setup", 503, { detail: "The setup can't be read", code: "", field: null });
+  const root = await openEditor(fake, "#/programs/1");
+
+  await vi.waitFor(() => expect(panelNames(root)).toContain("push-up"));
+  expect(text(panel(root))).toContain("The setup can't be read");
+  expect(text(panel(root))).toContain(en.picker.setup_note);
+  expect(panelNames(root)).toContain("towel slide");
+  expect(panelNames(root)).not.toContain("goblet squat");
+  const names = await optionNames(panel(root), en.picker.equipment);
+  expect(names).toContain("My equipment, body weight · 4");
+  expect(names).toContain("dumbbell, not at home");
+  expect(names).toContain("body weight");
+});
+
+test("the panel draws at most 100 exercises and says how to narrow the list", async () => {
+  const many = Array.from({ length: 120 }, (_, index) => {
+    const number = String(index).padStart(3, "0");
+    return summary(`9${number}`, `drill ${number}`, "body weight", "chest", "pectorals");
+  });
+  const fake = newFake({ programs: [fullBody()], exercises: many });
+  const root = await openEditor(fake, "#/programs/1");
+
+  await vi.waitFor(() => expect(panelNames(root)).toHaveLength(100));
+  expect(text(panel(root))).toContain("Showing 100 of 120. Search to narrow the list.");
+  expect(text(panel(root))).toContain("120 exercises");
 });
 
 test("the details dialog adds an exercise that is already in the program", async () => {
@@ -608,8 +697,20 @@ test("the summary says the number of exercises, the add-on's total time and the 
   const root = await openEditor(fake, "#/programs/1");
 
   expect(await within(root).findByText("5 exercises")).toBeTruthy();
-  expect(within(root).getByText("23 min")).toBeTruthy();
+  expect(within(root).getByText("23 min in all · 4 rounds × 5 exercises")).toBeTruthy();
   expect(within(root).getByText("Equipment: dumbbell, cable")).toBeTruthy();
+});
+
+test("the summary names a band once, whichever of its two names the exercises use", async () => {
+  const pull = summary("0010", "band pull apart", "band", "shoulders", "delts");
+  const curl = summary("0011", "resistance band curl", "resistance band", "upper arms", "biceps");
+  const fake = newFake({
+    exercises: [...EXERCISES, pull, curl],
+    programs: [fullBody({ stations: [{ exercise: "0010" }, { exercise: "0003" }, { exercise: "0011" }] })],
+  });
+  const root = await openEditor(fake, "#/programs/1");
+
+  expect(await within(root).findByText("Equipment: band, dumbbell")).toBeTruthy();
 });
 
 // Unsaved changes.
@@ -794,7 +895,8 @@ test("a failed setup read says so, and the editor still works", async () => {
   fake.answer("GET", "api/v1/setup", 503, { detail: "The setup can't be read", code: "", field: null });
   const root = await openEditor(fake, "#/programs/1");
 
-  expect(await within(root).findByText("The setup can't be read")).toBeTruthy();
+  const music = getByRole(root, "group", { name: en.editor.music_group });
+  expect(await within(music).findByText("The setup can't be read")).toBeTruthy();
   await vi.waitFor(() => expect(panelNames(root)).toContain("push-up"));
   rename(root, "Still works");
   await save(root, fake);
@@ -872,4 +974,148 @@ test("“Turn it off instead” in the editor switches the program off, and a la
   await save(root, fake);
   expect(lastWrite(fake).path).toBe(`api/v1/programs/1?if_updated_at=${encodeURIComponent(answered)}`);
   expect((lastWrite(fake).body as ProgramDocument).active).toBe(false);
+});
+
+// The editor in cards (W7).
+
+function stepper(root: HTMLElement, name: string): HTMLButtonElement {
+  return getByRole(root, "button", { name }) as HTMLButtonElement;
+}
+
+/** Wait until a number field shows `value`. */
+async function shows(root: HTMLElement, name: string, value: string): Promise<void> {
+  await vi.waitFor(() => expect(field(root, "spinbutton", name).value).toBe(value));
+}
+
+test("the head: the Programs link, the page title, and the name field with its placeholder", async () => {
+  const root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/1");
+
+  const breadcrumb = getByRole(root, "navigation", { name: en.editor.breadcrumb });
+  expect(within(breadcrumb).getByRole("link", { name: en.menu.programs }).getAttribute("href")).toBe("#/programs");
+  expect(getByRole(root, "heading", { level: 1, name: en.editor.edit_title })).toBeTruthy();
+  const name = field(root, "textbox", en.editor.name);
+  expect(name.placeholder).toBe("Unnamed program");
+  expect(name.value).toBe("Full body");
+  expect((root as unknown as ShadowRoot).activeElement).not.toBe(name);
+});
+
+test("a new program and a copy open with the focus in the name field", async () => {
+  const active = (root: HTMLElement) => (root as unknown as ShadowRoot).activeElement;
+  let root = await openEditor(newFake(), "#/programs/new/empty");
+  await vi.waitFor(() => expect(active(root)).toBe(field(root, "textbox", en.editor.name)));
+  unmount();
+
+  root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/new/copy/1");
+  await vi.waitFor(() => expect(active(root)).toBe(field(root, "textbox", en.editor.name)));
+});
+
+test("Delete shows only once the program is stored", async () => {
+  const fresh = newFake();
+  let root = await openEditor(fresh, "#/programs/new/empty");
+  expect(queryByRole(root, "button", { name: en.editor.delete })).toBeNull();
+  rename(root, "Morning");
+  await save(root, fresh);
+  expect(await findByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
+  unmount();
+
+  root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/new/copy/1");
+  expect(queryByRole(root, "button", { name: en.editor.delete })).toBeNull();
+  unmount();
+
+  root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/1");
+  expect(getByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
+});
+
+test("Not saved shows while there are changes, and Saved right after a save", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  expect(queryByRole(root, "status")).toBeNull();
+  rename(root, "Changed");
+  expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
+  await save(root, fake);
+  await vi.waitFor(() => expect(text(getByRole(root, "status"))).toBe(en.editor.saved));
+  expect(within(root).queryByText(en.editor.not_saved)).toBeNull();
+});
+
+test("+ and − step the timing: rounds by 1, the seconds by 5, and − stops at 0", async () => {
+  const fake = newFake({ programs: [fullBody({ rounds: 5, work_seconds: 45, switch_seconds: 0, round_rest_seconds: 3 })] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  fireEvent.click(stepper(root, "More rounds"));
+  await shows(root, en.editor.rounds, "6");
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  await shows(root, en.editor.rounds, "4");
+  fireEvent.click(stepper(root, "More work"));
+  await shows(root, en.editor.work, "50");
+  fireEvent.click(stepper(root, "Less work"));
+  fireEvent.click(stepper(root, "Less work"));
+  await shows(root, en.editor.work, "40");
+  fireEvent.click(stepper(root, "Shorter break"));
+  await shows(root, en.editor.switch, "0");
+  fireEvent.click(stepper(root, "Longer break"));
+  await shows(root, en.editor.switch, "5");
+  fireEvent.click(stepper(root, "Shorter rest"));
+  await shows(root, en.editor.round_rest, "0");
+  fireEvent.click(stepper(root, "Longer rest"));
+  await shows(root, en.editor.round_rest, "5");
+  expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
+
+  await save(root, fake);
+  expect(lastWrite(fake).body).toMatchObject({ rounds: 4, work_seconds: 40, switch_seconds: 5, round_rest_seconds: 5 });
+});
+
+test("on an emptied field + and − set the add-on's default, and an empty field is sent as null", async () => {
+  const fake = newFake({ programs: [fullBody({ work_seconds: 30, round_rest_seconds: 20 })] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  fireEvent.input(field(root, "spinbutton", en.editor.work), { target: { value: "" } });
+  fireEvent.click(stepper(root, "More work"));
+  await shows(root, en.editor.work, "45");
+  fireEvent.input(field(root, "spinbutton", en.editor.round_rest), { target: { value: "" } });
+  fireEvent.click(stepper(root, "Shorter rest"));
+  await shows(root, en.editor.round_rest, "60");
+
+  fireEvent.input(field(root, "spinbutton", en.editor.switch), { target: { value: "" } });
+  await save(root, fake);
+  expect(lastWrite(fake).body).toMatchObject({ work_seconds: 45, switch_seconds: null, round_rest_seconds: 60 });
+});
+
+test("with the defaults read failing, + and − on an emptied field set 0", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  fake.answer("GET", "api/v1/programs/defaults", 503, { detail: "No defaults", code: "", field: null });
+  const root = await openEditor(fake, "#/programs/new/copy/1");
+
+  fireEvent.input(field(root, "spinbutton", en.editor.work), { target: { value: "" } });
+  fireEvent.click(stepper(root, "More work"));
+  await shows(root, en.editor.work, "0");
+  fireEvent.input(field(root, "spinbutton", en.editor.rounds), { target: { value: "" } });
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  await shows(root, en.editor.rounds, "0");
+});
+
+test("the timing's title row shows the total, and Countdown is still a choice of 0, 5 and 10 s", async () => {
+  const fake = newFake({
+    programs: [
+      fullBody({
+        stations: ["0001", "0002", "0003", "0005", "0006"].map((exercise) => ({ exercise })),
+        rounds: 5,
+        work_seconds: 45,
+        switch_seconds: 15,
+        round_rest_seconds: 60,
+      }),
+    ],
+  });
+  const root = await openEditor(fake, "#/programs/1");
+
+  expect(await within(root).findByText("29 min in all · 5 rounds × 5 exercises")).toBeTruthy();
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  fireEvent.click(stepper(root, "Fewer rounds"));
+  expect(await within(root).findByText("5 min in all · 1 round × 5 exercises")).toBeTruthy();
+
+  const countdown = field(root, "combobox", en.editor.countdown);
+  expect(within(countdown).getAllByRole("option").map(text)).toEqual(["0 s", "5 s", "10 s"]);
 });

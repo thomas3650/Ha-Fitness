@@ -35,8 +35,8 @@ test("the Status page shows the version, the library and the media state", async
   const root = await mount("#/status");
 
   expect(await findByText(root, "Version 2.1.0")).toBeTruthy();
-  expect(getByText(root, "Exercises: 1324 from the library, 3 custom")).toBeTruthy();
-  expect(getByText(root, "Media: 200/1324, downloading")).toBeTruthy();
+  expect(getByText(root, "Exercises: 1,324 from the library, 3 custom")).toBeTruthy();
+  expect(getByText(root, "Media: 200/1,324, downloading")).toBeTruthy();
   const paths = fake.requests.map((request) => `${request.method} ${request.path}`);
   expect(paths).toEqual(expect.arrayContaining(["GET api/v1/health", "GET api/v1/library"]));
 });

@@ -552,3 +552,11 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** The website reacts to the code and places the add-on's message at the field. The integration reads the
   session routes' codes, so they stay.
 - **Source:** [website spec](superpowers/specs/2026-10-26-program-website-design.md) §2.6
+
+### D66: The website's equipment filter has three modes
+- **Date:** 2026-10-26 · **Status:** active
+- **Decision:** The website's equipment filter is My equipment (the household's equipment plus body weight; custom
+  exercises always show), All equipment, or picked kinds (OR; custom exercises only when they match). It replaces the
+  website spec's "Show all" checkbox.
+- **Why:** One control instead of a dropdown plus a checkbox. Thomas chose it from the W7 mockup.
+- **Source:** [editor cards spec](superpowers/specs/2026-10-26-editor-cards-design.md) §2.3; Thomas, 2026-10-26

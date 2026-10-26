@@ -1,76 +1,56 @@
 import { mdiCheckCircle, mdiDumbbell, mdiMagnify, mdiPlusCircle } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
-import { thumbnailUrl, type ExerciseSummary } from "../api";
+import { thumbnailUrl, type ExerciseSummary, type Setup } from "../api";
 import { t } from "../i18n";
 import { icon } from "../icons";
-import { applySelectValues } from "./select-value";
-
-/** Body weight needs no equipment, so the household always has it (website spec §2.3.2). */
-const BODY_WEIGHT = "body weight";
-
-/**
- * Whether the household can do an exercise, as the add-on's household search decides it: its equipment is in the
- * setup's (body weight always), or it is custom. A library exercise without equipment is not one.
- */
-export function inHousehold(exercise: ExerciseSummary, household: ReadonlySet<string>): boolean {
-  const equipment = exercise.equipment;
-  return exercise.custom || (equipment !== null && (equipment === BODY_WEIGHT || household.has(equipment)));
-}
-
-/**
- * The exercises whose name has every word of the search, those that start with the whole search first; the order
- * is kept otherwise.
- */
-export function searchByName(exercises: ExerciseSummary[], search: string): ExerciseSummary[] {
-  const needle = search.trim().toLowerCase();
-  const words = needle.split(/\s+/).filter(Boolean);
-  const kept = exercises.filter((exercise) => words.every((word) => exercise.name.toLowerCase().includes(word)));
-  const first = kept.filter((exercise) => exercise.name.toLowerCase().startsWith(needle));
-  const rest = kept.filter((exercise) => !exercise.name.toLowerCase().startsWith(needle));
-  return [...first, ...rest];
-}
+import {
+  countMine,
+  equipmentValues,
+  facetValues,
+  household,
+  matchesEquipment,
+  searchByName,
+  type EquipmentChoice,
+} from "../library-filter";
+import "./equipment-filter";
+import "./multi-select";
 
 /** The most results the panel draws at once; a search narrows the rest. */
 const SHOWN = 100;
 
-export type Facet = "equipment" | "body_part" | "target";
-
-export const FACETS: Facet[] = ["equipment", "body_part", "target"];
-
-/** The values one facet has among the exercises, sorted, as the dataset names them. */
-export function facetValues(exercises: ExerciseSummary[], facet: Facet): string[] {
-  return [...new Set(exercises.map((exercise) => exercise[facet]).filter((value): value is string => !!value))].sort();
-}
-
 /**
- * The library beside the editor (W3), searched and filtered in the site from the summaries of all exercises (website
- * spec §2.3.3). By default it shows the household's exercises: those whose equipment the setup has, body weight
- * always, and every custom one; "Show all" shows the rest.
+ * The library beside the editor (W7), searched and filtered in the site from the summaries of all exercises (spec
+ * §2.4): a search, the equipment filter (My equipment by default, D66) and the body parts. Without the setup, My
+ * equipment is body weight and the custom exercises, and the panel says why at its top.
  *
- * It fires `pick` (+, the exercise's id in `detail`) and `details` (a click on the name, the summary in `detail`).
- * An exercise in `inProgram` gets a ✓ beside its +: a program may have an exercise twice, the add-on decides.
+ * It fires `pick` (the add button, the exercise's id in `detail`) and `details` (a click on the name, the summary in
+ * `detail`). An exercise in `inProgram` has a tick as its add button: a program may have an exercise twice, the add-on
+ * decides.
  */
 export class ExercisePicker extends LitElement {
   static override properties = {
     exercises: { attribute: false },
     error: {},
-    household: { attribute: false },
+    setup: { attribute: false },
+    setupError: { attribute: false },
     inProgram: { attribute: false },
     query: { state: true },
-    filters: { state: true },
-    showAll: { state: true },
+    equipment: { state: true },
+    bodyParts: { state: true },
     missing: { state: true },
   };
 
   declare exercises: ExerciseSummary[] | null;
   declare error: string | null;
-  /** The setup's equipment. */
-  declare household: string[];
+  /** The household's setup; null when it couldn't be read. */
+  declare setup: Setup | null;
+  /** Why the setup couldn't be read, if it couldn't. */
+  declare setupError: string | null;
   declare inProgram: ReadonlySet<string>;
   declare query: string;
-  declare filters: Record<Facet, string>;
-  declare showAll: boolean;
+  declare equipment: EquipmentChoice;
+  declare bodyParts: string[];
   /** Exercises whose thumbnail didn't load. */
   declare missing: ReadonlySet<string>;
 
@@ -78,11 +58,12 @@ export class ExercisePicker extends LitElement {
     super();
     this.exercises = null;
     this.error = null;
-    this.household = [];
+    this.setup = null;
+    this.setupError = null;
     this.inProgram = new Set();
     this.query = "";
-    this.filters = { equipment: "", body_part: "", target: "" };
-    this.showAll = false;
+    this.equipment = { mode: "mine" };
+    this.bodyParts = [];
     this.missing = new Set();
   }
 
@@ -90,17 +71,12 @@ export class ExercisePicker extends LitElement {
     return this;
   }
 
-  protected override updated(): void {
-    applySelectValues(this);
-  }
-
   /** The exercises the search and the filters keep; names that start with the search come first. */
-  private found(exercises: ExerciseSummary[]): ExerciseSummary[] {
-    const household = new Set(this.household);
+  private found(exercises: ExerciseSummary[], home: ReadonlySet<string>): ExerciseSummary[] {
     const kept = exercises.filter(
       (exercise) =>
-        FACETS.every((facet) => !this.filters[facet] || exercise[facet] === this.filters[facet]) &&
-        (this.showAll || inHousehold(exercise, household)),
+        matchesEquipment(exercise, this.equipment, home) &&
+        (!this.bodyParts.length || (exercise.body_part !== null && this.bodyParts.includes(exercise.body_part))),
     );
     return searchByName(kept, this.query);
   }
@@ -109,22 +85,28 @@ export class ExercisePicker extends LitElement {
     this.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
-  private setFilter(facet: Facet, value: string): void {
-    this.filters = { ...this.filters, [facet]: value };
-  }
-
   protected override render() {
+    const home = household(this.setup);
+    const found = this.exercises && !this.error ? this.found(this.exercises, home) : null;
     return html`<aside class="picker" aria-label=${t("picker.title")}>
-      <h2>${t("picker.title")}</h2>
-      ${this.renderBody()}
+      <div class="picker-title">
+        <h2>${t("picker.title")}</h2>
+        ${found ? html`<span class="secondary">${t("library.count", { count: found.length })}</span>` : nothing}
+      </div>
+      ${this.setupError
+        ? html`<p class="picker-note">
+            <span>${this.setupError}</span>
+            <span>${t("picker.setup_note")}</span>
+          </p>`
+        : nothing}
+      ${this.renderBody(home, found)}
     </aside>`;
   }
 
-  private renderBody() {
+  private renderBody(home: ReadonlySet<string>, found: ExerciseSummary[] | null) {
     if (this.error) return html`<p class="error">${this.error}</p>`;
-    if (!this.exercises) return html`<p>${t("picker.loading")}</p>`;
     const exercises = this.exercises;
-    const found = this.found(exercises);
+    if (!exercises || !found) return html`<p>${t("picker.loading")}</p>`;
     const shown = found.slice(0, SHOWN);
     return html`
       <label class="search">
@@ -138,29 +120,23 @@ export class ExercisePicker extends LitElement {
         />
       </label>
       <div class="picker-filters">
-        ${FACETS.map(
-          (facet) => html`<label>
-            <span aria-hidden="true">${t(`picker.${facet}`)}</span>
-            <select
-              aria-label=${t(`picker.${facet}`)}
-              data-value=${this.filters[facet]}
-              @change=${(event: Event) => this.setFilter(facet, (event.target as HTMLSelectElement).value)}
-            >
-              <option value="">${t("picker.any")}</option>
-              ${facetValues(exercises, facet).map(
-                (value) => html`<option value=${value}>${value}</option>`,
-              )}
-            </select>
-          </label>`,
-        )}
-        <label class="check">
-          <input
-            type="checkbox"
-            .checked=${this.showAll}
-            @change=${(event: Event) => (this.showAll = (event.target as HTMLInputElement).checked)}
-          />
-          <span>${t("picker.show_all")}</span>
-        </label>
+        <hf-equipment-filter
+          .hideLabel=${true}
+          .label=${t("picker.equipment")}
+          .values=${equipmentValues(exercises)}
+          .home=${[...home]}
+          .counts=${{ mine: countMine(exercises, home), all: exercises.length }}
+          .choice=${this.equipment}
+          @change=${(event: CustomEvent<{ choice: EquipmentChoice }>) => (this.equipment = event.detail.choice)}
+        ></hf-equipment-filter>
+        <hf-multi-select
+          .hideLabel=${true}
+          .label=${t("picker.body_part")}
+          .placeholder=${t("picker.any_body_part")}
+          .options=${facetValues(exercises, "body_part").map((value) => ({ value, label: value }))}
+          .selected=${this.bodyParts}
+          @change=${(event: CustomEvent<{ selected: string[] }>) => (this.bodyParts = event.detail.selected)}
+        ></hf-multi-select>
       </div>
       ${shown.length
         ? html`<ul class="picker-results" aria-label=${t("picker.results")}>
@@ -176,6 +152,7 @@ export class ExercisePicker extends LitElement {
 
   private renderItem(exercise: ExerciseSummary) {
     const meta = [exercise.equipment, exercise.body_part].filter(Boolean).join(t("meta_separator"));
+    const again = this.inProgram.has(exercise.id);
     return html`<li>
       ${this.missing.has(exercise.id)
         ? html`<span class="thumb placeholder" aria-hidden="true">${icon(mdiDumbbell)}</span>`
@@ -192,16 +169,13 @@ export class ExercisePicker extends LitElement {
         <button type="button" class="link" @click=${() => this.fire("details", exercise)}>${exercise.name}</button>
         ${meta ? html`<span class="secondary">${meta}</span>` : nothing}
       </span>
-      ${this.inProgram.has(exercise.id)
-        ? html`<span class="picker-in" role="img" aria-label=${t("picker.in_program")}>${icon(mdiCheckCircle)}</span>`
-        : nothing}
       <button
         type="button"
-        class="icon-button picker-add"
-        aria-label=${t("picker.add", { name: exercise.name })}
+        class=${again ? "icon-button picker-add again" : "icon-button picker-add"}
+        aria-label=${t(again ? "picker.add_again" : "picker.add", { name: exercise.name })}
         @click=${() => this.fire("pick", exercise.id)}
       >
-        ${icon(mdiPlusCircle)}
+        ${icon(again ? mdiCheckCircle : mdiPlusCircle)}
       </button>
     </li>`;
   }
@@ -209,35 +183,47 @@ export class ExercisePicker extends LitElement {
 
 /** The panel's styles, for the shell's shadow root (it renders in light DOM). */
 export const exercisePickerStyles = css`
-  .picker h2 {
+  .picker-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
     margin-bottom: 12px;
+  }
+  .picker-title h2 {
+    margin: 0;
+  }
+  .picker-title .secondary {
+    font-size: 13px;
+  }
+  .picker-note {
+    margin: 0 0 12px;
+    color: var(--hf-text-secondary);
+    font-size: 13px;
+  }
+  .picker-note span {
+    display: block;
   }
   .picker .search {
     margin-bottom: 8px;
   }
+  /*
+   * The two dropdowns side by side (W7): the equipment filter as wide as its tags (about half the row at most), the
+   * body part the rest. In the 300px panel both read in full: "My equipment" and "Any body part".
+   */
   .picker-filters {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 8px;
   }
-  .picker-filters label {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    color: var(--hf-text-secondary);
-    font-size: 12px;
+  .picker-filters hf-equipment-filter {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 52%;
   }
-  .picker-filters label.check {
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-    color: var(--hf-text);
-    font-size: 14px;
-  }
-  .picker-filters select {
-    max-width: 120px;
-    font: inherit;
+  .picker-filters hf-multi-select {
+    flex: 1 1 0;
+    min-width: 0;
   }
   .picker-results {
     margin: 0;
@@ -264,9 +250,11 @@ export const exercisePickerStyles = css`
     color: var(--hf-text);
     text-align: left;
   }
-  .picker-in .icon,
   .picker-add .icon {
     color: var(--hf-primary);
+  }
+  .picker-add.again .icon {
+    color: var(--hf-success);
   }
 `;
 

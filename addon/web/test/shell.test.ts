@@ -1,4 +1,4 @@
-import { findByText, getByRole, queryByRole } from "@testing-library/dom";
+import { findByText, getByRole, getByText, queryByRole } from "@testing-library/dom";
 import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
@@ -11,7 +11,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("the menu has the four pages, as links to their hash routes", async () => {
+test("the bar has the four pages, as links to their hash routes", async () => {
   vi.stubGlobal("fetch", fakeApi().fetch);
   const root = await mount("");
 
@@ -22,12 +22,21 @@ test("the menu has the four pages, as links to their hash routes", async () => {
   expect(getByRole(menu, "link", { name: en.menu.status }).getAttribute("href")).toBe("#/status");
 });
 
-test("the foot of the menu shows the add-on's version", async () => {
+test("the bar shows the brand as plain text, not a link", async () => {
+  vi.stubGlobal("fetch", fakeApi().fetch);
+  const root = await mount("");
+
+  const menu = getByRole(root, "navigation", { name: en.menu.label });
+  expect(getByText(menu, en.title)).toBeTruthy();
+  expect(queryByRole(menu, "link", { name: en.title })).toBeNull();
+});
+
+test("the bar shows the add-on's version", async () => {
   vi.stubGlobal("fetch", fakeApi({ health: { status: "ok", version: "2.3.1", api_version: 1 } }).fetch);
   const root = await mount("#/programs");
 
   const menu = getByRole(root, "navigation", { name: en.menu.label });
-  expect(await findByText(menu, "HA Fitness 2.3.1")).toBeTruthy();
+  expect(await findByText(menu, "2.3.1")).toBeTruthy();
 });
 
 test("without a route the shell shows Programs, and marks it in the menu", async () => {
@@ -88,4 +97,19 @@ test("a query that finds nothing says so", async () => {
   const root = await mount("#/programs");
 
   expect(() => getByRole(root, "button", { name: "Nothing like this" })).toThrow(/Unable to find/);
+});
+
+test.each([
+  ["#/programs", "programs"],
+  ["#/library", "library"],
+  ["#/setup", "setup"],
+  ["#/status", "status"],
+] as const)("on %s only its own link is marked as the current page", async (hash, page) => {
+  vi.stubGlobal("fetch", fakeApi().fetch);
+  const root = await mount(hash);
+
+  for (const name of ["programs", "library", "setup", "status"] as const) {
+    const link = getByRole(root, "link", { name: en.menu[name] });
+    expect(link.getAttribute("aria-current")).toBe(name === page ? "page" : null);
+  }
 });

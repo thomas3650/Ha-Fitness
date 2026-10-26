@@ -3,6 +3,7 @@ import {
   mdiAlertOutline,
   mdiArrowDown,
   mdiArrowUp,
+  mdiCalendarMonthOutline,
   mdiClose,
   mdiContentSave,
   mdiCreation,
@@ -11,7 +12,13 @@ import {
   mdiDragVertical,
   mdiDumbbell,
   mdiExitRun,
+  mdiFormatListBulleted,
+  mdiMinus,
+  mdiMusic,
   mdiPauseCircleOutline,
+  mdiPencil,
+  mdiPlus,
+  mdiTimerOutline,
 } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
@@ -25,6 +32,7 @@ import {
   type FavouritePlaylist,
   type Music,
   type PlaylistOut,
+  type ProgramDefaults,
   type ProgramDocument,
   type ProgramOut,
   type Setup,
@@ -38,21 +46,34 @@ import { applySelectValues } from "../components/select-value";
 import { minutes } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
+import { BODY_WEIGHT, foldBand } from "../library-filter";
 
 /** Which program the editor works on: a new one, a copy of a stored one (stored only on Save), or a stored one. */
 export type EditorMode = { kind: "new" } | { kind: "copy"; id: number } | { kind: "edit"; id: number };
 
 const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const COUNTDOWNS = [0, 5, 10];
-const BODY_WEIGHT = "body weight";
 
 type NumberField = "rounds" | "work_seconds" | "switch_seconds" | "round_rest_seconds";
 
-const NUMBER_FIELDS: { field: NumberField; label: string }[] = [
-  { field: "rounds", label: "editor.rounds" },
-  { field: "work_seconds", label: "editor.work" },
-  { field: "switch_seconds", label: "editor.switch" },
-  { field: "round_rest_seconds", label: "editor.round_rest" },
+/** The timing's number fields: the label, the step of − and +, and the buttons' names. */
+const NUMBER_FIELDS: { field: NumberField; label: string; step: number; less: string; more: string }[] = [
+  { field: "rounds", label: "editor.rounds", step: 1, less: "editor.fewer_rounds", more: "editor.more_rounds" },
+  { field: "work_seconds", label: "editor.work", step: 5, less: "editor.less_work", more: "editor.more_work" },
+  {
+    field: "switch_seconds",
+    label: "editor.switch",
+    step: 5,
+    less: "editor.shorter_break",
+    more: "editor.longer_break",
+  },
+  {
+    field: "round_rest_seconds",
+    label: "editor.round_rest",
+    step: 5,
+    less: "editor.shorter_rest",
+    more: "editor.longer_rest",
+  },
 ];
 
 /** The places on the form a refusal can be shown at; any other field shows above the form. */
@@ -166,8 +187,9 @@ function failure(error: unknown): string {
 }
 
 /**
- * The program editor (W3, website spec §2.2.4): the fields at the top, the exercises as a list, the library beside
- * it, the summary line, and Save, Cancel and Delete. It holds no program rules: a save sends the whole document and
+ * The program editor in cards (W7, website spec §2.2.4, editor cards spec §2.2): the head with the name and Save,
+ * Cancel and Delete, then When, Music, Timing and Exercises, with the library beside it. It holds no program rules
+ * (− and + don't clamp): a save sends the whole document and
  * the add-on's refusal shows at the field it is about, or above the form, with nothing typed lost. An edit sends
  * the `updated_at` it loaded (`if_updated_at`), so a change made elsewhere isn't undone (§2.2.6).
  */
@@ -195,6 +217,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     deleting: { state: true },
     details: { state: true },
     missing: { state: true },
+    defaults: { state: true },
   };
 
   declare api: Api;
@@ -223,6 +246,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   declare deleting: Deleting | null;
   declare details: ExerciseSummary | null;
   declare missing: ReadonlySet<string>;
+  /** The add-on's defaults, where − and + start on an empty field; null if they couldn't be read (then 0). */
+  declare defaults: ProgramDefaults | null;
 
   private updatedAt: string | undefined;
   /**
@@ -233,6 +258,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   /** Station names from the stored program, for exercises the summaries don't have. */
   private storedNames = new Map<string, string>();
   private dragIndex: number | null = null;
+  /** Set when a new program or a copy has loaded: the next render puts the focus in the name field, once. */
+  private focusName = false;
   private readonly ids = `hf-editor-${++nextId}`;
   private readonly onBeforeUnload = (event: BeforeUnloadEvent) => {
     if (!this.dirty) return;
@@ -265,6 +292,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     this.deleting = null;
     this.details = null;
     this.missing = new Set();
+    this.defaults = null;
   }
 
   protected override createRenderRoot(): HTMLElement {
@@ -273,6 +301,10 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
 
   protected override updated(): void {
     applySelectValues(this);
+    if (this.focusName && this.form) {
+      this.focusName = false;
+      this.querySelector<HTMLInputElement>(`#${this.ids}-name`)?.focus();
+    }
   }
 
   override connectedCallback(): void {
@@ -300,9 +332,13 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private async load(): Promise<void> {
     const mode = this.mode;
     if (mode.kind === "edit") this.storedId = mode.id;
-    const first = mode.kind === "new" ? this.api.programDefaults() : this.api.program(mode.id);
-    const [main, setup, exercises, speakers, playlists] = await Promise.allSettled([
+    // The defaults are read for every editor: a new program starts from them, and − and + start from them on an
+    // empty field (spec §2.2.4 of the editor cards).
+    const defaultsRead = this.api.programDefaults();
+    const first = mode.kind === "new" ? defaultsRead : this.api.program(mode.id);
+    const [main, defaults, setup, exercises, speakers, playlists] = await Promise.allSettled([
       first,
+      defaultsRead,
       this.api.setup(),
       this.api.allExercises(),
       this.api.speakers(),
@@ -310,6 +346,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     ]);
     // Without the setup the editor works with an empty one (body weight only, no favourites, no default speaker),
     // and says why.
+    if (defaults.status === "fulfilled") this.defaults = defaults.value;
     if (setup.status === "fulfilled") this.setup = setup.value;
     else this.setupError = failure(setup.reason);
     if (exercises.status === "fulfilled") this.exercises = exercises.value;
@@ -334,6 +371,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
           this.setup.default_speaker,
         ),
       );
+      this.focusName = true;
       return;
     }
     const stored = main.value as ProgramOut;
@@ -341,6 +379,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     if (mode.kind === "copy") {
       const form = formOf(stored.program, this.setup.default_speaker);
       this.start({ ...form, name: t("editor.copy_name", { name: stored.program.name }), active: false });
+      this.focusName = true;
     } else {
       this.useStored(stored);
     }
@@ -390,6 +429,18 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private removeStation(index: number): void {
     if (!this.form) return;
     this.change({ stations: this.form.stations.filter((_, at) => at !== index) });
+  }
+
+  // The timing.
+
+  /**
+   * − or + on a number field: a step from the value, stopping at 0 and with no upper limit (the add-on keeps the
+   * rules); on an empty field the add-on's default, or 0 if the defaults couldn't be read.
+   */
+  private stepField(field: NumberField, step: number): void {
+    if (!this.form) return;
+    const value = this.form[field];
+    this.change({ [field]: value === null ? (this.defaults?.[field] ?? 0) : Math.max(0, value + step) });
   }
 
   private moveStation(from: number, to: number): void {
@@ -569,14 +620,16 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         <p>${t("editor.loading")}</p>`;
     }
     return html`<div class="editor">
-        <div class="editor-main">
-          ${this.renderHeader(form)} ${this.renderAbove()} ${this.renderFields(form)} ${this.renderStations(form)}
-          ${this.renderSummary(form)}
+        <div class="editor-main" role="group" aria-label=${t("editor.form")}>
+          ${this.renderHead(form)} ${this.renderAbove()}
+          <div class="editor-pair">${this.renderWhen(form)} ${this.renderMusic(form)}</div>
+          ${this.renderTiming(form)} ${this.renderStations(form)}
         </div>
         <hf-exercise-picker
           .exercises=${this.exercises}
           .error=${this.exercisesError}
-          .household=${this.setup.equipment}
+          .setup=${this.setupError ? null : this.setup}
+          .setupError=${this.setupError}
           .inProgram=${new Set(form.stations.map((station) => station.exercise))}
           @pick=${(event: CustomEvent<string>) => this.addStation(event.detail)}
           @details=${(event: CustomEvent<ExerciseSummary>) => (this.details = event.detail)}
@@ -585,21 +638,52 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       ${this.renderDialogs()}`;
   }
 
-  private renderHeader(form: Form) {
-    return html`<header class="editor-header">
-      <div>
-        <nav class="breadcrumb" aria-label=${t("editor.breadcrumb")}>
-          <a href="#/programs">${t("menu.programs")}</a> <span aria-hidden="true">${t("breadcrumb_separator")}</span>
-          <span class="crumb">${form.name || t("editor.untitled")}</span>
+  /** A card's title row: a decorative icon, the title, and what goes on its right. */
+  private renderCardTitle(path: string, title: string, end: unknown = nothing) {
+    return html`<div class="card-title">
+      ${icon(path)}
+      <h2>${title}</h2>
+      ${end}
+    </div>`;
+  }
+
+  private renderHead(form: Form) {
+    return html`<header class="editor-head">
+      <div class="editor-title">
+        <div class="crumbs">
+          <nav class="breadcrumb" aria-label=${t("editor.breadcrumb")}>
+            <a href="#/programs">${t("menu.programs")}</a>
+            <span aria-hidden="true">${t("breadcrumb_separator")}</span>
+          </nav>
+          <h1>${this.pageTitle()}</h1>
           ${this.storedId !== null && this.createdBy === "claude"
             ? html`<span class="badge claude">${icon(mdiCreation)}<span>${t("editor.created_by_claude")}</span></span>`
             : this.storedId !== null && this.createdBy === "you"
               ? html`<span class="badge">${icon(mdiAccount)}<span>${t("editor.created_by_you")}</span></span>`
               : nothing}
-        </nav>
-        <h1>${this.pageTitle()}</h1>
+        </div>
+        <div class="name-field">
+          <input
+            id=${`${this.ids}-name`}
+            type="text"
+            aria-label=${t("editor.name")}
+            placeholder=${t("editor.untitled")}
+            size=${Math.max(form.name.length, t("editor.untitled").length) + 1}
+            .value=${form.name}
+            aria-invalid=${this.fieldErrors.has("name") ? "true" : "false"}
+            aria-describedby=${this.describedBy("name")}
+            @input=${(event: Event) => this.change({ name: (event.target as HTMLInputElement).value })}
+          />
+          ${icon(mdiPencil)}
+        </div>
+        ${this.renderFieldError("name")}
       </div>
       <div class="editor-actions">
+        ${this.dirty
+          ? html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("editor.not_saved")}</span>`
+          : this.justSaved
+            ? html`<span class="saved" role="status">${t("editor.saved")}</span>`
+            : nothing}
         ${this.storedId !== null
           ? html`<button
               type="button"
@@ -632,48 +716,14 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     </div>`;
   }
 
-  private renderFields(form: Form) {
-    const { favourites, others } = this.playlistChoices();
-    const speakerListed = this.speakers.items.some((speaker) => speaker.entity_id === form.speaker);
-    return html`<div class="editor-fields" role="group" aria-label=${t("editor.form")}>
-      <div class="field-row">
-        <label class="field grow">
-          <span>${t("editor.name")}</span>
-          <input
-            type="text"
-            aria-label=${t("editor.name")}
-            .value=${form.name}
-            aria-invalid=${this.fieldErrors.has("name") ? "true" : "false"}
-            aria-describedby=${this.describedBy("name")}
-            @input=${(event: Event) => this.change({ name: (event.target as HTMLInputElement).value })}
-          />
-          ${this.renderFieldError("name")}
-        </label>
-        ${NUMBER_FIELDS.map(
-          ({ field, label }) => html`<label class="field">
-            <span>${t(label)}</span>
-            <input
-              type="number"
-              min="0"
-              aria-label=${t(label)}
-              .value=${form[field] === null ? "" : String(form[field])}
-              aria-invalid=${this.fieldErrors.has(field) ? "true" : "false"}
-              aria-describedby=${this.describedBy(field)}
-              @input=${(event: Event) => {
-                const text = (event.target as HTMLInputElement).value;
-                this.change({ [field]: text === "" ? null : Number(text) });
-              }}
-            />
-            ${this.renderFieldError(field)}
-          </label>`,
-        )}
-      </div>
-      <div class="field">
-        <span id=${`${this.ids}-weekdays`}>${t("editor.weekdays")}</span>
+  private renderWhen(form: Form) {
+    return html`<section class="card editor-card">
+      ${this.renderCardTitle(mdiCalendarMonthOutline, t("editor.when"))}
+      <div class="when-row">
         <div
           class="chips"
           role="group"
-          aria-labelledby=${`${this.ids}-weekdays`}
+          aria-label=${t("editor.weekdays")}
           aria-describedby=${this.describedBy("weekdays")}
         >
           ${WEEKDAYS.map(
@@ -692,17 +742,36 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
             </button>`,
           )}
         </div>
-        ${this.renderFieldError("weekdays")}
+        <span class="active">
+          <span id=${`${this.ids}-active`}>${t("editor.active")}</span>
+          <button
+            type="button"
+            class="switch"
+            role="switch"
+            aria-checked=${form.active ? "true" : "false"}
+            aria-labelledby=${`${this.ids}-active`}
+            aria-describedby=${this.describedBy("active")}
+            @click=${() => this.change({ active: !form.active })}
+          ></button>
+        </span>
       </div>
-      <div class="field-row">
-        <div
-          class="field-row grow"
-          role="group"
-          aria-label=${t("editor.music_group")}
-          aria-describedby=${this.describedBy("music")}
-        >
-          <label class="field grow">
-            <span>${t("editor.music")}</span>
+      ${this.renderFieldError("weekdays")} ${this.renderFieldError("active")}
+    </section>`;
+  }
+
+  private renderMusic(form: Form) {
+    const { favourites, others } = this.playlistChoices();
+    const speakerListed = this.speakers.items.some((speaker) => speaker.entity_id === form.speaker);
+    return html`<section class="card editor-card">
+      ${this.renderCardTitle(mdiMusic, t("editor.music"), html`<span class="secondary">${t("editor.optional")}</span>`)}
+      <div
+        class="music"
+        role="group"
+        aria-label=${t("editor.music_group")}
+        aria-describedby=${this.describedBy("music")}
+      >
+        <div class="music-row">
+          <div class="music-choice">
             <select
               aria-label=${t("editor.music")}
               data-value=${form.playlist?.uri ?? ""}
@@ -732,9 +801,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
             ${this.playlists.error || !this.playlists.items.length
               ? html`<span class="secondary">${this.playlists.error ?? t("editor.no_playlists")}</span>`
               : nothing}
-          </label>
-          <label class="field grow">
-            <span>${t("editor.speaker")}</span>
+          </div>
+          <div class="music-choice">
             <select
               aria-label=${t("editor.speaker")}
               data-value=${form.speaker}
@@ -755,14 +823,75 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
             ${this.speakers.error || !this.speakers.items.length
               ? html`<span class="secondary">${this.speakers.error ?? t("editor.no_speakers")}</span>`
               : nothing}
-          </label>
-          ${this.setupError ? html`<span class="secondary">${this.setupError}</span>` : nothing}
-          ${this.renderFieldError("music")}
+          </div>
         </div>
-        <label class="field">
-          <span>${t("editor.countdown")}</span>
+        ${this.setupError ? html`<span class="secondary">${this.setupError}</span>` : nothing}
+        ${this.renderFieldError("music")}
+      </div>
+    </section>`;
+  }
+
+  /** The total time, as the add-on counts it: S·R·(W + switch) + (R − 1)·round rest, in whole minutes. */
+  private renderTotal(form: Form) {
+    const stations = form.stations.length;
+    const rounds = form.rounds ?? 0;
+    const seconds =
+      stations * rounds * ((form.work_seconds ?? 0) + (form.switch_seconds ?? 0)) +
+      Math.max(0, rounds - 1) * (form.round_rest_seconds ?? 0);
+    return html`<span class="secondary card-end"
+      >${t("editor.total", {
+        minutes: minutes(Math.max(0, seconds)),
+        rounds: t("editor.round_count", { count: rounds }),
+        exercises: t("editor.exercises", { count: stations }),
+      })}</span
+    >`;
+  }
+
+  private renderTiming(form: Form) {
+    return html`<section class="card editor-card">
+      ${this.renderCardTitle(mdiTimerOutline, t("editor.timing"), this.renderTotal(form))}
+      <div class="timing">
+        ${NUMBER_FIELDS.map(({ field, label, step, less, more }) => {
+          const id = `${this.ids}-${field}`;
+          return html`<div class="timing-field">
+            <label for=${id}>${t(label)}</label>
+            <div class="stepper">
+              <button
+                type="button"
+                class="icon-button"
+                aria-label=${t(less)}
+                @click=${() => this.stepField(field, -step)}
+              >
+                ${icon(mdiMinus)}
+              </button>
+              <input
+                id=${id}
+                type="number"
+                min="0"
+                .value=${form[field] === null ? "" : String(form[field])}
+                aria-invalid=${this.fieldErrors.has(field) ? "true" : "false"}
+                aria-describedby=${this.describedBy(field)}
+                @input=${(event: Event) => {
+                  const text = (event.target as HTMLInputElement).value;
+                  this.change({ [field]: text === "" ? null : Number(text) });
+                }}
+              />
+              <button
+                type="button"
+                class="icon-button"
+                aria-label=${t(more)}
+                @click=${() => this.stepField(field, step)}
+              >
+                ${icon(mdiPlus)}
+              </button>
+            </div>
+            ${this.renderFieldError(field)}
+          </div>`;
+        })}
+        <div class="timing-field">
+          <label for=${`${this.ids}-countdown`}>${t("editor.countdown")}</label>
           <select
-            aria-label=${t("editor.countdown")}
+            id=${`${this.ids}-countdown`}
             data-value=${String(form.countdown_seconds)}
             aria-describedby=${this.describedBy("countdown_seconds")}
             @change=${(event: Event) =>
@@ -776,32 +905,39 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
             )}
           </select>
           ${this.renderFieldError("countdown_seconds")}
-        </label>
-        <div class="field">
-          <span id=${`${this.ids}-active`}>${t("editor.active")}</span>
-          <button
-            type="button"
-            class="switch"
-            role="switch"
-            aria-checked=${form.active ? "true" : "false"}
-            aria-labelledby=${`${this.ids}-active`}
-            aria-describedby=${this.describedBy("active")}
-            @click=${() => this.change({ active: !form.active })}
-          ></button>
-          ${this.renderFieldError("active")}
         </div>
       </div>
-    </div>`;
+    </section>`;
   }
 
   private renderStations(form: Form) {
-    return html`<div class="card stations">
+    const equipment = [
+      ...new Set(
+        form.stations
+          .map((station) => this.summaryOf(station.exercise)?.equipment)
+          .filter((value): value is string => !!value && value !== BODY_WEIGHT)
+          // A band's two names are one, as in the library's equipment filter.
+          .map(foldBand),
+      ),
+    ];
+    return html`<section class="card editor-card stations">
+      ${this.renderCardTitle(
+        mdiFormatListBulleted,
+        t("editor.exercises_title"),
+        html`<span class="secondary">${t("editor.exercises", { count: form.stations.length })}</span>
+          <span class="secondary"
+            >${equipment.length
+              ? t("editor.equipment", { equipment: equipment.join(t("list_separator")) })
+              : t("editor.no_equipment")}</span
+          >
+          <span class="secondary card-end">${t("editor.drag_hint")}</span>`,
+      )}
+      ${this.renderFieldError("stations")}
       <ol aria-label=${t("editor.stations")} aria-describedby=${this.describedBy("stations")}>
         ${form.stations.map((station, index) => this.renderStation(station.exercise, index, form.stations.length))}
       </ol>
-      <p class="secondary">${t(form.stations.length ? "editor.drag_hint" : "editor.no_stations")}</p>
-      ${this.renderFieldError("stations")}
-    </div>`;
+      ${form.stations.length ? nothing : html`<p class="secondary">${t("editor.no_stations")}</p>`}
+    </section>`;
   }
 
   private renderStation(id: string, index: number, count: number) {
@@ -830,12 +966,14 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
             src=${thumbnailUrl(id)}
             alt=""
             loading="lazy"
-            width="40"
-            height="40"
+            width="48"
+            height="48"
             @error=${() => (this.missing = new Set([...this.missing, id]))}
           />`}
-      <span class="station-name">${name}${this.renderFieldError(place)}</span>
-      <span class="secondary station-meta">${meta}</span>
+      <span class="station-text">
+        <span class="station-name">${name}</span>
+        ${meta ? html`<span class="secondary">${meta}</span>` : nothing} ${this.renderFieldError(place)}
+      </span>
       <button
         type="button"
         class="icon-button"
@@ -863,36 +1001,6 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         ${icon(mdiClose)}
       </button>
     </li>`;
-  }
-
-  private renderSummary(form: Form) {
-    const stations = form.stations.length;
-    const rounds = form.rounds ?? 0;
-    // The add-on's total_seconds: S·R·(W + switch) + (R − 1)·round rest.
-    const seconds =
-      stations * rounds * ((form.work_seconds ?? 0) + (form.switch_seconds ?? 0)) +
-      Math.max(0, rounds - 1) * (form.round_rest_seconds ?? 0);
-    const equipment = [
-      ...new Set(
-        form.stations
-          .map((station) => this.summaryOf(station.exercise)?.equipment)
-          .filter((value): value is string => !!value && value !== BODY_WEIGHT),
-      ),
-    ];
-    return html`<p class="summary">
-      <span><strong>${t("editor.exercises", { count: stations })}</strong></span>
-      <span><strong>${t("editor.minutes", { minutes: minutes(Math.max(0, seconds)) })}</strong></span>
-      <span
-        >${equipment.length
-          ? t("editor.equipment", { equipment: equipment.join(t("list_separator")) })
-          : t("editor.no_equipment")}</span
-      >
-      ${this.dirty
-        ? html`<span class="not-saved">${icon(mdiAlertOutline)}<span>${t("editor.not_saved")}</span></span>`
-        : this.justSaved
-          ? html`<span class="secondary" role="status">${t("editor.saved")}</span>`
-          : nothing}
-    </p>`;
   }
 
   private renderDialogs() {
@@ -942,7 +1050,10 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   }
 }
 
-/** The editor's styles, for the shell's shadow root (the editor renders in light DOM). */
+/**
+ * The editor's styles, for the shell's shadow root (the editor renders in light DOM). Every rule sits under the
+ * editor's own classes, so nothing reaches the other pages or the library panel.
+ */
 export const programEditorStyles = css`
   .editor {
     display: flex;
@@ -952,149 +1063,331 @@ export const programEditorStyles = css`
   .editor-main {
     flex: 1;
     min-width: 0;
+    /* The cards' grids follow the column's width, not the window's (spec §2.2.7). */
+    container-type: inline-size;
   }
   hf-exercise-picker {
-    flex: 0 0 300px;
+    flex: 0 0 320px;
     padding-left: 20px;
     border-left: 1px solid var(--hf-border);
+    /* The equipment list spans the panel at most (320px less the padding), never past the window. */
+    --hf-equipment-popup-width: 300px;
   }
-  .editor-header {
+  .editor-main .editor-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 16px;
+    gap: 8px 16px;
     margin-bottom: 16px;
   }
-  .editor-header h1 {
-    margin: 4px 0 0;
+  .editor-main .editor-title {
+    flex: 1 1 280px;
+    min-width: 0;
   }
-  .breadcrumb {
+  .editor-main .crumbs,
+  .editor-main .breadcrumb {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     color: var(--hf-text-secondary);
+    font-size: 13px;
   }
-  .breadcrumb .crumb {
+  .editor-main .breadcrumb a {
+    color: var(--hf-text-secondary);
+    text-decoration: none;
+  }
+  .editor-main .breadcrumb a:hover {
+    text-decoration: underline;
+  }
+  .editor-main .crumbs h1 {
+    margin: 0;
+    color: var(--hf-text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+  }
+  /* The field is as wide as the name, so the pencil sits right after it (W7). */
+  .editor-main .name-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    margin-top: 2px;
+    padding: 0 6px 0 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+  }
+  .editor-main .name-field:hover {
+    border-color: var(--hf-border);
+    background: var(--hf-card);
+  }
+  .editor-main .name-field:focus-within {
+    border-color: var(--hf-primary);
+    background: var(--hf-card);
+  }
+  .editor-main .name-field input {
+    flex: 0 1 auto;
+    min-width: 0;
+    field-sizing: content;
+    padding: 2px 6px;
+    border: none;
+    outline: none;
+    background: transparent;
     color: var(--hf-text);
+    font: inherit;
+    font-size: 26px;
     font-weight: 500;
   }
-  .editor-actions {
+  .editor-main .name-field input[aria-invalid="true"] {
+    color: var(--hf-error);
+  }
+  .editor-main .name-field .icon {
+    width: 18px;
+    height: 18px;
+  }
+  .editor-main .editor-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
   }
-  button.danger-text {
+  .editor-main button.danger-text {
     color: var(--hf-error);
   }
-  button.danger-text .icon {
+  .editor-main button.danger-text .icon {
     width: 18px;
     height: 18px;
     color: inherit;
   }
-  .editor-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  .editor-main .not-saved {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 8px;
+    color: var(--hf-warning-text);
+  }
+  .editor-main .not-saved .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--hf-warning);
+  }
+  .editor-main .saved {
+    margin-right: 8px;
+    color: var(--hf-text-secondary);
+  }
+  .editor-main > .error {
     margin-bottom: 16px;
   }
-  .field-row {
+  .editor-main .error p {
+    margin: 4px 0;
+  }
+  /* When gets the wider column, so the days and Active fit one row; a narrow column stacks them (spec §2.2.7). */
+  .editor-main .editor-pair {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 0 16px;
+  }
+  @container (max-width: 900px) {
+    .editor-main .editor-pair {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .editor-main .editor-card {
+    min-width: 0;
+    padding: 14px 16px;
+  }
+  .editor-main .card-title {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    align-items: center;
+    gap: 4px 10px;
+    margin-bottom: 12px;
   }
-  .field {
+  .editor-main .card-title .icon {
+    color: var(--hf-primary);
+  }
+  .editor-main .card-title h2 {
+    margin: 0;
+  }
+  .editor-main .card-title .secondary {
+    font-size: 13px;
+  }
+  .editor-main .card-end {
+    margin-left: auto;
+  }
+  .editor-main .when-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+  }
+  .editor-main .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .editor-main .chips .chip {
+    padding: 6px 12px;
+  }
+  .editor-main .active {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--hf-text-secondary);
+  }
+  .editor-main .music-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  .editor-main .music-choice {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 8px 12px;
-    background: var(--hf-card);
+    min-width: 0;
+    font-size: 12px;
+  }
+  .editor-main .music > .secondary {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+  }
+  .editor-main .timing select {
+    margin-top: auto;
+  }
+  .editor-main .music select,
+  .editor-main .timing select {
+    width: 100%;
+    min-width: 0;
+    padding: 8px 10px;
     border: 1px solid var(--hf-border);
     border-radius: 8px;
+    background: var(--hf-card);
+    color: var(--hf-text);
+    font: inherit;
+  }
+  .editor-main .timing {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+  }
+  /* A narrow column: the five fields wrap onto two rows (spec §2.2.7). */
+  @container (max-width: 760px) {
+    .editor-main .timing {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @container (max-width: 460px) {
+    .editor-main .timing {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  .editor-main .timing-field {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--hf-border);
+    border-radius: 8px;
+    text-align: center;
+  }
+  .editor-main .timing-field label {
     color: var(--hf-text-secondary);
     font-size: 12px;
   }
-  .field-row > .field-row {
-    padding: 0;
+  .editor-main .stepper {
+    display: flex;
+    margin-top: auto;
+    align-items: center;
+    gap: 2px;
   }
-  .field.grow,
-  .field-row.grow {
+  .editor-main .stepper .icon-button {
+    flex: none;
+    color: var(--hf-primary);
+  }
+  .editor-main .stepper .icon {
+    width: 18px;
+    height: 18px;
+    color: inherit;
+  }
+  .editor-main .stepper input {
     flex: 1;
-  }
-  .field input,
-  .field select {
     width: 100%;
-    min-width: 72px;
-    padding: 4px 0;
+    min-width: 0;
+    padding: 2px 0;
     border: none;
     background: transparent;
     color: var(--hf-text);
     font: inherit;
-    font-size: 14px;
+    font-size: 20px;
+    font-weight: 500;
+    text-align: center;
+    appearance: textfield;
+    -moz-appearance: textfield;
   }
-  .field input[aria-invalid="true"] {
+  .editor-main .stepper input::-webkit-outer-spin-button,
+  .editor-main .stepper input::-webkit-inner-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+  }
+  .editor-main .stepper input[aria-invalid="true"] {
     color: var(--hf-error);
   }
-  .field-error {
-    margin: 2px 0 0;
+  .editor-main .field-error {
+    margin: 4px 0 0;
     color: var(--hf-error);
     font-size: 12px;
   }
-  .stations {
-    padding: 0;
-  }
-  .stations ol {
+  .editor-main .stations ol {
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  .stations li {
+  .editor-main .stations li {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 16px;
+    padding: 8px 4px;
     border-bottom: 1px solid var(--hf-border);
-  }
-  .stations .drag {
     cursor: grab;
   }
-  .stations .number {
+  .editor-main .stations li:last-child {
+    border-bottom: none;
+  }
+  .editor-main .stations .drag .icon {
+    width: 18px;
+    height: 18px;
+  }
+  .editor-main .stations .number {
+    flex: none;
     width: 20px;
     color: var(--hf-text-secondary);
+    text-align: center;
   }
-  .stations .thumb {
-    width: 40px;
-    height: 40px;
+  .editor-main .stations .thumb {
+    flex: none;
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--hf-border);
+    border-radius: 6px;
   }
-  .station-name {
-    flex: 1;
-  }
-  .station-meta {
-    flex: 1;
-  }
-  .stations > p {
-    margin: 12px 16px;
-  }
-  .summary {
+  .editor-main .station-text {
     display: flex;
-    align-items: center;
-    gap: 16px;
-    color: var(--hf-text-secondary);
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
   }
-  .summary strong {
-    color: var(--hf-text);
+  .editor-main .station-name {
+    font-weight: 500;
   }
-  .not-saved {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: #e65100;
+  .editor-main .station-text .secondary {
+    font-size: 12px;
   }
-  .not-saved .icon {
-    width: 16px;
-    height: 16px;
-    color: inherit;
-  }
-  .error p {
+  .editor-main .stations > p {
     margin: 4px 0;
   }
 `;

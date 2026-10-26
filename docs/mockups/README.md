@@ -37,6 +37,7 @@ layout the site follows:
 | W4 Exercise | `website/W4-exercise.png` |
 | W5 Delete program | `website/W5-delete.png` |
 | W6 Setup | `website/W6-setup.png` |
+| W7 Program editor in cards (the current editor; W3 was the first) | `website/W7-editor-cards.png` |
 
 Flow: Today → (Details) → Get ready → Timer (layout by participant count) ↔ pause → Complete → Today.
 
