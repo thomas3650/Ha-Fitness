@@ -1,6 +1,6 @@
 # The add-on's website: programs, library and setup
 
-**Status:** draft for Thomas's approval. Issue #85 (the choice of option B and Thomas's review are in its comments).
+**Status:** approved by Thomas in chat on 2026-10-26. Issue #85 (the choice of option B and Thomas's review are in its comments).
 The mockups are in [`docs/mockups/website/`](../../mockups/website/) (W1–W6, 1440×900). They show the layout; their
 texts are Danish, but the v2 website is in English (§2.1.5). The notes in their corner aren't part of the screens, and W6's
 equipment chips are examples (§2.4.1).
