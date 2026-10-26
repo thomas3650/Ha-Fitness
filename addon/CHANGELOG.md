@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/thomas3650/Ha-Fitness/compare/ha-fitness-addon-v1.1.0...ha-fitness-addon-v1.2.0) (2026-10-26)
+
+
+### Features
+
+* **addon:** a tidier program editor with My equipment in the filters ([#93](https://github.com/thomas3650/Ha-Fitness/issues/93)) ([4e313e8](https://github.com/thomas3650/Ha-Fitness/commit/4e313e87283a4cb6b1012a1f468974bb514b89ad))
+* **addon:** the website to manage programs, the library and the setup ([#86](https://github.com/thomas3650/Ha-Fitness/issues/86)) ([04ed030](https://github.com/thomas3650/Ha-Fitness/commit/04ed0300a59021f6efc045cfc68b71f2043bd4b2))
+
 ## [1.1.0](https://github.com/thomas3650/Ha-Fitness/compare/ha-fitness-addon-v1.0.0...ha-fitness-addon-v1.1.0) (2026-10-25)
 
 
