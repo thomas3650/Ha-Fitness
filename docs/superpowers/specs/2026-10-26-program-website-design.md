@@ -1,8 +1,8 @@
 # The add-on's website: programs, library and setup
 
 **Status:** draft for Thomas's approval. Issue #85 (the choice of option B and Thomas's review are in its comments).
-The mockups are in [`docs/mockups/website/`](../../mockups/website/) (W1–W6, 1440×900). They show the layout; their texts are
-Danish, but the v2 website is in English (§2.1.5). The notes in their corner aren't part of the screens, and W6's
+The mockups are in [`docs/mockups/website/`](../../mockups/website/) (W1–W6, 1440×900). They show the layout; their
+texts are Danish, but the v2 website is in English (§2.1.5). The notes in their corner aren't part of the screens, and W6's
 equipment chips are examples (§2.4.1).
 
 **Real Home Assistant:** no change is needed there beyond the releases. The website ships in the add-on and shows in the
@@ -124,7 +124,8 @@ Claude edit through the same add-on service layer, and the integration and the c
 ### 2.4 Setup (mockup W6)
 
 1. **Equipment:** which equipment the household has. The choices are every equipment value of the library and the
-   custom exercises, with `band` and `resistance band` as one choice ("band"; Claude's call). Body weight is always on. W6's chips are examples, not the list.
+   custom exercises, with `band` and `resistance band` as one choice ("band"; Claude's call). Body weight is always
+   on. W6's chips are examples, not the list.
 2. **People:** which of HA's persons train, at most 2, in order (the colours follow the order), with the people write's
    rules (`PUT /api/v1/people`). It is Thomas's call to have them on the website. People **save on their own**, apart
    from the rest of the setup (the people write can fail with 503 while HA is unreachable). **Removing a person asks
@@ -134,9 +135,9 @@ Claude edit through the same add-on service layer, and the integration and the c
    editor's music choice.
 4. **Default speaker:** chosen from Music Assistant's speakers. Programs made on the website get it.
 5. **Claude reads the setup:** a read-only MCP tool `get_setup` returns the household's equipment, the favourite
-   playlists and the default speaker; `search_exercises`, and the REST search with it (D3), gets an
-   optional `household` flag (default false, so today's behaviour stays) that applies the household filter. The tool descriptions tell Claude to use them when suggesting
-   exercises and when asking about music (#76). (Claude's call: a guess Thomas didn't object to.)
+   playlists and the default speaker; `search_exercises`, and the REST search with it (D3), gets an optional
+   `household` flag (default false, so today's behaviour stays) that applies the household filter. The tool
+   descriptions tell Claude to use them when suggesting exercises and when asking about music (#76). (Claude's call: a guess Thomas didn't object to.)
 6. Without Music Assistant the music parts show an empty list and say so; the rest of the setup works.
 
 ### 2.5 Status
@@ -191,9 +192,8 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
 - **Serving:** the site's assets get their own route or mount under a named prefix, before the MCP mount (which takes
   every unmatched path, D26); `/` serves the site's HTML. Without a built site (pytest, the CI `addon-server` job, a
   fast loop without a build), `/` serves a short English page that says the website isn't built.
-  `ingress.py`'s status page and `test_ingress.py` are replaced; the server's `i18n/` files keep only the fallback
-  page's texts. `docs/architecture.md`'s
-  "Routing in the add-on server" is updated.
+  `ingress.py`'s status page and `test_ingress.py` are replaced. The server's `i18n/` keeps only `en.json`, with the
+  fallback page's text; `da.json` is removed. `docs/architecture.md`'s "Routing in the add-on server" is updated.
 - **Ingress:** the site uses relative URLs and calls the REST API through Ingress.
 - **Tests (Thomas):** through what a user and the other parts see. The pages are tested through rendered text, roles
   and labels, and the requests they send to a faked REST API; no tests of component internals, no snapshots, no CSS
@@ -224,7 +224,9 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
 - `addon/DOCS.md`, `docs/testing.md` (the site in the fast loop and the full loop), `docs/mockups/README.md` (the new
   screens), `addon/server/src/ha_fitness_server/library/NOTICE.md` and `scripts/build_library.py`'s docstring (both say
   "filtered"), `docs/notes.md` (the node pin).
-- `CLAUDE.md` (layout and gates): in the separate root-files PR (§6).
+- `CLAUDE.md` (layout, gates, and hard rule 6 naming the website's English-only exception in v2 with the new
+  decision's number): in the separate root-files PR (§6). Until it merges, the build's dispatches and reviews cite the
+  new decision for the exception.
 
 ## 8. Left to the builder
 
