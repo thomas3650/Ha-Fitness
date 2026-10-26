@@ -391,3 +391,63 @@ test("a list read that fails with a bug shows the generic message and logs the b
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
   logged.mockRestore();
 });
+
+/** Delete a program through its dialog and wait until the dialog has closed. */
+async function deleteProgram(root: HTMLElement, name: string): Promise<void> {
+  fireEvent.click(getByRole(root, "button", { name: `Delete ${name}` }));
+  const dialog = await findByRole(root, "dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: en.programs.delete_confirm }));
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+}
+
+function focused(root: HTMLElement): Element | null {
+  return (root as unknown as ShadowRoot).activeElement;
+}
+
+test("after a delete the focus goes to the next row's first control", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() => expect(focused(root)).toBe(switchOf(root, "Legs")));
+});
+
+test("after deleting the last row the focus goes to the row before it", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  await deleteProgram(root, "Legs");
+
+  await vi.waitFor(() => expect(focused(root)).toBe(switchOf(root, "Core")));
+});
+
+test("after deleting the only shown row the focus goes to the page heading", async () => {
+  const root = await open(fakeApi({ programs: [programs()[1]] }));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() =>
+    expect(focused(root)).toBe(getByRole(root, "heading", { level: 1, name: en.programs.title })),
+  );
+});
+
+test("the neighbour rows are the ones shown: under the Active filter, deleting its last row focuses the one before", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+  fireEvent.click(getByRole(root, "button", { name: "Active 2" }));
+  await vi.waitFor(() => expect(names(root)).toEqual(["Active: Full body", "Active: Core"]));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() => expect(focused(root)).toBe(switchOf(root, "Full body")));
+});
+
+test("under a search, deleting its only match focuses the heading", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+  fireEvent.input(getByRole(root, "searchbox", { name: en.programs.search }), { target: { value: "core" } });
+  await vi.waitFor(() => expect(names(root)).toEqual(["Active: Core"]));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() =>
+    expect(focused(root)).toBe(getByRole(root, "heading", { level: 1, name: en.programs.title })),
+  );
+});
