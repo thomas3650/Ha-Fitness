@@ -6,7 +6,7 @@
     "library": "Library",
     "setup": "Setup",
     "status": "Status",
-    "version": "HA Fitness {version}"
+    "version": "{version}"
   },
   "programs": {
     "title": "Programs",

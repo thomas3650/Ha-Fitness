@@ -36,7 +36,7 @@ test("the bar shows the add-on's version", async () => {
   const root = await mount("#/programs");
 
   const menu = getByRole(root, "navigation", { name: en.menu.label });
-  expect(await findByText(menu, "HA Fitness 2.3.1")).toBeTruthy();
+  expect(await findByText(menu, "2.3.1")).toBeTruthy();
 });
 
 test("without a route the shell shows Programs, and marks it in the menu", async () => {
@@ -97,4 +97,19 @@ test("a query that finds nothing says so", async () => {
   const root = await mount("#/programs");
 
   expect(() => getByRole(root, "button", { name: "Nothing like this" })).toThrow(/Unable to find/);
+});
+
+test.each([
+  ["#/programs", "programs"],
+  ["#/library", "library"],
+  ["#/setup", "setup"],
+  ["#/status", "status"],
+] as const)("on %s only its own link is marked as the current page", async (hash, page) => {
+  vi.stubGlobal("fetch", fakeApi().fetch);
+  const root = await mount(hash);
+
+  for (const name of ["programs", "library", "setup", "status"] as const) {
+    const link = getByRole(root, "link", { name: en.menu[name] });
+    expect(link.getAttribute("aria-current")).toBe(name === page ? "page" : null);
+  }
 });

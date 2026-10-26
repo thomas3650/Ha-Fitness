@@ -9,5 +9,5 @@ test("a count reads with the English thousands separator and still picks the plu
 });
 
 test("a string value is filled in as it is", () => {
-  expect(t("menu.version", { version: "1.2.0" })).toBe("HA Fitness 1.2.0");
+  expect(t("menu.version", { version: "1.2.0" })).toBe("1.2.0");
 });

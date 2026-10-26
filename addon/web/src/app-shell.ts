@@ -110,7 +110,7 @@ export class AppShell extends LitElement {
     void this.loadVersion();
   }
 
-  /** The add-on's version for the bar (W1); without an answer the foot stays empty. */
+  /** The add-on's version for the bar (W1); without an answer the version stays empty. */
   private async loadVersion(): Promise<void> {
     try {
       this.version = (await this.api.health()).version;
