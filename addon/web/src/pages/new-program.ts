@@ -2,7 +2,7 @@ import { mdiContentCopy, mdiDumbbell, mdiFileOutline } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
 import { ApiError, createApi, thumbnailUrl, type Api, type ProgramDefaults, type ProgramOut } from "../api";
-import { minutes } from "../format";
+import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
 
@@ -120,7 +120,7 @@ export class NewProgramPage extends LitElement {
                   @error=${() => (this.missing = new Set([...this.missing, first]))}
                 />`}
             <strong>${stored.program.name}</strong>
-            <span class="secondary">${t("new_program.minutes", { minutes: minutes(stored.total_seconds) })}</span>
+            <span class="secondary">${duration(stored.total_seconds)}</span>
           </a>
         </li>`;
       })}

@@ -1,7 +1,7 @@
 import { html, LitElement, nothing } from "lit";
 
 import { ApiError, createApi, type Api, type Health, type LibraryStatus, type Person, type ProgramOut } from "../api";
-import { minutes } from "../format";
+import { duration } from "../format";
 import { t } from "../i18n";
 
 /** What the page read; a read that was refused stays null, and its message is in `errors`. */
@@ -140,7 +140,7 @@ export class StatusPage extends LitElement {
               ${stored.program.weekdays.map((day) => t(`weekday.${day}`)).join(t("list_separator")) ||
               t("status.no_weekdays")}
             </td>
-            <td>${t("status.minutes", { minutes: minutes(stored.total_seconds) })}</td>
+            <td>${duration(stored.total_seconds)}</td>
           </tr>`,
         )}
       </tbody>

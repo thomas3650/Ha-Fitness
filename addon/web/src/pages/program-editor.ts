@@ -43,7 +43,7 @@ import "../components/confirm-dialog";
 import "../components/exercise-details";
 import "../components/exercise-picker";
 import { applySelectValues } from "../components/select-value";
-import { minutes } from "../format";
+import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { BODY_WEIGHT, foldBand } from "../library-filter";
@@ -831,7 +831,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     </section>`;
   }
 
-  /** The total time, as the add-on counts it: S·R·(W + switch) + (R − 1)·round rest, in whole minutes. */
+  /** The total time, as the add-on counts it: S·R·(W + switch) + (R − 1)·round rest, as a duration. */
   private renderTotal(form: Form) {
     const stations = form.stations.length;
     const rounds = form.rounds ?? 0;
@@ -840,7 +840,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       Math.max(0, rounds - 1) * (form.round_rest_seconds ?? 0);
     return html`<span class="secondary card-end"
       >${t("editor.total", {
-        minutes: minutes(Math.max(0, seconds)),
+        duration: duration(Math.max(0, seconds)),
         rounds: t("editor.round_count", { count: rounds }),
         exercises: t("editor.exercises", { count: stations }),
       })}</span

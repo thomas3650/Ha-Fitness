@@ -26,7 +26,6 @@
     "col_created_by": "Created by",
     "col_active": "Active",
     "col_actions": "Actions",
-    "minutes": "{minutes} min",
     "no_weekdays": "No weekdays",
     "no_music": "None",
     "created_by_claude": "Claude",
@@ -95,7 +94,7 @@
     "exercises_other": "{count} exercises",
     "round_count_one": "{count} round",
     "round_count_other": "{count} rounds",
-    "total": "{minutes} min in all · {rounds} × {exercises}",
+    "total": "{duration} in all · {rounds} × {exercises}",
     "equipment": "Equipment: {equipment}",
     "no_equipment": "No equipment",
     "not_saved": "Not saved",
@@ -187,7 +186,6 @@
     "on": "On",
     "off": "Off",
     "no_weekdays": "None",
-    "minutes": "{minutes} min",
     "links": "Links",
     "library_json": "Library state (JSON)",
     "health": "Health check (JSON)"
@@ -217,6 +215,10 @@
   "dialog": {
     "cancel": "Cancel"
   },
+  "duration": {
+    "minutes": "{minutes} min",
+    "under_minute": "< 1 min"
+  },
   "error": {
     "unknown": "The add-on answered with an error ({status}).",
     "network": "The add-on can't be reached."
@@ -230,8 +232,7 @@
     "copy_title": "Copy a program",
     "copy_hint": "The copy is called “… (copy)” and is off until you save.",
     "no_programs": "No programs to copy yet.",
-    "programs": "Programs to copy",
-    "minutes": "{minutes} min"
+    "programs": "Programs to copy"
   },
   "picker": {
     "title": "Library",

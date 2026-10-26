@@ -1120,3 +1120,35 @@ test("the timing's title row shows the total, and Countdown is still a choice of
   const countdown = field(root, "combobox", en.editor.countdown);
   expect(within(countdown).getAllByRole("option").map(text)).toEqual(["0 s", "5 s", "10 s"]);
 });
+
+test("a program under half a minute shows “< 1 min” on the new-program page and in the editor's total", async () => {
+  const short = program(
+    1,
+    {
+      name: "Short",
+      stations: [{ exercise: "0001" }],
+      rounds: 1,
+      work_seconds: 20,
+      switch_seconds: 0,
+      round_rest_seconds: 0,
+    },
+    { station_names: ["push-up"], total_seconds: 20 },
+  );
+  const fake = newFake({ programs: [short] });
+  vi.stubGlobal("fetch", fake.fetch);
+  let root = await mount("#/programs/new");
+  const copy = await findByRole(root, "link", { name: /Short/ });
+  expect(within(copy).getByText("< 1 min")).toBeTruthy();
+  unmount();
+
+  root = await openEditor(fake, "#/programs/1");
+  expect(within(root).getByText("< 1 min in all · 1 round × 1 exercise")).toBeTruthy();
+  fireEvent.input(field(root, "spinbutton", en.editor.work), { target: { value: "30" } });
+  expect(await within(root).findByText("1 min in all · 1 round × 1 exercise")).toBeTruthy();
+  unmount();
+
+  // An empty program of one round lasts 0 s, and shows 0 min as before.
+  const oneRound = { rounds: 1, work_seconds: 45, switch_seconds: 15, round_rest_seconds: 60, countdown_seconds: 5 };
+  root = await openEditor(newFake({ defaults: oneRound }), "#/programs/new/empty");
+  expect(within(root).getByText("0 min in all · 1 round × 0 exercises")).toBeTruthy();
+});

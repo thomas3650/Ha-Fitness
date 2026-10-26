@@ -14,7 +14,7 @@ import { css, html, LitElement, nothing } from "lit";
 
 import { ApiError, createApi, thumbnailUrl, type Api, type ProgramOut, type Weekday } from "../api";
 import "../components/confirm-dialog";
-import { minutes } from "../format";
+import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
 
@@ -242,7 +242,7 @@ export class ProgramsPage extends LitElement {
     return html`<tr class=${active ? "" : "off"}>
       <th scope="row">
         <strong>${name}</strong>
-        <span class="secondary">${t("programs.minutes", { minutes: minutes(stored.total_seconds) })}</span>
+        <span class="secondary">${duration(stored.total_seconds)}</span>
         ${error ? html`<p class="error" role="alert">${error}</p>` : nothing}
       </th>
       <td>

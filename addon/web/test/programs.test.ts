@@ -365,3 +365,19 @@ test("when the add-on can't be reached, the page says so", async () => {
 
   expect(text(await findByRole(root, "alert"))).toBe(en.error.network);
 });
+
+test("a program under half a minute shows “< 1 min”; half a minute shows 1 min, and an empty one 0 min", async () => {
+  const root = await open(
+    fakeApi({
+      programs: [
+        program(1, { name: "Short" }, { total_seconds: 20 }),
+        program(2, { name: "Half" }, { total_seconds: 30 }),
+        program(3, { name: "Empty", stations: [] }, { total_seconds: 0 }),
+      ],
+    }),
+  );
+
+  expect(within(rowOf(root, "Short")).getByText("< 1 min")).toBeTruthy();
+  expect(within(rowOf(root, "Half")).getByText("1 min")).toBeTruthy();
+  expect(within(rowOf(root, "Empty")).getByText("0 min")).toBeTruthy();
+});
