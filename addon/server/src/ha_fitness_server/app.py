@@ -129,7 +129,6 @@ def create_app(
         running session is paused and the snapshot written (spec §3.6).
         """
         engine = open_database(settings.data_dir)
-        app.state.engine = engine
         library = Library(engine)
         media = MediaStore(settings.data_dir, settings.media_base_url, media_transport)
         ha = HaClient(
@@ -190,10 +189,6 @@ def create_app(
     )
     app.state.services = holder
     app.state.mcp = mcp
-    app.state.ha_transport = ha_transport
-    app.state.media_transport = media_transport
-    app.state.clock = the_clock
-    app.state.supervisor_transport = supervisor_transport
     app.state.hub = hub
 
     @app.get("/api/v1/health")
