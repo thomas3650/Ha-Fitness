@@ -135,8 +135,8 @@ Claude edit through the same add-on service layer, and the integration and the c
    editor's music choice.
 4. **Default speaker:** chosen from Music Assistant's speakers. Programs made on the website get it.
 5. **Claude reads the setup:** a read-only MCP tool `get_setup` returns the household's equipment, the favourite
-   playlists and the default speaker; `search_exercises` gets an optional `household` flag (default false, so today's
-   behaviour stays) that applies the household filter. The tool descriptions tell Claude to use them when suggesting
+   playlists and the default speaker; `search_exercises`, and the REST search with it (D3), gets an optional
+   `household` flag (default false, so today's behaviour stays) that applies the household filter. The tool descriptions tell Claude to use them when suggesting
    exercises and when asking about music (#76). (Claude's call: a guess Thomas didn't object to.)
 6. Without Music Assistant the music parts show an empty list and say so; the rest of the setup works.
 
@@ -150,8 +150,9 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
 1. The add-on gives each refusal the site can meet a **stable code**, and the **field** it is about where there is one:
    a taken name, a weekday needed for an active program, a station that can't be resolved, too many people, a session
    that blocks a delete or a switch-off (D42), a conflict on save (§2.2.6), HA unreachable for the people write, and
-   the field-level validation errors. This is an addition to the REST error bodies (`api_version` stays 1); MCP's
-   error texts stay as they are.
+   the field-level validation errors. This is an addition to the REST error bodies (`api_version` stays 1): an
+   existing route's `detail` keeps its type and meaning, and new fields go beside it. The session routes keep their
+   `{code, message}` detail and codes, which the integration reads. MCP's error texts stay as they are.
 2. The site maps code and field to texts in its language files. An unknown code shows a general text in the browser's
    language, with the add-on's English message underneath.
 
@@ -191,18 +192,21 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
 - **Serving:** the site's assets get their own route or mount under a named prefix, before the MCP mount (which takes
   every unmatched path, D26); `/` serves the site's HTML. Without a built site (pytest, the CI `addon-server` job, a
   fast loop without a build), `/` serves a short page that says the website isn't built, in the browser's language.
-  `ingress.py`'s status page, its `i18n/` texts and `test_ingress.py` are replaced. `docs/architecture.md`'s
+  `ingress.py`'s status page and `test_ingress.py` are replaced; the server's `i18n/` files keep only the fallback
+  page's texts. `docs/architecture.md`'s
   "Routing in the add-on server" is updated.
 - **Ingress:** the site uses relative URLs and calls the REST API through Ingress.
 - **Tests (Thomas):** through what a user and the other parts see. The pages are tested through rendered text, roles
   and labels, and the requests they send to a faked REST API; no tests of component internals, no snapshots, no CSS
   selectors (hard rule 5). The new and changed REST routes and MCP tools are tested through REST and MCP, as today.
 - **Gates and tooling:** the site gets lint, test and build commands and a CI job, a Dependabot npm entry (with the
-  TypeScript hold from `docs/notes.md`), `scripts/setup` and `scripts/develop` support, and a `.gitignore` entry for its
-  build output. Making the new CI job a required check is a GitHub setting and needs Thomas's OK.
-- **Releases:** the feature touches `addon/` and `docs/`. Changes to root files (`CLAUDE.md`, `.gitignore`,
-  `.pre-commit-config.yaml`, `scripts/`) go in a separate `docs:`/`chore:` PR, so the integration doesn't release
-  unchanged ([`releasing.md`](../../releasing.md), D29).
+  TypeScript hold from `docs/notes.md`), `scripts/setup` and `scripts/develop` support, and a `.gitignore` for its
+  build output in its own folder. Making the new CI job a required check is a GitHub setting and needs Thomas's OK.
+- **Releases:** the feature touches `addon/`, `docs/` and `scripts/` (none of them releases the integration). Changes
+  to root files (`CLAUDE.md`, `.pre-commit-config.yaml`, the root `.gitignore`) go in a separate `docs:`/`chore:` PR
+  that merges after the feature PR, so the integration doesn't release unchanged
+  ([`releasing.md`](../../releasing.md), D29). The site's build output is ignored by a `.gitignore` inside its own
+  folder under `addon/`.
 - **Languages:** every text in Danish and English language files (hard rule 6).
 
 ## 7. Docs
@@ -228,4 +232,4 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
 - How "Oprettet af" is stored and the change-log fallback is read.
 - The exact layout within the mockups' structure, and drag and drop's implementation.
 - How the fast loop serves the site during development.
-- Splitting the feature into more than one PR, as long as the root files go in their own PR (§6).
+- Splitting the feature into more than one PR, as long as the root files go in their own PR, merged last (§6).
