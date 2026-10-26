@@ -55,9 +55,10 @@ types:
     `manifest.json`, builds the cards, zips the contents of `custom_components/ha_fitness/` as `ha_fitness.zip`,
     checks that the zip root holds `manifest.json` and `frontend/ha-fitness-cards.js`, uploads it, and publishes the
     release as Latest.
-- **`addon-image.yml`** (a push to `main` that changes `addon/config.yaml`): when the `version` differs from the parent
-  commit, it builds the image for aarch64 and amd64 and pushes `X.Y.Z` and `latest` with the multi-arch manifest to
-  GHCR. Only the add-on's release PR changes that version.
+- **`addon-image.yml`** (a push to `main` that changes `addon/config.yaml`, or a manual dispatch on `main`): when GHCR
+  has no image yet for the `version` in `addon/config.yaml`, it builds the image for aarch64 and amd64 and pushes
+  `X.Y.Z` and `latest` with the multi-arch manifest. Only the add-on's release PR changes that version. It asks the
+  registry, not git, so a run that GitHub dropped from the queue is made up by the next run.
 - **`ci.yml`** runs on every PR, the release PRs included (they need the token below).
 
 ## Cutting a release
@@ -128,5 +129,8 @@ Issues: read and write (D18). release-please needs it so that its release PRs tr
   gh release edit vX.Y.Z --draft=false --latest
   ```
 
-- **`addon-image` fails:** re-run the failed jobs (`gh run rerun <run-id> --failed`). A new push doesn't start it again,
-  because the version no longer changes. Until the image is there, HA can't install the update.
+- **`addon-image` fails, or a version has no image:** start the workflow by hand
+  (`gh workflow run addon-image.yml --ref main`), or re-run the latest `addon-image` run (`gh run rerun <run-id>`).
+  Don't re-run an older run: it would push its older version as `latest`. The workflow builds the version in
+  `addon/config.yaml` when its image is missing, and skips it when the image is there. Until the image is there, HA
+  can't install the update.

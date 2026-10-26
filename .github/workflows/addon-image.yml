@@ -1,11 +1,16 @@
 name: addon-image
-# Builds and pushes the add-on image when a merge to main changes the version in addon/config.yaml
-# (the add-on's release PR). Steps follow home-assistant/apps-example's build-app.yaml.
+# Builds and pushes the add-on image when the registry has no image yet for the version in addon/config.yaml
+# (set by the add-on's release PR). It runs on a push to main that changes addon/config.yaml, and by hand
+# (workflow_dispatch, main only). The registry decides, not git: a run that GitHub replaced in the queue is made up by
+# the next run. To build a missed version, dispatch the workflow on main (or re-run the latest run, not an older one);
+# it skips a version that has an image.
+# Steps follow home-assistant/apps-example's build-app.yaml.
 on:
   push:
     branches: [main]
     paths:
       - addon/config.yaml
+  workflow_dispatch:
 
 permissions: {}
 
@@ -39,33 +44,64 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 2
           persist-credentials: false
-      - name: Did the version change?
+      - name: Does the version have an image?
         id: version
+        env:
+          REF: ${{ github.ref }}
         run: |
-          # yq (mikefarah) is preinstalled on GitHub's Ubuntu runners.
-          version="$(yq -r '.version' addon/config.yaml)"
-          if [ -z "${version}" ] || [ "${version}" = "null" ]; then
-            echo "No version in addon/config.yaml"
+          # A dispatch from another branch would push unreviewed code as :latest.
+          if [ "${REF}" != "refs/heads/main" ]; then
+            echo "::error::Run this workflow on main only (got ${REF})"
             exit 1
           fi
-          # Any git error other than a parent without the file fails the job.
-          git rev-parse --verify --quiet 'HEAD^1^{commit}' > /dev/null || { echo "Cannot read the parent commit"; exit 1; }
-          # ls-tree reads only the trees: no output means no file; an unreadable tree fails the job.
-          entry="$(git ls-tree 'HEAD^1' -- addon/config.yaml)"
-          if [ -z "${entry}" ]; then
-            # The merge that adds the add-on: release-please has not released a version yet.
-            echo "The parent commit has no addon/config.yaml: nothing to build"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          # yq (mikefarah) and jq are preinstalled on GitHub's Ubuntu runners.
+          version="$(yq -r '.version' addon/config.yaml)"
+          if [ -z "${version}" ] || [ "${version}" = "null" ]; then
+            echo "::error::No version in addon/config.yaml"
+            exit 1
           fi
-          previous="$(git show 'HEAD^1:addon/config.yaml' | yq -r '.version')"
-          echo "version ${previous} -> ${version}"
-          if [ "${version}" = "${previous}" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          # The multi-arch manifest that publish-multi-arch-manifest pushes: ${REGISTRY_PREFIX}/${IMAGE_NAME}:<version>.
+          registry="${REGISTRY_PREFIX%%/*}"
+          repository="${REGISTRY_PREFIX#*/}/${IMAGE_NAME}"
+          body="$(mktemp)"
+          # An anonymous pull token. A missing or non-public package answers 403 here; with that token the
+          # manifest check would answer 404, so anything but a token is an error, never "missing".
+          status="$(curl -sS -o "${body}" -w '%{http_code}' \
+            "https://${registry}/token?scope=repository:${repository}:pull")" \
+            || { echo "::error::Could not reach ${registry} for a pull token"; exit 1; }
+          if [ "${status}" != "200" ]; then
+            cat "${body}"
+            echo "::error::No anonymous pull token for ${repository} (HTTP ${status}); is the package public?"
+            exit 1
           fi
+          token="$(jq -r '.token // empty' "${body}")"
+          if [ -z "${token}" ]; then
+            echo "::error::The token response for ${repository} has no token"
+            exit 1
+          fi
+          status="$(curl -sS -o /dev/null -I -w '%{http_code}' \
+            -H "Authorization: Bearer ${token}" \
+            -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+            -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+            "https://${registry}/v2/${repository}/manifests/${version}")" \
+            || { echo "::error::Could not reach ${registry} to check ${repository}:${version}"; exit 1; }
+          case "${status}" in
+            200)
+              echo "${registry}/${repository}:${version} exists: nothing to build"
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            404)
+              echo "${registry}/${repository}:${version} is missing: building it"
+              ;;
+            *)
+              echo "::error::Could not check ${registry}/${repository}:${version} (HTTP ${status})"
+              exit 1
+              ;;
+          esac
           {
             echo "changed=true"
             echo "version=${version}"
