@@ -22,9 +22,21 @@ Exercise GIFs in `gifs/` are © Gym visual (via hasaneyldrm/exercises-dataset). 
 | Timer, 2 participants | `TimerDuo` | Workout overlay (page-level, D45) |
 | Timer, 3–4 participants | `TimerSquad` | Workout overlay (page-level, D45) |
 | Circuit complete | `Complete` | Workout overlay (page-level, D45), the end |
-| Program (read-only + Claude draft) | `Planner` | Add-on website (Ingress) |
+| Program (read-only + Claude draft) | `Planner` | Add-on website (Ingress); replaced by `website/` W1–W3, W5 |
 | Exercise library | `Library` | Add-on website (Ingress) |
 | History | `History` | Add-on website (Ingress) |
+
+The add-on website's screens are in `website/` ([D62](../decisions.md)). They are light and English, and show the
+layout the site follows:
+
+| Screen | File |
+| --- | --- |
+| W1 Programs | `website/W1-programs.png` |
+| W2 New program | `website/W2-new-program.png` |
+| W3 Program editor | `website/W3-editor.png` |
+| W4 Exercise | `website/W4-exercise.png` |
+| W5 Delete program | `website/W5-delete.png` |
+| W6 Setup | `website/W6-setup.png` |
 
 Flow: Today → (Details) → Get ready → Timer (layout by participant count) ↔ pause → Complete → Today.
 

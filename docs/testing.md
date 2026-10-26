@@ -110,8 +110,9 @@ Desktop must run.
 5. `scripts/seed --ha-url http://localhost:7123` creates the persons and the sample program there. Then
    `curl -s http://localhost:8765/api/v1/people` lists them: the add-on reaches its HA through the Supervisor.
    `GET /api/v1/library` reaches media state `done`.
-6. Check Ingress in Chrome (below): the add-on's page at `http://localhost:7123/app/local_ha_fitness`, in Danish for
-   the Danish user. Then the integration:
+6. Check Ingress in Chrome (below): the add-on's website at `http://localhost:7123/app/local_ha_fitness`. Its texts
+   are English only (D62), so they stay English for the Danish user. Check that the Programs, Library, Setup and
+   Status pages load, and that `/web/` assets come through the panel. Then the integration:
    - install it ([how](ha-notes.md#the-supervisor): copy `custom_components/ha_fitness`, with the built cards, and
      restart HA);
    - the Discovered card reads "HA Fitness", and setting it up from there creates the entry with no URL to type;
@@ -203,6 +204,10 @@ For every UI change, in the fast loop (and in the full loop before a release):
   `<screen>-<landscape|portrait>.png` (for example `screenshots/2026-10-25-paused-blue/timer-paused-landscape.png`).
   The folder is git-ignored: screenshots show exercise-library pictures, which stay out of the public repo. The PR
   description lists the screens checked and the folder. Screenshots show the dev HA only, never the real one.
+
+For a change to the add-on's website, open it at `http://localhost:8765/` in the fast loop (the site is English only,
+D62, and the panel has no Danish to check). Its pages are Programs, Library, Setup and Status. Screenshots follow the
+same folder rule.
 
 For a card change, open each card's editor as well. Check the Layout tab and the language field.
 

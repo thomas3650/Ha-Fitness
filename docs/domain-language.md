@@ -114,6 +114,16 @@ Three rules surprise:
 | **Exercise id** | A library exercise keeps the dataset's id (`0001` …). A custom exercise gets `custom-1`, `custom-2` … in the order added. A station stores the id. |
 | **Custom exercise** | An exercise added through Claude, stored apart from the library. It has no media, and its name may not equal any other exercise's name. |
 
+## The setup
+
+| Term | Meaning |
+| --- | --- |
+| **Setup** | The household's choices, kept in the add-on and set on the website: equipment, the people, favourite playlists and the default speaker. Claude reads it (D63). |
+| **Household equipment** | The equipment the house has. Body weight is always in. With `household` on, a search keeps the exercises that use only this equipment, and every custom exercise. |
+| **Favourite playlists** | Playlists the household picked, each with a name for the screens. Claude offers them first. |
+| **Default speaker** | The speaker Claude offers first for music. |
+| **Created by** | Who made a program: `claude` when it came over MCP, `you` when it came from the website or another REST client. Empty for a program from before the field. |
+
 ## The change log
 
 | Term | Meaning |
