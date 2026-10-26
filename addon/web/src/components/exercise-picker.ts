@@ -4,44 +4,11 @@ import { css, html, LitElement, nothing } from "lit";
 import { thumbnailUrl, type ExerciseSummary } from "../api";
 import { t } from "../i18n";
 import { icon } from "../icons";
+import { facetValues, FACETS, inHousehold, searchByName, type Facet } from "../library-filter";
 import { applySelectValues } from "./select-value";
-
-/** Body weight needs no equipment, so the household always has it (website spec §2.3.2). */
-const BODY_WEIGHT = "body weight";
-
-/**
- * Whether the household can do an exercise, as the add-on's household search decides it: its equipment is in the
- * setup's (body weight always), or it is custom. A library exercise without equipment is not one.
- */
-export function inHousehold(exercise: ExerciseSummary, household: ReadonlySet<string>): boolean {
-  const equipment = exercise.equipment;
-  return exercise.custom || (equipment !== null && (equipment === BODY_WEIGHT || household.has(equipment)));
-}
-
-/**
- * The exercises whose name has every word of the search, those that start with the whole search first; the order
- * is kept otherwise.
- */
-export function searchByName(exercises: ExerciseSummary[], search: string): ExerciseSummary[] {
-  const needle = search.trim().toLowerCase();
-  const words = needle.split(/\s+/).filter(Boolean);
-  const kept = exercises.filter((exercise) => words.every((word) => exercise.name.toLowerCase().includes(word)));
-  const first = kept.filter((exercise) => exercise.name.toLowerCase().startsWith(needle));
-  const rest = kept.filter((exercise) => !exercise.name.toLowerCase().startsWith(needle));
-  return [...first, ...rest];
-}
 
 /** The most results the panel draws at once; a search narrows the rest. */
 const SHOWN = 100;
-
-export type Facet = "equipment" | "body_part" | "target";
-
-export const FACETS: Facet[] = ["equipment", "body_part", "target"];
-
-/** The values one facet has among the exercises, sorted, as the dataset names them. */
-export function facetValues(exercises: ExerciseSummary[], facet: Facet): string[] {
-  return [...new Set(exercises.map((exercise) => exercise[facet]).filter((value): value is string => !!value))].sort();
-}
 
 /**
  * The library beside the editor (W3), searched and filtered in the site from the summaries of all exercises (website

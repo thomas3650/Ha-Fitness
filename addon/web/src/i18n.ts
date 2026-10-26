@@ -22,11 +22,16 @@ function find(key: string, count: number | undefined): string | undefined {
   return lookup(en, `${key}_${form}`) ?? lookup(en, `${key}_other`) ?? lookup(en, key);
 }
 
-/** Fill in the `{name}` placeholders; one with no value stays as it is. */
+/** Numbers read the English way, with a thousands separator: "1,324". */
+const NUMBER = new Intl.NumberFormat("en");
+
+/** Fill in the `{name}` placeholders, numbers formatted; one with no value stays as it is. */
 function fill(text: string, vars: Vars): string {
-  return text.replace(/\{(\w+)\}/g, (placeholder, name: string) =>
-    Object.hasOwn(vars, name) ? String(vars[name]) : placeholder,
-  );
+  return text.replace(/\{(\w+)\}/g, (placeholder, name: string) => {
+    if (!Object.hasOwn(vars, name)) return placeholder;
+    const value = vars[name];
+    return typeof value === "number" ? NUMBER.format(value) : value;
+  });
 }
 
 /**

@@ -245,6 +245,18 @@
     "close": "Close",
     "add": "Add to program"
   },
+  "equipment_filter": {
+    "search": "Type to search equipment",
+    "show": "Show",
+    "pick": "Or pick equipment",
+    "mine": "My equipment",
+    "all": "All equipment",
+    "mine_line": "{kinds} · {count}",
+    "all_line": "{count}",
+    "mode_name": "{label}, {line}",
+    "not_at_home": "not at home",
+    "not_at_home_name": "{value}, not at home"
+  },
   "multi_select": {
     "none": "No matches",
     "remove": "Remove {value}",

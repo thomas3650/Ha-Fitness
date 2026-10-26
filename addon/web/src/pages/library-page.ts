@@ -4,9 +4,9 @@ import { css, html, LitElement, nothing } from "lit";
 import { ApiError, createApi, thumbnailUrl, type Api, type ExerciseSummary } from "../api";
 import "../components/exercise-details";
 import "../components/multi-select";
-import { facetValues, FACETS, inHousehold, searchByName, type Facet } from "../components/exercise-picker";
 import { t } from "../i18n";
 import { icon } from "../icons";
+import { facetValues, FACETS, inHousehold, searchByName, type Facet } from "../library-filter";
 
 function failure(error: unknown): string {
   if (error instanceof ApiError) return error.message;

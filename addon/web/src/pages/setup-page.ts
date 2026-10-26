@@ -25,11 +25,11 @@ import {
   type SpeakerOut,
 } from "../api";
 import "../components/confirm-dialog";
-import { facetValues } from "../components/exercise-picker";
 import "../components/multi-select";
 import { applySelectValues } from "../components/select-value";
 import { t } from "../i18n";
 import { icon } from "../icons";
+import { facetValues } from "../library-filter";
 
 /** Body weight needs no equipment: always on, never a choice (website spec §2.4.1). */
 const BODY_WEIGHT = "body weight";
