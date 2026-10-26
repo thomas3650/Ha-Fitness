@@ -80,7 +80,7 @@ class Settings:
             dev=os.environ.get("HA_FITNESS_DEV") == "1",
             supervisor_token=supervisor_token or None,
             late_days=_late_days(data_dir),
-            web_dir=Path(os.environ.get("HA_FITNESS_WEB_DIR", DEFAULT_WEB_DIR)),
+            web_dir=Path(os.environ.get("HA_FITNESS_WEB_DIR") or DEFAULT_WEB_DIR),
         )
 
 

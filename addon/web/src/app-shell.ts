@@ -127,7 +127,7 @@ export class AppShell extends LitElement {
   protected override render() {
     const current = menuPage(this.route);
     return html`
-      <nav aria-label=${t("menu.label")}>
+      <nav class="menu" aria-label=${t("menu.label")}>
         <ul>
           ${MENU.map(
             (entry) => html`<li>
@@ -183,7 +183,7 @@ export class AppShell extends LitElement {
         font-family: var(--hf-font);
         font-size: 14px;
       }
-      nav {
+      .menu {
         display: flex;
         flex-direction: column;
         flex: 0 0 210px;
@@ -191,7 +191,7 @@ export class AppShell extends LitElement {
         border-right: 1px solid var(--hf-border);
         background: var(--hf-card);
       }
-      nav ul {
+      .menu ul {
         flex: 1;
         list-style: none;
         margin: 0;
@@ -203,7 +203,7 @@ export class AppShell extends LitElement {
         color: var(--hf-text-secondary);
         font-size: 12px;
       }
-      nav a {
+      .menu a {
         display: flex;
         align-items: center;
         gap: 16px;
@@ -213,10 +213,10 @@ export class AppShell extends LitElement {
         font-weight: 500;
         text-decoration: none;
       }
-      nav a:hover {
+      .menu a:hover {
         background: var(--hf-background);
       }
-      nav a[aria-current="page"] {
+      .menu a[aria-current="page"] {
         background: var(--hf-primary-light);
         color: var(--hf-primary);
       }
@@ -226,7 +226,7 @@ export class AppShell extends LitElement {
         height: 20px;
         color: var(--hf-text-secondary);
       }
-      nav a[aria-current="page"] .icon {
+      .menu a[aria-current="page"] .icon {
         color: var(--hf-primary);
       }
       main {

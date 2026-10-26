@@ -44,7 +44,11 @@ class Facets(BaseModel):
 
 
 class ExerciseSearch(BaseModel):
-    """A search result; `facets` only when the query and the filters are empty."""
+    """A search result; `facets` only when the query and the filters are empty.
+
+    `household` doesn't count as a filter here: a household search with no query still gets the facets, and they
+    list every value.
+    """
 
     results: list[ExerciseSummary]
     facets: Facets | None

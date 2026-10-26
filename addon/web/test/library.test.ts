@@ -252,6 +252,9 @@ test("the page counts the exercises it shows", async () => {
   expect(getByRole(root, "heading", { level: 1, name: en.library.title })).toBeTruthy();
   showAll(root);
   await vi.waitFor(() => expect(queryByText(root, `${EXERCISES.length} exercises`)).toBeTruthy());
+
+  fireEvent.input(getByRole(root, "searchbox", { name: en.library.search }), { target: { value: "goblet" } });
+  await vi.waitFor(() => expect(queryByText(root, "1 exercise")).toBeTruthy());
 });
 
 test("a refused read of the exercises shows the add-on's message instead of loading forever", async () => {

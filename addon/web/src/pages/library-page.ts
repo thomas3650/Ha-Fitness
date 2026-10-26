@@ -146,11 +146,11 @@ export class LibraryPage extends LitElement {
         ? html`<table aria-label=${t("library.results")}>
             <thead>
               <tr>
-                <th><span class="visually-hidden">${t("library.col_picture")}</span></th>
-                <th>${t("library.col_name")}</th>
-                <th>${t("library.equipment")}</th>
-                <th>${t("library.body_part")}</th>
-                <th>${t("library.target")}</th>
+                <th scope="col"><span class="visually-hidden">${t("library.col_picture")}</span></th>
+                <th scope="col">${t("library.col_name")}</th>
+                <th scope="col">${t("library.equipment")}</th>
+                <th scope="col">${t("library.body_part")}</th>
+                <th scope="col">${t("library.target")}</th>
               </tr>
             </thead>
             <tbody>

@@ -143,3 +143,11 @@ def test_web_dir_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Settings.from_env().web_dir == Path("/opt/ha-fitness/web")
     monkeypatch.setenv("HA_FITNESS_WEB_DIR", "/srv/site")
     assert Settings.from_env().web_dir == Path("/srv/site")
+
+
+def test_an_empty_web_dir_variable_gives_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty `HA_FITNESS_WEB_DIR` counts as unset, not as the working folder."""
+    monkeypatch.setenv("HA_FITNESS_WEB_DIR", "")
+    assert Settings.from_env().web_dir == Path("/opt/ha-fitness/web")
