@@ -1,4 +1,5 @@
 import { findByRole, fireEvent, getByRole, queryByRole, within } from "@testing-library/dom";
+import { computeAccessibleName } from "dom-accessibility-api";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { Exercise, ExerciseSummary, ProgramDocument } from "../src/api";
@@ -110,7 +111,7 @@ function stationList(root: HTMLElement): HTMLElement {
 function stationNames(root: HTMLElement): string[] {
   return within(stationList(root))
     .getAllByRole("listitem")
-    .map((item) => within(item).getByRole("button", { name: /^Remove / }).getAttribute("aria-label") ?? "")
+    .map((item) => computeAccessibleName(within(item).getByRole("button", { name: /^Remove / })))
     .map((label) => label.replace(/^Remove /, ""));
 }
 
@@ -147,7 +148,7 @@ async function choose(scope: HTMLElement, name: string, option: string | RegExp)
 async function optionNames(scope: HTMLElement, name: string): Promise<string[]> {
   return within(await openList(scope, name))
     .getAllByRole("option")
-    .map((option) => option.getAttribute("aria-label") ?? text(option));
+    .map((option) => computeAccessibleName(option));
 }
 
 /** A dropdown's tags. */
