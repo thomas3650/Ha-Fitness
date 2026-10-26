@@ -41,7 +41,8 @@
     "delete_undo": "It can't be undone.",
     "delete_pause": "Just a pause?",
     "turn_off": "Turn it off instead",
-    "delete_confirm": "Delete"
+    "delete_confirm": "Delete",
+    "saved": "Saved {name}"
   },
   "editor": {
     "new_title": "New program",
@@ -90,6 +91,7 @@
     "move_up": "Move {name} up",
     "move_down": "Move {name} down",
     "remove": "Remove {name}",
+    "details": "Details: {name}",
     "exercises_one": "{count} exercise",
     "exercises_other": "{count} exercises",
     "round_count_one": "{count} round",
@@ -98,7 +100,6 @@
     "equipment": "Equipment: {equipment}",
     "no_equipment": "No equipment",
     "not_saved": "Not saved",
-    "saved": "Saved",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",

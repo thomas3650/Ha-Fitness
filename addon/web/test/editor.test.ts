@@ -6,7 +6,7 @@ import type { Exercise, ExerciseSummary, ProgramDocument } from "../src/api";
 import en from "../src/i18n/en.json";
 import "../src/main";
 import { brokenAt, fakeApi, program, type FakeApi } from "./fake-api";
-import { mount, unmount } from "./mount";
+import { mount, pageOf, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
@@ -256,7 +256,7 @@ test("a new program's speaker is the setup's default speaker, and its music is s
   expect((lastWrite(fake).body as ProgramDocument).music).toBeNull();
 });
 
-test("picking a playlist in a new program sends the music with the default speaker; saved, it opens for editing", async () => {
+test("picking a playlist in a new program sends the music with the default speaker; saved, it goes back to the list", async () => {
   const fake = newFake({
     setup: { equipment: ["body weight"], favourite_playlists: [], default_speaker: KITCHEN },
   });
@@ -283,8 +283,9 @@ test("picking a playlist in a new program sends the music with the default speak
     countdown_seconds: 5,
     music: { playlist: "library://playlist/2", playlist_name: "Morning Run", speaker: KITCHEN },
   });
-  await vi.waitFor(() => expect(location.hash).toBe("#/programs/1"));
-  await findByRole(root, "heading", { level: 1, name: en.editor.edit_title });
+  await findByRole(root, "heading", { level: 1, name: en.programs.title });
+  expect(location.hash).toBe("#/programs");
+  expect(await within(root).findByText("Saved Morning")).toBeTruthy();
 });
 
 // The copy route.
@@ -325,6 +326,7 @@ test("a taken name shows the add-on's message at the name field", async () => {
 // Editing.
 
 test("editing loads the program; Save sends the whole document with its url-encoded updated_at", async () => {
+  // A later Save after a stay uses the answer's updated_at: the test for typing while a save runs checks it.
   const fake = newFake({ programs: [fullBody()] });
   const root = await openEditor(fake, "#/programs/1");
 
@@ -336,11 +338,6 @@ test("editing loads the program; Save sends the whole document with its url-enco
   expect(first.method).toBe("PUT");
   expect(first.path).toBe("api/v1/programs/1?if_updated_at=2026-10-26T10%3A00%3A00%2B00%3A00");
   expect(first.body).toEqual({ ...fullBody().program, name: "Full body 2" });
-
-  const answered = fake.state.programs[0].updated_at;
-  rename(root, "Full body 3");
-  await save(root, fake);
-  expect(lastWrite(fake).path).toBe(`api/v1/programs/1?if_updated_at=${encodeURIComponent(answered)}`);
 });
 
 test("saving keeps the music's volume and shuffle; another playlist sets its uri and name", async () => {
@@ -356,6 +353,10 @@ test("saving keeps the music's volume and shuffle; another playlist sets its uri
     shuffle: true,
   });
 
+  // Save went back to the list; open the program again.
+  await findByRole(root, "heading", { level: 1, name: en.programs.title });
+  location.hash = "#/programs/1";
+  await findByRole(root, "textbox", { name: en.editor.name });
   fireEvent.change(field(root, "combobox", en.editor.music), { target: { value: "library://playlist/2" } });
   await save(root, fake);
   expect((lastWrite(fake).body as ProgramDocument).music).toEqual({
@@ -935,7 +936,7 @@ test("a change typed while a new program is being created isn't lost, and no sec
   const sent = writes(fake).map((request) => `${request.method} ${request.path.split("?")[0]}`);
   expect(sent).toEqual(["POST api/v1/programs", "PUT api/v1/programs/1"]);
   expect((lastWrite(fake).body as ProgramDocument).name).toBe("Later");
-  await vi.waitFor(() => expect(location.hash).toBe("#/programs/1"));
+  await vi.waitFor(() => expect(location.hash).toBe("#/programs"));
 });
 
 test("dragging a station onto another moves it there", async () => {
@@ -1013,11 +1014,9 @@ test("a new program and a copy open with the focus in the name field", async () 
 
 test("Delete shows only once the program is stored", async () => {
   const fresh = newFake();
+  // A create the user stays through shows Delete: its own test below.
   let root = await openEditor(fresh, "#/programs/new/empty");
   expect(queryByRole(root, "button", { name: en.editor.delete })).toBeNull();
-  rename(root, "Morning");
-  await save(root, fresh);
-  expect(await findByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
   unmount();
 
   root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/new/copy/1");
@@ -1028,15 +1027,17 @@ test("Delete shows only once the program is stored", async () => {
   expect(getByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
 });
 
-test("Not saved shows while there are changes, and Saved right after a save", async () => {
+test("Not saved shows while there are changes, and the list says Saved after a save", async () => {
   const fake = newFake({ programs: [fullBody()] });
   const root = await openEditor(fake, "#/programs/1");
 
-  expect(queryByRole(root, "status")).toBeNull();
+  expect(queryByRole(pageOf(root), "status")).toBeNull();
+  expect(within(root).queryByText(/^Saved /)).toBeNull();
   rename(root, "Changed");
   expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
   await save(root, fake);
-  await vi.waitFor(() => expect(text(getByRole(root, "status"))).toBe(en.editor.saved));
+  await findByRole(root, "heading", { level: 1, name: en.programs.title });
+  expect(within(root).getByText("Saved Changed").getAttribute("role")).toBe("status");
   expect(within(root).queryByText(en.editor.not_saved)).toBeNull();
 });
 
@@ -1219,4 +1220,187 @@ test("a save that fails with a bug shows the generic message above the form, kee
   expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
   expect(field(root, "textbox", en.editor.name).value).toBe("Renamed");
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});
+
+// #96: an added exercise opens its details; Save goes back to the Programs page.
+
+test("a station's picture and name open its details, without Add to program; closing returns the focus", async () => {
+  const squat: Exercise = { ...EXERCISES[1], steps: ["Squat."], secondary_muscles: [], attribution: null };
+  const fake = newFake({ programs: [fullBody()], details: { "0002": squat } });
+  const root = await openEditor(fake, "#/programs/1");
+  const open = await findByRole(stationList(root), "button", { name: "Details: squat" });
+
+  // A click focuses the button in a browser; the dialog hands the focus back to it when it closes.
+  open.focus();
+  fireEvent.click(open);
+  const dialog = await findByRole(root, "dialog", { name: "squat" });
+  expect(await within(dialog).findByText("Squat.")).toBeTruthy();
+  expect(within(dialog).queryByRole("button", { name: en.details.add })).toBeNull();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: en.details.close }));
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+  expect((root as unknown as ShadowRoot).activeElement).toBe(open);
+  expect(stationNames(root)).toEqual(["push-up", "squat", "plank"]);
+  expect(writes(fake)).toEqual([]);
+});
+
+test("a station the library doesn't have shows its name without a details button", async () => {
+  const stored = program(
+    1,
+    { name: "Odd", weekdays: ["mon"], stations: [{ exercise: "0001" }, { exercise: "gone-1" }] },
+    { updated_at: STORED_AT, station_names: ["push-up", "old move"] },
+  );
+  const root = await openEditor(newFake({ programs: [stored] }), "#/programs/1");
+  await findByRole(stationList(root), "button", { name: "Details: push-up" });
+
+  const odd = within(stationList(root)).getAllByRole("listitem")[1];
+  expect(within(odd).getByText("old move")).toBeTruthy();
+  expect(within(odd).queryByRole("button", { name: /^Details: / })).toBeNull();
+  expect(within(odd).getByRole("button", { name: "Remove old move" })).toBeTruthy();
+});
+
+test("Save goes back to the Programs page, which says the program was saved; no leave prompt", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  rename(root, "Full body 2");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+
+  await findByRole(root, "heading", { level: 1, name: en.programs.title });
+  expect(location.hash).toBe("#/programs");
+  expect(queryByRole(root, "dialog")).toBeNull();
+  const note = await within(root).findByText("Saved Full body 2");
+  expect(note.getAttribute("role")).toBe("status");
+  expect(lastWrite(fake).body).toMatchObject({ name: "Full body 2" });
+  const heading = getByRole(root, "heading", { level: 1, name: en.programs.title });
+  await vi.waitFor(() => expect((root as unknown as ShadowRoot).activeElement).toBe(heading));
+
+  const unload = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(false);
+});
+
+test("the saved note goes away on the next navigation", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  expect(await within(root).findByText("Saved Full body")).toBeTruthy();
+
+  location.hash = "#/library";
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+  location.hash = "#/programs";
+  await findByRole(root, "table", { name: en.programs.title });
+  expect(within(root).queryByText("Saved Full body")).toBeNull();
+});
+
+test("a save with typing while it ran stays in the editor, and the next Save uses the answer's updated_at", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let put = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "PUT" && !put) {
+      put = true;
+      await gate;
+    }
+    return fake.fetch(input, init);
+  });
+  const root = await mount("#/programs/1");
+  await findByRole(root, "textbox", { name: en.editor.name });
+
+  rename(root, "First");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  await vi.waitFor(() => expect(put).toBe(true));
+  rename(root, "Later");
+  release();
+  const button = getByRole(root, "button", { name: en.editor.save }) as HTMLButtonElement;
+  await vi.waitFor(() => expect(button.disabled).toBe(false));
+
+  expect(location.hash).toBe("#/programs/1");
+  expect(field(root, "textbox", en.editor.name).value).toBe("Later");
+  expect(within(root).getByText(en.editor.not_saved)).toBeTruthy();
+  expect(within(root).queryByText(/^Saved /)).toBeNull();
+
+  const answered = fake.state.programs[0].updated_at;
+  await save(root, fake);
+  expect(lastWrite(fake).path).toBe(`api/v1/programs/1?if_updated_at=${encodeURIComponent(answered)}`);
+  expect((lastWrite(fake).body as ProgramDocument).name).toBe("Later");
+  await findByRole(root, "heading", { level: 1, name: en.programs.title });
+});
+
+test("a refused save stays in the editor with its message", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  const message = "A session for this program is running";
+  fake.answer("PUT", "api/v1/programs/1", 409, { detail: message, code: "session_running", field: null });
+  const root = await openEditor(fake, "#/programs/1");
+
+  rename(root, "Mine");
+  await save(root, fake);
+
+  expect(within(await findByRole(root, "alert")).getByText(message)).toBeTruthy();
+  expect(location.hash).toBe("#/programs/1");
+  expect(field(root, "textbox", en.editor.name).value).toBe("Mine");
+  expect(within(root).queryByText(/^Saved /)).toBeNull();
+});
+
+test("a save that answers after the user left doesn't pull them off the page they went to", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let put = false;
+  let answered = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method !== "PUT") return fake.fetch(input, init);
+    put = true;
+    await gate;
+    const response = await fake.fetch(input, init);
+    answered = true;
+    return response;
+  });
+  const root = await mount("#/programs/1");
+  await findByRole(root, "textbox", { name: en.editor.name });
+
+  rename(root, "Renamed");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  await vi.waitFor(() => expect(put).toBe(true));
+  location.hash = "#/library";
+  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
+  fireEvent.click(within(dialog).getByRole("button", { name: en.editor.leave_confirm }));
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+
+  release();
+  await vi.waitFor(() => expect(answered).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(location.hash).toBe("#/library");
+  expect(getByRole(root, "heading", { level: 1, name: en.library.title })).toBeTruthy();
+});
+
+test("a save that lands while the leave dialog is open, with nothing typed since, goes where the user was going", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let put = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "PUT") {
+      put = true;
+      await gate;
+    }
+    return fake.fetch(input, init);
+  });
+  const root = await mount("#/programs/1");
+  await findByRole(root, "textbox", { name: en.editor.name });
+
+  rename(root, "Renamed");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  await vi.waitFor(() => expect(put).toBe(true));
+  location.hash = "#/library";
+  await findByRole(root, "dialog", { name: en.editor.leave_title });
+  release();
+
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+  expect(location.hash).toBe("#/library");
+  expect(queryByRole(root, "dialog")).toBeNull();
+  expect(within(root).queryByText("Saved Renamed")).toBeNull();
+  expect(lastWrite(fake).body).toMatchObject({ name: "Renamed" });
 });

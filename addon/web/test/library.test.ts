@@ -14,7 +14,7 @@ import type { Exercise, ExerciseSummary } from "../src/api";
 import en from "../src/i18n/en.json";
 import "../src/main";
 import { brokenAt, fakeApi, type FakeApi } from "./fake-api";
-import { mount, unmount } from "./mount";
+import { mount, pageOf, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
@@ -178,8 +178,8 @@ test("the search finds exercises by name, names that start with it first", async
 
   fireEvent.input(getByRole(root, "searchbox", { name: en.library.search }), { target: { value: "nothing like it" } });
   await vi.waitFor(() => expect(names(root)).toEqual([]));
-  expect(getByRole(root, "status")).toBeTruthy();
-  expect(text(getByRole(root, "status"))).toContain(en.library.none);
+  expect(getByRole(pageOf(root), "status")).toBeTruthy();
+  expect(text(getByRole(pageOf(root), "status"))).toContain(en.library.none);
 });
 
 test("the filters offer every value as the dataset names it; kinds the household lacks are not at home", async () => {

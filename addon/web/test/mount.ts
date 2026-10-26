@@ -1,5 +1,7 @@
 /** Mount `<hf-app>` at a hash route, and remove it again; the window outlives each test. */
 
+import { getByRole } from "@testing-library/dom";
+
 interface AppElement extends HTMLElement {
   updateComplete: Promise<boolean>;
 }
@@ -20,4 +22,12 @@ export async function mount(hash: string): Promise<HTMLElement> {
 export function unmount(): void {
   document.body.replaceChildren();
   history.replaceState(null, "", location.pathname);
+}
+
+/**
+ * The page under the menu (the `main` landmark), for queries a page owns: the shell's own status region (the saved
+ * note, always in the page) sits outside it.
+ */
+export function pageOf(root: HTMLElement): HTMLElement {
+  return getByRole(root, "main");
 }

@@ -12,7 +12,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import en from "../src/i18n/en.json";
 import "../src/main";
 import { brokenAt, fakeApi, program, type FakeApi } from "./fake-api";
-import { mount, unmount } from "./mount";
+import { mount, pageOf, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
@@ -171,8 +171,8 @@ test("the search narrows the rows by name, sending nothing", async () => {
   await vi.waitFor(() => expect(names(root)).toEqual(["Active: Core"]));
 
   fireEvent.click(getByRole(root, "button", { name: "Off 1" }));
-  await vi.waitFor(() => expect(getByRole(root, "status")).toBeTruthy());
-  expect(text(getByRole(root, "status"))).toBe(en.programs.no_match);
+  await vi.waitFor(() => expect(getByRole(pageOf(root), "status")).toBeTruthy());
+  expect(text(getByRole(pageOf(root), "status"))).toBe(en.programs.no_match);
   expect(fake.requests.length).toBe(before);
 });
 
@@ -346,7 +346,7 @@ test("without programs the page says so and offers New program", async () => {
   vi.stubGlobal("fetch", fakeApi().fetch);
   const root = await mount("#/programs");
 
-  expect(text(await findByRole(root, "status"))).toBe(en.programs.none);
+  expect(text(await findByRole(pageOf(root), "status"))).toBe(en.programs.none);
   expect(getByRole(root, "link", { name: en.programs.new })).toBeTruthy();
 });
 
@@ -472,4 +472,94 @@ test("while the next row's switch waits for the add-on, the focus goes to its ed
 
   await vi.waitFor(() => expect(focused(root)).toBe(getByRole(root, "link", { name: "Edit Legs" })));
   release();
+});
+
+// #96: a program opens from its row.
+
+test("a program's name is a link to its editor", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  const link = within(rowOf(root, "Core")).getByRole("link", { name: "Core" });
+  expect(link.getAttribute("href")).toBe("#/programs/2");
+});
+
+test("a click elsewhere on the row opens the program", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
+
+  fireEvent.click(within(rowOf(root, "Core")).getByText("Tue, Sat"));
+
+  await vi.waitFor(() => getByRole(root, "heading", { level: 1, name: en.editor.edit_title }));
+  expect(location.hash).toBe("#/programs/2");
+  expect(writes(fake)).toEqual([]);
+});
+
+test("a click on the switch toggles it and stays on the list", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
+
+  fireEvent.click(switchOf(root, "Core"));
+
+  await vi.waitFor(() => expect(switchOf(root, "Core").getAttribute("aria-checked")).toBe("false"));
+  expect(writes(fake)).toEqual(["PUT api/v1/programs/2/active"]);
+  expect(location.hash).toBe("#/programs");
+  expect(getByRole(root, "heading", { level: 1, name: en.programs.title })).toBeTruthy();
+});
+
+test("a click on Delete asks and doesn't open the program", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  fireEvent.click(getByRole(root, "button", { name: "Delete Core" }));
+
+  expect(await findByRole(root, "dialog", { name: "Delete “Core”?" })).toBeTruthy();
+  expect(location.hash).toBe("#/programs");
+});
+
+test("a click with a modifier key, or one that ends a text selection, doesn't open the program", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
+  const days = within(rowOf(root, "Core")).getByText("Tue, Sat");
+
+  fireEvent.click(days, { metaKey: true });
+  fireEvent.click(days, { ctrlKey: true });
+  fireEvent.click(days, { shiftKey: true });
+  document.getSelection()?.selectAllChildren(days);
+  fireEvent.click(days);
+  document.getSelection()?.removeAllRanges();
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(location.hash).toBe("#/programs");
+  expect(getByRole(root, "heading", { level: 1, name: en.programs.title })).toBeTruthy();
+});
+
+test("a click on a row's refusal message doesn't open the program", async () => {
+  const fake = fakeApi({ programs: programs() });
+  fake.answer("PUT", "api/v1/programs/1/active", 409, SESSION_RUNNING);
+  const root = await open(fake);
+  fireEvent.click(switchOf(root, "Full body"));
+
+  fireEvent.click(await findByRole(root, "alert"));
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(location.hash).toBe("#/programs");
+  expect(getByRole(root, "heading", { level: 1, name: en.programs.title })).toBeTruthy();
+});
+
+test("a click in the Active or Actions cell beside its controls doesn't open the program", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
+
+  // The cells themselves, as a click on their padding hits them.
+  const cells = within(rowOf(root, "Core")).getAllByRole("cell");
+  const cellWith = (control: HTMLElement) => cells.find((cell) => cell.contains(control)) as HTMLElement;
+  const activeCell = cellWith(switchOf(root, "Core"));
+  const actionsCell = cellWith(getByRole(root, "button", { name: "Delete Core" }));
+  fireEvent.click(activeCell);
+  fireEvent.click(actionsCell);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(location.hash).toBe("#/programs");
+  expect(queryByRole(root, "dialog")).toBeNull();
+  expect(switchOf(root, "Core").getAttribute("aria-checked")).toBe("true");
+  expect(writes(fake)).toEqual([]);
 });

@@ -68,12 +68,21 @@ export class AppShell extends LitElement {
   static override properties = {
     route: { state: true },
     version: { state: true },
+    note: { state: true },
   };
 
   declare route: Route;
   declare version: string | null;
+  /**
+   * The note after the editor saved and went back to the Programs page ("Saved …", #96). It shows in the shell's
+   * status region, which is always in the page (empty without a note), so screen readers announce it across the
+   * route change. It goes on the next navigation.
+   */
+  declare note: string | null;
 
   private readonly api: Api = createApi();
+  /** Set by a save that goes back: the Programs page's heading takes the focus when it shows. */
+  private focusHeading = false;
   /** The hash of the page shown; it lags `location.hash` while the page asks whether to leave. */
   private shownHash = location.hash;
   private readonly onHashChange = () => {
@@ -82,6 +91,11 @@ export class AppShell extends LitElement {
     const show = () => {
       this.shownHash = hash;
       this.route = parseRoute(hash);
+      // The editor's saved note is for the Programs page it goes to; any other navigation drops it.
+      if (this.route.page !== "programs") {
+        this.note = null;
+        this.focusHeading = false;
+      }
     };
     const page = this.renderRoot.querySelector("main")?.firstElementChild as (Element & Partial<LeaveGuard>) | null;
     const held = page?.guardLeave?.(() => {
@@ -101,6 +115,7 @@ export class AppShell extends LitElement {
     super();
     this.route = parseRoute(location.hash);
     this.version = null;
+    this.note = null;
   }
 
   override connectedCallback(): void {
@@ -119,6 +134,19 @@ export class AppShell extends LitElement {
       // Without an answer the version stays empty; failure() puts a bug in the console.
       failure(error);
     }
+  }
+
+  protected override updated(): void {
+    if (!this.focusHeading || this.route.page !== "programs") return;
+    this.focusHeading = false;
+    const page = this.renderRoot.querySelector("main")?.firstElementChild as LitElement | null;
+    // The page renders after the shell; its heading has tabindex -1.
+    void page?.updateComplete.then(() => page.querySelector<HTMLElement>("h1")?.focus());
+  }
+
+  private onSaved(event: CustomEvent<string>): void {
+    this.note = event.detail;
+    this.focusHeading = true;
   }
 
   override disconnectedCallback(): void {
@@ -142,7 +170,8 @@ export class AppShell extends LitElement {
         </ul>
         ${this.version ? html`<p class="version">${t("menu.version", { version: this.version })}</p>` : nothing}
       </nav>
-      <main>${this.renderPage()}</main>
+      <p class="saved-note" role="status">${this.note ?? nothing}</p>
+      <main @program-saved=${(event: CustomEvent<string>) => this.onSaved(event)}>${this.renderPage()}</main>
     `;
   }
 
@@ -257,6 +286,14 @@ export class AppShell extends LitElement {
         flex: 1;
         min-width: 0;
         padding: 24px 28px;
+      }
+      /* The saved note's status region: always there, and taking no room while empty. */
+      .saved-note {
+        margin: 0;
+        color: var(--hf-text-secondary);
+      }
+      .saved-note:not(:empty) {
+        padding: 16px 28px 0;
       }
       h1 {
         margin: 0 0 20px;

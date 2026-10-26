@@ -181,7 +181,8 @@ function placeOf(field: string | null, stations: number): string | null {
  * Cancel and Delete, then When, Music, Timing and Exercises, with the library beside it. It holds no program rules
  * (− and + don't clamp): a save sends the whole document and
  * the add-on's refusal shows at the field it is about, or above the form, with nothing typed lost. An edit sends
- * the `updated_at` it loaded (`if_updated_at`), so a change made elsewhere isn't undone (§2.2.6).
+ * the `updated_at` it loaded (`if_updated_at`), so a change made elsewhere isn't undone (§2.2.6). A save goes back to
+ * the Programs page, unless something was typed while it ran.
  */
 export class ProgramEditor extends LitElement implements LeaveGuard {
   static override properties = {
@@ -202,7 +203,6 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     fieldErrors: { state: true },
     formErrors: { state: true },
     conflict: { state: true },
-    justSaved: { state: true },
     leaving: { state: true },
     deleting: { state: true },
     details: { state: true },
@@ -230,11 +230,11 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   declare formErrors: string[];
   /** The add-on's message when the program was changed elsewhere; Reload loads it. */
   declare conflict: string | null;
-  declare justSaved: boolean;
   /** The way out the user asked for while there are unsaved changes; the leave dialog shows while it is set. */
   declare leaving: (() => void) | null;
   declare deleting: Deleting | null;
-  declare details: ExerciseSummary | null;
+  /** The exercise whose details dialog shows, and whether it offers "Add to program" (the library's, not a station's). */
+  declare details: { exercise: ExerciseSummary; canAdd: boolean } | null;
   declare missing: ReadonlySet<string>;
   /** The add-on's defaults, where − and + start on an empty field; null if they couldn't be read (then 0). */
   declare defaults: ProgramDefaults | null;
@@ -277,7 +277,6 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     this.fieldErrors = new Map();
     this.formErrors = [];
     this.conflict = null;
-    this.justSaved = false;
     this.leaving = null;
     this.deleting = null;
     this.details = null;
@@ -398,7 +397,6 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private change(patch: Partial<Form>): void {
     if (!this.form) return;
     this.form = { ...this.form, ...patch };
-    this.justSaved = false;
   }
 
   private summaryOf(id: string): ExerciseSummary | undefined {
@@ -492,7 +490,6 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private async save(): Promise<void> {
     if (!this.form || this.busy) return;
     this.busy = true;
-    this.justSaved = false;
     this.clearRefusals();
     const document = documentOf(this.form);
     const sent = JSON.stringify(document);
@@ -506,10 +503,20 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       this.createdBy = stored.created_by;
       this.storedName = stored.program.name;
       this.saved = sent;
-      this.justSaved = true;
+      // The user left while the request ran: they stay on the page they went to.
+      if (!this.isConnected) return;
+      if (!this.dirty) {
+        // Saved as it is shown: back to the Programs page, where the shell says so (#96). Nothing is unsaved, so
+        // nothing asks. With the leave dialog open the user was going elsewhere: go there (the shell drops the note).
+        const note = t("programs.saved", { name: stored.program.name });
+        this.dispatchEvent(new CustomEvent("program-saved", { bubbles: true, detail: note }));
+        if (this.leaving) this.leave();
+        else location.hash = "#/programs";
+        return;
+      }
       const route = `#/programs/${stored.id}`;
-      // A new program or a copy opens as the stored program. Anything typed while the request ran is still unsaved,
-      // so the leave guard asks first; staying keeps it, and the next Save replaces the stored program.
+      // Something was typed while the request ran: it stays, still unsaved. A new program or a copy opens as the
+      // stored program, so the leave guard asks first; the next Save replaces the stored program.
       if (location.hash !== route) location.hash = route;
     } catch (error) {
       // A refusal shows at its fields; a bug shows the generic message above the form.
@@ -624,7 +631,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
           .setupError=${this.setupError}
           .inProgram=${new Set(form.stations.map((station) => station.exercise))}
           @pick=${(event: CustomEvent<string>) => this.addStation(event.detail)}
-          @details=${(event: CustomEvent<ExerciseSummary>) => (this.details = event.detail)}
+          @details=${(event: CustomEvent<ExerciseSummary>) =>
+            (this.details = { exercise: event.detail, canAdd: true })}
         ></hf-exercise-picker>
       </div>
       ${this.renderDialogs()}`;
@@ -673,9 +681,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       <div class="editor-actions">
         ${this.dirty
           ? html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("editor.not_saved")}</span>`
-          : this.justSaved
-            ? html`<span class="saved" role="status">${t("editor.saved")}</span>`
-            : nothing}
+          : nothing}
         ${this.storedId !== null
           ? html`<button
               type="button"
@@ -937,6 +943,20 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     const summary = this.summaryOf(id);
     const meta = summary ? [summary.equipment, summary.body_part].filter(Boolean).join(t("meta_separator")) : "";
     const place = `stations.${index}`;
+    const metaId = `${this.ids}-meta-${index}`;
+    const picture = this.missing.has(id)
+      ? html`<span class="thumb placeholder" aria-hidden="true">${icon(mdiDumbbell)}</span>`
+      : html`<img
+          class="thumb"
+          src=${thumbnailUrl(id)}
+          alt=""
+          loading="lazy"
+          width="48"
+          height="48"
+          @error=${() => (this.missing = new Set([...this.missing, id]))}
+        />`;
+    const text = html`<span class="station-name">${name}</span>
+      ${meta ? html`<span class="secondary" id=${metaId}>${meta}</span>` : nothing}`;
     return html`<li
       draggable="true"
       aria-describedby=${this.describedBy(place)}
@@ -951,21 +971,22 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     >
       <span class="drag" aria-hidden="true">${icon(mdiDragVertical)}</span>
       <span class="number">${index + 1}</span>
-      ${this.missing.has(id)
-        ? html`<span class="thumb placeholder" aria-hidden="true">${icon(mdiDumbbell)}</span>`
-        : html`<img
-            class="thumb"
-            src=${thumbnailUrl(id)}
-            alt=""
-            loading="lazy"
-            width="48"
-            height="48"
-            @error=${() => (this.missing = new Set([...this.missing, id]))}
-          />`}
-      <span class="station-text">
-        <span class="station-name">${name}</span>
-        ${meta ? html`<span class="secondary">${meta}</span>` : nothing} ${this.renderFieldError(place)}
-      </span>
+      ${summary
+        ? html`<span class="station-main">
+            <!-- The picture and the name open the exercise's details, without "Add to program" (#96). -->
+            <button
+              type="button"
+              class="station-open"
+              aria-label=${t("editor.details", { name })}
+              aria-describedby=${meta ? metaId : nothing}
+              @click=${() => (this.details = { exercise: summary, canAdd: false })}
+            >
+              ${picture}<span class="station-text">${text}</span>
+            </button>
+            ${this.renderFieldError(place)}
+          </span>`
+        : html`${picture}
+            <span class="station-text">${text} ${this.renderFieldError(place)}</span>`}
       <button
         type="button"
         class="icon-button"
@@ -1000,11 +1021,11 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       ${this.details
         ? html`<hf-exercise-details
             .api=${this.api}
-            .exercise=${this.details}
-            .canAdd=${true}
+            .exercise=${this.details.exercise}
+            .canAdd=${this.details.canAdd}
             @close=${() => (this.details = null)}
             @add=${() => {
-              if (this.details) this.addStation(this.details.id);
+              if (this.details) this.addStation(this.details.exercise.id);
               this.details = null;
             }}
           ></hf-exercise-details>`
@@ -1164,10 +1185,6 @@ export const programEditorStyles = css`
     height: 8px;
     border-radius: 50%;
     background: var(--hf-warning);
-  }
-  .editor-main .saved {
-    margin-right: 8px;
-    color: var(--hf-text-secondary);
   }
   .editor-main > .error {
     margin-bottom: 16px;
@@ -1372,6 +1389,31 @@ export const programEditorStyles = css`
     flex: 1;
     flex-direction: column;
     min-width: 0;
+  }
+  .editor-main .station-main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .editor-main .station-open {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    text-align: left;
+  }
+  .editor-main .station-open:hover .station-name {
+    color: var(--hf-primary);
+  }
+  .editor-main .station-open:focus-visible {
+    outline: 2px solid var(--hf-primary);
+    outline-offset: 2px;
   }
   .editor-main .station-name {
     font-weight: 500;

@@ -576,3 +576,14 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   Nothing rethrows.
 - **Why:** A bug never shows raw text, and never leaves the user with nothing on screen.
 - **Source:** Claude, 2026-10-26, #88 (Thomas asked Claude to do it alone)
+
+### D69: The website opens programs and exercises by clicking; Save goes back to Programs
+- **Date:** 2026-10-26 · **Status:** active
+- **Decision:** Clicking a program's name or its row opens the editor; there is no read-only view. A station's
+  picture and name open its exercise details without "Add to program". A save with nothing typed while it ran goes
+  back to Programs with a "Saved {name}" note, and the editor's own "Saved" is gone. This replaces website spec
+  ([`2026-10-26-program-website-design.md`](superpowers/specs/2026-10-26-program-website-design.md)) §2.2.1 (W1)
+  and §2.2.4 (W3), and editor-cards spec
+  ([`2026-10-26-editor-cards-design.md`](superpowers/specs/2026-10-26-editor-cards-design.md)) §2.2 items 1, 5 and 6.
+- **Why:** Opening by the obvious click is what users try first, and going back after a save shows it worked.
+- **Source:** Claude, 2026-10-26, #96 (Thomas asked Claude to do it alone)
