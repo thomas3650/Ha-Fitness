@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import suppress
+from datetime import date
 from typing import Any
 
 import anyio
@@ -25,7 +26,8 @@ async def push_channel(websocket: WebSocket) -> None:
     the drain holds a `today`, the last one is the newest view and is sent instead of the snapshot. Otherwise the
     snapshot is the newest: a later change would have queued a `today`. `session` works the same way: every change of
     the session publishes one, and reading the snapshot can tick. So does `stats`: every change that can move them
-    checks them and publishes them if they changed, and reading the snapshot ticks and reconciles. When the stats
+    checks them and publishes them if they changed, and reading the snapshot ticks. The snapshot reconciles once, for
+    `today`, and its `stats` are for that date too (#79). When the stats
     can't be computed, the snapshot has no `stats` unless one was queued. The queued events follow, in queue order.
 
     A client that falls behind is dropped by the hub; its websocket is then closed with 1013 ("try again later"),
@@ -43,7 +45,7 @@ async def push_channel(websocket: WebSocket) -> None:
             "type": "session",
             "data": None if current is None else current.model_dump(mode="json"),
         }
-        stats = await _stats(services)
+        stats = await _stats(services, view.date)
         events: list[Message] = []
         for message in _drain(queue):
             if message.get("type") == "today":
@@ -66,13 +68,15 @@ async def push_channel(websocket: WebSocket) -> None:
         await _serve(websocket, queue, dropped)
 
 
-async def _stats(services: Services) -> Message | None:
-    """Build the snapshot's `stats`; `None` when they can't be computed (the stats service logs why).
+async def _stats(services: Services, today: date) -> Message | None:
+    """Build the snapshot's `stats` for `today`, the date of its `today`; `None` when they can't be computed.
+
+    The stats service logs why they can't.
 
     No `data: null` is sent: the integration reads that as malformed, and a later `stats` fills the gap.
     """
     try:
-        numbers = await anyio.to_thread.run_sync(services.stats.view)
+        numbers = await anyio.to_thread.run_sync(services.stats.view, today)
     except Unavailable:
         return None
     return {"type": "stats", "data": numbers.model_dump(mode="json")}

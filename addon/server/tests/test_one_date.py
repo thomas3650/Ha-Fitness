@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from ha_fitness_server.push import Hub, Message
 import httpx
 
@@ -21,6 +22,7 @@ from tests.session_helpers import (
     AGENT,
     SESSION,
     TODAY,
+    WS,
     at,
     create_small,
     make_session_app,
@@ -30,7 +32,7 @@ from tests.session_helpers import (
     start,
 )
 from tests.test_people import THOMAS
-from tests.test_scheduler import local
+from tests.test_scheduler import ZONE, local
 
 SATURDAY = "2026-10-31"
 SUNDAY = "2026-11-01"
@@ -133,8 +135,8 @@ async def test_start_across_midnight_publishes_nothing_for_the_new_date(
         await start(client, lille["id"], [thomas], day_id)
         messages = await drain()
         sunday, later = await _then_sunday(client, drain)
-    assert all(today[0] == SATURDAY for today in _todays(messages))
-    assert all(month == "2026-10" for month in _months(messages))
+    assert _todays(messages) == []
+    assert _months(messages) == []
     _moved_on_together(sunday, later)
     assert ("Lille", SUNDAY, "due") in [
         (day["program_name"], day["date"], day["state"]) for day in sunday["open"]
@@ -177,7 +179,7 @@ async def test_program_write_across_midnight_publishes_one_date(
         sunday, later = await _then_sunday(client, drain)
     assert _day_events(messages) == [("due", SATURDAY)]
     assert _todays(messages) == [(SATURDAY, [("Lille", SATURDAY, "due")])]
-    assert all(month == "2026-10" for month in _months(messages))
+    assert _months(messages) == []
     _moved_on_together(sunday, later)
 
 
@@ -204,8 +206,31 @@ async def test_early_start_across_midnight_checks_the_reconciled_date(
         (entry["date"], entry["program_name"], entry["startable"])
         for entry in today["data"]["upcoming"]
     ] == [(SUNDAY, "Lille", False)]
-    assert all(month == "2026-10" for month in _months(messages))
+    assert _months(messages) == []
     assert [(day["id"], day["date"], day["state"]) for day in sunday["open"]] == [
         (view["training_day_id"], SUNDAY, "due")
     ]
     _moved_on_together(sunday, later)
+
+
+def test_connect_across_midnight_sends_one_date(make_app: MakeApp) -> None:
+    """A connect whose reconcile reads Saturday sends `today` and `stats` for Saturday, and reconciles no other date."""
+    clock = MidnightClock(SATURDAY_NIGHT)
+    app = make_app(
+        settings_overrides={
+            "timezone": ZONE,
+            "scheduler_interval": 60,
+            "session_tick_max": 60,
+        },
+        clock=clock,
+    )
+    with TestClient(app) as tc:
+        clock.arm(LAST_READ, FIRST_READ)
+        with tc.websocket_connect(WS) as ws:
+            assert ws.receive_json()["type"] == "hello"
+            today = ws.receive_json()
+            assert ws.receive_json() == {"type": "session", "data": None}
+            stats = ws.receive_json()
+    assert today["type"] == "today"
+    assert stats["type"] == "stats"
+    assert (today["data"]["date"], stats["data"]["month"]) == (SATURDAY, "2026-10")
