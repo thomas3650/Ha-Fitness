@@ -649,16 +649,18 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private renderHead(form: Form) {
     return html`<header class="editor-head">
       <div class="editor-title">
-        <nav class="breadcrumb" aria-label=${t("editor.breadcrumb")}>
-          <a href="#/programs">${t("menu.programs")}</a>
-          <span aria-hidden="true">${t("breadcrumb_separator")}</span>
+        <div class="crumbs">
+          <nav class="breadcrumb" aria-label=${t("editor.breadcrumb")}>
+            <a href="#/programs">${t("menu.programs")}</a>
+            <span aria-hidden="true">${t("breadcrumb_separator")}</span>
+          </nav>
           <h1>${this.pageTitle()}</h1>
           ${this.storedId !== null && this.createdBy === "claude"
             ? html`<span class="badge claude">${icon(mdiCreation)}<span>${t("editor.created_by_claude")}</span></span>`
             : this.storedId !== null && this.createdBy === "you"
               ? html`<span class="badge">${icon(mdiAccount)}<span>${t("editor.created_by_you")}</span></span>`
               : nothing}
-        </nav>
+        </div>
         <div class="name-field">
           <input
             id=${`${this.ids}-name`}
@@ -1077,6 +1079,7 @@ export const programEditorStyles = css`
     flex: 1 1 280px;
     min-width: 0;
   }
+  .editor-main .crumbs,
   .editor-main .breadcrumb {
     display: flex;
     flex-wrap: wrap;
@@ -1092,7 +1095,7 @@ export const programEditorStyles = css`
   .editor-main .breadcrumb a:hover {
     text-decoration: underline;
   }
-  .editor-main .breadcrumb h1 {
+  .editor-main .crumbs h1 {
     margin: 0;
     color: var(--hf-text-secondary);
     font-size: 13px;

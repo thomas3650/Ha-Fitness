@@ -130,6 +130,16 @@ export class NewProgramPage extends LitElement {
 
 /** The page's styles, for the shell's shadow root. */
 export const newProgramStyles = css`
+  hf-new-program .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--hf-text-secondary);
+  }
+  hf-new-program .breadcrumb .crumb {
+    color: var(--hf-text);
+    font-weight: 500;
+  }
   .lead {
     margin: -8px 0 16px;
     font-size: 18px;

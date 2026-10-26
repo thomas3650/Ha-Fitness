@@ -909,8 +909,12 @@ test("a new program and a copy open with the focus in the name field", async () 
 });
 
 test("Delete shows only once the program is stored", async () => {
-  let root = await openEditor(newFake(), "#/programs/new/empty");
+  const fresh = newFake();
+  let root = await openEditor(fresh, "#/programs/new/empty");
   expect(queryByRole(root, "button", { name: en.editor.delete })).toBeNull();
+  rename(root, "Morning");
+  await save(root, fresh);
+  expect(await findByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
   unmount();
 
   root = await openEditor(newFake({ programs: [fullBody()] }), "#/programs/new/copy/1");
