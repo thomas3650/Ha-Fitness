@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
 import { ApiError, createApi, gifUrl, thumbnailUrl } from "../src/api";
+import en from "../src/i18n/en.json";
 import { fakeApi, program } from "./fake-api";
 
 async function refusal(promise: Promise<unknown>): Promise<ApiError> {
@@ -190,4 +191,33 @@ test("a body that isn't JSON still becomes an ApiError with a message", async ()
   expect(error.status).toBe(502);
   expect(error.code).toBeNull();
   expect(error.message).toContain("502");
+});
+
+test("a fetch that fails (the add-on can't be reached) becomes an ApiError with status 0", async () => {
+  const api = createApi(() => Promise.reject(new TypeError("Failed to fetch")));
+
+  const error = await refusal(api.programs());
+
+  expect(error.status).toBe(0);
+  expect(error.code).toBeNull();
+  expect(error.field).toBeNull();
+  expect(error.message).toBe(en.error.network);
+  expect(error.items).toEqual([{ field: null, code: "", message: en.error.network }]);
+});
+
+test("an unknown station's refusal (D65) gives its code, field and message", async () => {
+  const fake = fakeApi();
+  const detail = { message: "No exercise is called Pushup", station: 2, close_matches: ["push-up"] };
+  fake.answer("POST", "api/v1/programs", 422, { detail, code: "station_unknown", field: "stations.2" });
+
+  const error = await refusal(createApi(fake.fetch).createProgram(program(1).program));
+
+  expect(error.status).toBe(422);
+  expect(error.code).toBe("station_unknown");
+  expect(error.field).toBe("stations.2");
+  expect(error.message).toBe("No exercise is called Pushup");
+  expect(error.detail).toEqual(detail);
+  expect(error.items).toEqual([
+    { field: "stations.2", code: "station_unknown", message: "No exercise is called Pushup" },
+  ]);
 });

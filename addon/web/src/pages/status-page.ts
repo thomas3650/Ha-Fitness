@@ -3,11 +3,21 @@ import { html, LitElement, nothing } from "lit";
 import { ApiError, createApi, type Api, type Health, type LibraryStatus, type Person, type ProgramOut } from "../api";
 import { t } from "../i18n";
 
+/** What the page read; a read that was refused stays null, and its message is in `errors`. */
 interface StatusData {
-  health: Health;
-  library: LibraryStatus;
-  people: Person[];
-  programs: ProgramOut[];
+  health: Health | null;
+  library: LibraryStatus | null;
+  people: Person[] | null;
+  programs: ProgramOut[] | null;
+  errors: string[];
+}
+
+/** The value of a settled read, or null; a refusal's message goes into `errors` once. */
+function settled<T>(result: PromiseSettledResult<T>, errors: string[]): T | null {
+  if (result.status === "fulfilled") return result.value;
+  if (!(result.reason instanceof ApiError)) throw result.reason;
+  if (!errors.includes(result.reason.message)) errors.push(result.reason.message);
+  return null;
 }
 
 /** A program's length in whole minutes, a half minute up, as the old status page showed it. */
@@ -23,18 +33,15 @@ export class StatusPage extends LitElement {
   static override properties = {
     api: { attribute: false },
     data: { state: true },
-    error: { state: true },
   };
 
   declare api: Api;
   declare data: StatusData | null;
-  declare error: string | null;
 
   constructor() {
     super();
     this.api = createApi();
     this.data = null;
-    this.error = null;
   }
 
   protected override createRenderRoot(): HTMLElement {
@@ -46,55 +53,68 @@ export class StatusPage extends LitElement {
     void this.load();
   }
 
+  /** Read the four parts at once; one refused read doesn't hide the others (website spec §2.5). */
   private async load(): Promise<void> {
-    try {
-      const [health, library, people, programs] = await Promise.all([
-        this.api.health(),
-        this.api.library(),
-        this.api.people(),
-        this.api.programs(),
-      ]);
-      this.data = { health, library, people: people.people, programs };
-      this.error = null;
-    } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      this.error = error.message;
-    }
+    const [health, library, people, programs] = await Promise.allSettled([
+      this.api.health(),
+      this.api.library(),
+      this.api.people(),
+      this.api.programs(),
+    ]);
+    const errors: string[] = [];
+    this.data = {
+      health: settled(health, errors),
+      library: settled(library, errors),
+      people: settled(people, errors)?.people ?? null,
+      programs: settled(programs, errors),
+      errors,
+    };
   }
 
   protected override render() {
     return html`
       <h1>${t("status.title")}</h1>
-      ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
-      ${this.data ? this.renderData(this.data) : this.error ? nothing : html`<p>${t("status.loading")}</p>`}
+      ${this.data ? this.renderData(this.data) : html`<p>${t("status.loading")}</p>`}
     `;
   }
 
-  private renderData({ health, library, people, programs }: StatusData) {
-    const media = library.media;
+  private renderData({ health, library, people, programs, errors }: StatusData) {
     return html`
-      <section class="card">
-        <p>${t("status.version", { version: health.version })}</p>
-      </section>
-      <section class="card" aria-labelledby="status-library">
-        <h2 id="status-library">${t("status.library")}</h2>
-        <p>${t("status.exercises", { library: library.exercises.library, custom: library.exercises.custom })}</p>
-        <p>
-          ${t("status.media", { present: media.present, total: media.total, state: t(`status.media_${media.state}`) })}
-        </p>
-      </section>
-      <section class="card" aria-labelledby="status-people">
-        <h2 id="status-people">${t("status.people")}</h2>
-        ${people.length
-          ? html`<ul aria-labelledby="status-people">
-              ${people.map((person) => html`<li>${person.name}</li>`)}
-            </ul>`
-          : html`<p>${t("status.no_people")}</p>`}
-      </section>
-      <section class="card" aria-labelledby="status-programs">
-        <h2 id="status-programs">${t("status.programs")}</h2>
-        ${programs.length ? this.renderPrograms(programs) : html`<p>${t("status.no_programs")}</p>`}
-      </section>
+      ${errors.map((message) => html`<p class="error" role="alert">${message}</p>`)}
+      ${health
+        ? html`<section class="card">
+            <p>${t("status.version", { version: health.version })}</p>
+          </section>`
+        : nothing}
+      ${library
+        ? html`<section class="card" aria-labelledby="status-library">
+            <h2 id="status-library">${t("status.library")}</h2>
+            <p>${t("status.exercises", { library: library.exercises.library, custom: library.exercises.custom })}</p>
+            <p>
+              ${t("status.media", {
+                present: library.media.present,
+                total: library.media.total,
+                state: t(`status.media_${library.media.state}`),
+              })}
+            </p>
+          </section>`
+        : nothing}
+      ${people
+        ? html`<section class="card" aria-labelledby="status-people">
+            <h2 id="status-people">${t("status.people")}</h2>
+            ${people.length
+              ? html`<ul aria-labelledby="status-people">
+                  ${people.map((person) => html`<li>${person.name}</li>`)}
+                </ul>`
+              : html`<p>${t("status.no_people")}</p>`}
+          </section>`
+        : nothing}
+      ${programs
+        ? html`<section class="card" aria-labelledby="status-programs">
+            <h2 id="status-programs">${t("status.programs")}</h2>
+            ${programs.length ? this.renderPrograms(programs) : html`<p>${t("status.no_programs")}</p>`}
+          </section>`
+        : nothing}
       <section class="card" aria-labelledby="status-links">
         <h2 id="status-links">${t("status.links")}</h2>
         <ul>

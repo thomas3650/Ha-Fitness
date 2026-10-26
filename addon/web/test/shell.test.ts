@@ -1,4 +1,4 @@
-import { getByRole, queryByRole } from "@testing-library/dom";
+import { findByText, getByRole, queryByRole } from "@testing-library/dom";
 import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
@@ -20,6 +20,14 @@ test("the menu has the four pages, as links to their hash routes", async () => {
   expect(getByRole(menu, "link", { name: en.menu.library }).getAttribute("href")).toBe("#/library");
   expect(getByRole(menu, "link", { name: en.menu.setup }).getAttribute("href")).toBe("#/setup");
   expect(getByRole(menu, "link", { name: en.menu.status }).getAttribute("href")).toBe("#/status");
+});
+
+test("the foot of the menu shows the add-on's version", async () => {
+  vi.stubGlobal("fetch", fakeApi({ health: { status: "ok", version: "2.3.1", api_version: 1 } }).fetch);
+  const root = await mount("#/programs");
+
+  const menu = getByRole(root, "navigation", { name: en.menu.label });
+  expect(await findByText(menu, "HA Fitness 2.3.1")).toBeTruthy();
 });
 
 test("without a route the shell shows Programs, and marks it in the menu", async () => {

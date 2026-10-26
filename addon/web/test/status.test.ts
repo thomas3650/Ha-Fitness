@@ -1,4 +1,4 @@
-import { findByRole, findByText, getAllByRole, getByRole, getByText, within } from "@testing-library/dom";
+import { findByRole, findByText, getAllByRole, getByRole, getByText, queryByText, within } from "@testing-library/dom";
 import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
@@ -89,4 +89,27 @@ test("a refused read shows the add-on's message", async () => {
   const alert = await findByRole(root, "alert");
   expect(text(alert)).toContain("The library isn't loaded");
   expect(getAllByRole(root, "heading", { level: 1 }).map(text)).toEqual([en.status.title]);
+});
+
+test("one refused read leaves the other sections in place", async () => {
+  const fake = fakeApi({ people: people(), health: { status: "ok", version: "2.1.0", api_version: 1 } });
+  fake.answer("GET", "api/v1/library", 503, { detail: "The library isn't loaded", code: "unavailable", field: null });
+  vi.stubGlobal("fetch", fake.fetch);
+  const root = await mount("#/status");
+
+  expect(text(await findByRole(root, "alert"))).toContain("The library isn't loaded");
+  expect(getByText(root, "Version 2.1.0")).toBeTruthy();
+  const peopleList = getByRole(root, "list", { name: en.status.people });
+  expect(within(peopleList).getAllByRole("listitem").map(text)).toEqual(["Thomas", "Elin"]);
+  expect(getByText(root, en.status.no_programs)).toBeTruthy();
+  expect(queryByText(root, en.status.loading)).toBeNull();
+});
+
+test("when the add-on can't be reached, the page says so instead of loading forever", async () => {
+  vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+  const root = await mount("#/status");
+
+  const alert = await findByRole(root, "alert");
+  expect(text(alert)).toContain(en.error.network);
+  expect(queryByText(root, en.status.loading)).toBeNull();
 });

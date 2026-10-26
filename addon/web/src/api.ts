@@ -167,7 +167,8 @@ function fieldOf(loc: (string | number)[]): string | null {
 /**
  * A refusal from the add-on. It reads the three shapes the API answers with: D65's `{detail, code, field}`,
  * FastAPI's 422 list `{detail: [{loc, msg, type}]}`, and the session routes' `{detail: {code, message}}`.
- * A form shows every item at its field, and an item without a field above the form.
+ * A form shows every item at its field, and an item without a field above the form. Status 0 means no answer at all:
+ * the add-on can't be reached.
  */
 export class ApiError extends Error {
   status: number;
@@ -185,7 +186,7 @@ export class ApiError extends Error {
       const message =
         (typeof detail === "string" && detail) ||
         (isRecord(detail) && typeof detail.message === "string" && detail.message) ||
-        t("error.unknown", { status });
+        (status === 0 ? t("error.network") : t("error.unknown", { status }));
       // The session routes put their code in the detail.
       const code = (isRecord(body) && stringOrNull(body.code)) || (isRecord(detail) && stringOrNull(detail.code)) || "";
       const field = isRecord(body) ? stringOrNull(body.field) : null;
@@ -224,7 +225,13 @@ export function createApi(fetchFn: Fetch = (input, init) => fetch(input, init)) 
       init.body = JSON.stringify(body);
       init.headers = { Accept: "application/json", "Content-Type": "application/json" };
     }
-    const response = await fetchFn(`api/v1/${path}`, init);
+    let response: Response;
+    try {
+      response = await fetchFn(`api/v1/${path}`, init);
+    } catch {
+      // No answer at all (the network, or HA restarting): a refusal like any other, so no page waits forever.
+      throw new ApiError(0, null);
+    }
     if (response.status === 204) return undefined as T;
     let parsed: unknown;
     try {

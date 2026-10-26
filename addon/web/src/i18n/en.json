@@ -5,7 +5,8 @@
     "programs": "Programs",
     "library": "Library",
     "setup": "Setup",
-    "status": "Status"
+    "status": "Status",
+    "version": "HA Fitness {version}"
   },
   "programs": {
     "title": "Programs"
@@ -59,6 +60,7 @@
   },
   "list_separator": ", ",
   "error": {
-    "unknown": "The add-on answered with an error ({status})."
+    "unknown": "The add-on answered with an error ({status}).",
+    "network": "The add-on can't be reached."
   }
 }

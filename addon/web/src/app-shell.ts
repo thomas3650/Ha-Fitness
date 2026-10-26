@@ -1,7 +1,7 @@
 import { mdiBookshelf, mdiFormatListBulleted, mdiHeartPulse, mdiTuneVariant } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
-import { createApi, type Api } from "./api";
+import { ApiError, createApi, type Api } from "./api";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import "./pages/status-page";
@@ -49,9 +49,11 @@ function menuPage(route: Route): MenuPage {
 export class AppShell extends LitElement {
   static override properties = {
     route: { state: true },
+    version: { state: true },
   };
 
   declare route: Route;
+  declare version: string | null;
 
   private readonly api: Api = createApi();
   private readonly onHashChange = () => {
@@ -61,12 +63,23 @@ export class AppShell extends LitElement {
   constructor() {
     super();
     this.route = parseRoute(location.hash);
+    this.version = null;
   }
 
   override connectedCallback(): void {
     super.connectedCallback();
     this.route = parseRoute(location.hash);
     window.addEventListener("hashchange", this.onHashChange);
+    void this.loadVersion();
+  }
+
+  /** The add-on's version for the foot of the menu (W1); without an answer the foot stays empty. */
+  private async loadVersion(): Promise<void> {
+    try {
+      this.version = (await this.api.health()).version;
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+    }
   }
 
   override disconnectedCallback(): void {
@@ -87,6 +100,7 @@ export class AppShell extends LitElement {
             </li>`,
           )}
         </ul>
+        ${this.version ? html`<p class="version">${t("menu.version", { version: this.version })}</p>` : nothing}
       </nav>
       <main>${this.renderPage()}</main>
     `;
@@ -123,15 +137,24 @@ export class AppShell extends LitElement {
         font-size: 14px;
       }
       nav {
+        display: flex;
+        flex-direction: column;
         flex: 0 0 210px;
         padding: 16px 8px;
         border-right: 1px solid var(--hf-border);
         background: var(--hf-card);
       }
       nav ul {
+        flex: 1;
         list-style: none;
         margin: 0;
         padding: 0;
+      }
+      .version {
+        margin: 0;
+        padding: 12px;
+        color: var(--hf-text-secondary);
+        font-size: 12px;
       }
       nav a {
         display: flex;
