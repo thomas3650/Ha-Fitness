@@ -16,7 +16,7 @@ export const BAND_NAMES: readonly string[] = ["band", "resistance band"];
 export type EquipmentChoice = { mode: "mine" } | { mode: "all" } | { mode: "picked"; values: string[] };
 
 /** An equipment name as the filter shows it: a band's two names are one. */
-function fold(equipment: string): string {
+export function foldBand(equipment: string): string {
   return BAND_NAMES.includes(equipment) ? BAND : equipment;
 }
 
@@ -27,7 +27,7 @@ export function household(setup: Setup | null): Set<string> {
 
 /** Whether the household has a kind: body weight always; "band" when the setup has either of its names. */
 export function atHome(value: string, home: ReadonlySet<string>): boolean {
-  const kind = fold(value);
+  const kind = foldBand(value);
   if (kind === BODY_WEIGHT) return true;
   return kind === BAND ? BAND_NAMES.some((name) => home.has(name)) : home.has(kind);
 }
@@ -35,12 +35,12 @@ export function atHome(value: string, home: ReadonlySet<string>): boolean {
 /** Every equipment value of the exercises (library and custom), sorted, a band's two names as one. */
 export function equipmentValues(exercises: ExerciseSummary[]): string[] {
   const values = exercises.map((exercise) => exercise.equipment).filter((value): value is string => !!value);
-  return [...new Set(values.map(fold))].sort();
+  return [...new Set(values.map(foldBand))].sort();
 }
 
 /** The kinds the My equipment line lists: body weight first, then the household's others, sorted, band folded. */
 export function homeKinds(home: Iterable<string>): string[] {
-  const others = new Set([...home].map(fold));
+  const others = new Set([...home].map(foldBand));
   others.delete(BODY_WEIGHT);
   return [BODY_WEIGHT, ...[...others].sort()];
 }
@@ -58,7 +58,7 @@ export function matchesEquipment(
     case "mine":
       return exercise.custom || (equipment !== null && atHome(equipment, home));
     case "picked":
-      return equipment !== null && choice.values.includes(fold(equipment));
+      return equipment !== null && choice.values.includes(foldBand(equipment));
   }
 }
 

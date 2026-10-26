@@ -46,13 +46,13 @@ import { applySelectValues } from "../components/select-value";
 import { minutes } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
+import { BODY_WEIGHT, foldBand } from "../library-filter";
 
 /** Which program the editor works on: a new one, a copy of a stored one (stored only on Save), or a stored one. */
 export type EditorMode = { kind: "new" } | { kind: "copy"; id: number } | { kind: "edit"; id: number };
 
 const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const COUNTDOWNS = [0, 5, 10];
-const BODY_WEIGHT = "body weight";
 
 type NumberField = "rounds" | "work_seconds" | "switch_seconds" | "round_rest_seconds";
 
@@ -915,7 +915,9 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       ...new Set(
         form.stations
           .map((station) => this.summaryOf(station.exercise)?.equipment)
-          .filter((value): value is string => !!value && value !== BODY_WEIGHT),
+          .filter((value): value is string => !!value && value !== BODY_WEIGHT)
+          // A band's two names are one, as in the library's equipment filter.
+          .map(foldBand),
       ),
     ];
     return html`<section class="card editor-card stations">
@@ -1065,11 +1067,11 @@ export const programEditorStyles = css`
     container-type: inline-size;
   }
   hf-exercise-picker {
-    flex: 0 0 300px;
+    flex: 0 0 320px;
     padding-left: 20px;
     border-left: 1px solid var(--hf-border);
-    /* The equipment list spans the panel at most (300px less the padding), never past the window. */
-    --hf-equipment-popup-width: 280px;
+    /* The equipment list spans the panel at most (320px less the padding), never past the window. */
+    --hf-equipment-popup-width: 300px;
   }
   .editor-main .editor-head {
     display: flex;
@@ -1163,13 +1165,13 @@ export const programEditorStyles = css`
     align-items: center;
     gap: 6px;
     margin-right: 8px;
-    color: #e65100;
+    color: var(--hf-warning-text);
   }
   .editor-main .not-saved .dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #ff9800;
+    background: var(--hf-warning);
   }
   .editor-main .saved {
     margin-right: 8px;

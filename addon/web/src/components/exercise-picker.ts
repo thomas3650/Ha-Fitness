@@ -207,14 +207,21 @@ export const exercisePickerStyles = css`
   .picker .search {
     margin-bottom: 8px;
   }
+  /*
+   * The two dropdowns side by side (W7): the equipment filter as wide as its tags (about half the row at most), the
+   * body part the rest. In the 300px panel both read in full: "My equipment" and "Any body part".
+   */
   .picker-filters {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 8px;
   }
-  /* The two dropdowns share the panel's width side by side (W7). */
-  .picker-filters > * {
+  .picker-filters hf-equipment-filter {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 52%;
+  }
+  .picker-filters hf-multi-select {
     flex: 1 1 0;
     min-width: 0;
   }

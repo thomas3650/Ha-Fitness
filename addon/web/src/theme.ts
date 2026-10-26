@@ -16,6 +16,8 @@ export const theme = css`
     --hf-error: #db4437;
     --hf-error-light: #fdecea;
     --hf-success: #43a047;
+    --hf-warning: #ff9800;
+    --hf-warning-text: #e65100;
     --hf-radius: 12px;
     --hf-font: Roboto, Noto, "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }

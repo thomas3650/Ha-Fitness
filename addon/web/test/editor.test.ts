@@ -701,6 +701,18 @@ test("the summary says the number of exercises, the add-on's total time and the 
   expect(within(root).getByText("Equipment: dumbbell, cable")).toBeTruthy();
 });
 
+test("the summary names a band once, whichever of its two names the exercises use", async () => {
+  const pull = summary("0010", "band pull apart", "band", "shoulders", "delts");
+  const curl = summary("0011", "resistance band curl", "resistance band", "upper arms", "biceps");
+  const fake = newFake({
+    exercises: [...EXERCISES, pull, curl],
+    programs: [fullBody({ stations: [{ exercise: "0010" }, { exercise: "0003" }, { exercise: "0011" }] })],
+  });
+  const root = await openEditor(fake, "#/programs/1");
+
+  expect(await within(root).findByText("Equipment: band, dumbbell")).toBeTruthy();
+});
+
 // Unsaved changes.
 
 test("a change shows Not saved, and only then the page's unload is cancelled", async () => {

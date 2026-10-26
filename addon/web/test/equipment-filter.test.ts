@@ -305,3 +305,20 @@ test("a choice set from outside shows as it is", async () => {
   expect(selected(root, "band, not at home")).toBe(true);
   expect(selected(root, MINE_NAME)).toBe(false);
 });
+
+test("a click on the tags opens the list and puts the focus in the search, as the field is one control", async () => {
+  const { element, root } = await place();
+  fireEvent.click(tagList(root) as HTMLElement);
+  await element.updateComplete;
+  expect(listbox(root)).not.toBeNull();
+  expect(element.shadowRoot?.activeElement).toBe(combobox(root));
+
+  // A tag's remove button still only removes.
+  await key(element, root, "Escape");
+  element.choice = { mode: "all" };
+  await element.updateComplete;
+  fireEvent.click(getByRole(root, "button", { name: removeName(en.equipment_filter.all) }));
+  await element.updateComplete;
+  expect(tags(root)).toEqual([en.equipment_filter.mine]);
+  expect(listbox(root)).toBeNull();
+});

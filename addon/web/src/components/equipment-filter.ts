@@ -196,6 +196,20 @@ export class EquipmentFilter extends LitElement {
     else this.toggleKind(line.value);
   }
 
+  /**
+   * A click on the field beside the search (its tags, its padding) opens the list and focuses the search, so the field
+   * is one control even when the search has no room of its own. The search, the remove buttons and the list handle
+   * their own clicks.
+   */
+  private onFieldClick(event: MouseEvent): void {
+    const own = event
+      .composedPath()
+      .some((node) => node instanceof Element && node.matches("input, button, .popup"));
+    if (own) return;
+    this.input()?.focus();
+    this.open = true;
+  }
+
   private onInput(event: Event): void {
     this.query = (event.target as HTMLInputElement).value;
     this.open = true;
@@ -253,7 +267,7 @@ export class EquipmentFilter extends LitElement {
     const optionId = (index: number) => `${this.uid}-option-${index}`;
     return html`
       <label for=${`${this.uid}-input`} class=${this.hideLabel ? "hidden-label" : ""}>${this.label}</label>
-      <div class="field">
+      <div class="field" @click=${(event: MouseEvent) => this.onFieldClick(event)}>
         ${this.renderTags()}
         <input
           id=${`${this.uid}-input`}
@@ -288,12 +302,11 @@ export class EquipmentFilter extends LitElement {
   private renderGroup(matching: Line[], group: Line["group"], optionId: (index: number) => string) {
     const lines = matching.map((line, index) => ({ line, index })).filter(({ line }) => line.group === group);
     if (!lines.length) return nothing;
-    const heading = `${this.uid}-${group}`;
     const options = lines.map(({ line, index }) => this.renderLine(line, index, optionId(index)));
     return group === "show"
       ? html`<div role="group" class="show" aria-label=${t("equipment_filter.show")}>${options}</div>`
-      : html`<div role="group" class="pick" aria-labelledby=${heading}>
-          <div id=${heading} class="heading" role="presentation">${t("equipment_filter.pick")}</div>
+      : html`<div role="group" class="pick" aria-label=${t("equipment_filter.pick")}>
+          <div class="heading" aria-hidden="true">${t("equipment_filter.pick")}</div>
           ${options}
         </div>`;
   }
@@ -390,7 +403,8 @@ export class EquipmentFilter extends LitElement {
         gap: 4px;
         box-sizing: border-box;
         min-height: 36px;
-        padding: 3px 36px 3px 6px;
+        padding: 3px 30px 3px 4px;
+        cursor: text;
         border: 1px solid var(--hf-border);
         border-radius: 8px;
         background: var(--hf-card);
@@ -398,10 +412,14 @@ export class EquipmentFilter extends LitElement {
       .field:focus-within {
         border-color: var(--hf-primary);
       }
-      /* The search shrinks before the tags do, so the field stays one line high. */
+      /*
+       * The search takes the room the tags leave and none of its own, so the field is as narrow as its tags and stays
+       * one line high; typing gives it room, the tags then shrink.
+       */
       input {
         flex: 1 1 0;
-        min-width: 16px;
+        width: 0;
+        min-width: 0;
         height: 28px;
         padding: 0 4px;
         border: none;
@@ -410,10 +428,13 @@ export class EquipmentFilter extends LitElement {
         font: inherit;
         outline: none;
       }
+      input:focus {
+        min-width: 40px;
+      }
       .chevron {
         position: absolute;
         top: calc(50% - 12px);
-        right: 8px;
+        right: 4px;
         display: inline-flex;
         pointer-events: none;
       }
@@ -538,7 +559,7 @@ export class EquipmentFilter extends LitElement {
         min-width: 0;
         max-width: 100%;
         box-sizing: border-box;
-        padding: 2px 4px 2px 10px;
+        padding: 2px 4px 2px 8px;
         border-radius: 12px;
         background: var(--hf-primary-light);
         font-size: 13px;
@@ -553,7 +574,7 @@ export class EquipmentFilter extends LitElement {
         font-weight: 500;
       }
       .tags li:not(:has(button)) {
-        padding-right: 10px;
+        padding-right: 8px;
       }
       .tags button {
         display: inline-flex;
