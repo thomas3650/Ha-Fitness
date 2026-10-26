@@ -1,0 +1,64 @@
+{
+  "title": "HA Fitness",
+  "menu": {
+    "label": "HA Fitness",
+    "programs": "Programs",
+    "library": "Library",
+    "setup": "Setup",
+    "status": "Status"
+  },
+  "programs": {
+    "title": "Programs"
+  },
+  "editor": {
+    "new_title": "New program",
+    "copy_title": "Copy of a program",
+    "edit_title": "Edit program"
+  },
+  "library": {
+    "title": "Library"
+  },
+  "setup": {
+    "title": "Setup"
+  },
+  "status": {
+    "title": "Status",
+    "loading": "Loading…",
+    "version": "Version {version}",
+    "library": "Library",
+    "exercises": "Exercises: {library} from the library, {custom} custom",
+    "media": "Media: {present}/{total}, {state}",
+    "media_idle": "not started",
+    "media_downloading": "downloading",
+    "media_done": "done",
+    "media_failed": "failed",
+    "people": "People",
+    "no_people": "No people yet.",
+    "programs": "Programs",
+    "no_programs": "No programs yet.",
+    "program_name": "Name",
+    "program_state": "State",
+    "program_weekdays": "Weekdays",
+    "program_length": "Length",
+    "on": "On",
+    "off": "Off",
+    "no_weekdays": "None",
+    "minutes": "{minutes} min",
+    "links": "Links",
+    "library_json": "Library state (JSON)",
+    "health": "Health check (JSON)"
+  },
+  "weekday": {
+    "mon": "Mon",
+    "tue": "Tue",
+    "wed": "Wed",
+    "thu": "Thu",
+    "fri": "Fri",
+    "sat": "Sat",
+    "sun": "Sun"
+  },
+  "list_separator": ", ",
+  "error": {
+    "unknown": "The add-on answered with an error ({status})."
+  }
+}
