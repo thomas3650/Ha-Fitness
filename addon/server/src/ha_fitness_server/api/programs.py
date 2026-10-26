@@ -5,7 +5,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from ha_fitness_server.schemas import ProgramActive, ProgramDocument, ProgramOut
+from ha_fitness_server.schemas import (
+    ProgramActive,
+    ProgramDefaults,
+    ProgramDocument,
+    ProgramOut,
+)
 from ha_fitness_server.services import Services
 
 from .deps import client_from_request, get_services
@@ -28,6 +33,12 @@ def create_program(
 ) -> ProgramOut:
     """Create a program; 422 with close matches for a station that can't be resolved, 409 for a taken name."""
     return services.programs.create(program, client)
+
+
+@router.get("/defaults")
+def get_program_defaults() -> ProgramDefaults:
+    """Return what a program gets for each field it leaves out; before `/{program_id}`, which would take the path."""
+    return ProgramDefaults()
 
 
 @router.get("/{program_id}")

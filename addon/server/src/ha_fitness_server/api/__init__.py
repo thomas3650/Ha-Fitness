@@ -10,6 +10,7 @@ from . import (
     people,
     programs,
     session,
+    setup,
     stats,
     today,
     ws,
@@ -25,6 +26,7 @@ router.include_router(music.router)
 router.include_router(changes.router)
 router.include_router(today.router)
 router.include_router(session.router)
+router.include_router(setup.router)
 router.include_router(stats.router)
 router.include_router(ws.router)
 

@@ -24,6 +24,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
+from .schemas import CreatedBy
+
 # Named constraints and indexes, so later SQLite batch migrations can refer to them.
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_name)s",
@@ -78,6 +80,8 @@ class Program(Base):
     document: Mapped[dict[str, Any]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    # `claude` (an MCP write) or `you` (any other); null for a program from before migration 0006 with no log row.
+    created_by: Mapped[CreatedBy | None] = mapped_column(String(16))
 
 
 class Person(Base):
@@ -92,6 +96,15 @@ class Person(Base):
     position: Mapped[int]
     # Null for the people from before migration 0004: they count from the start (stats spec §3.1).
     added_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class SetupRow(Base):
+    """The household setup's one row (website spec §2.4); `document` is a `Setup`."""
+
+    __tablename__ = "setup"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
 class CustomExercise(Base):

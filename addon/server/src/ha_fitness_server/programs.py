@@ -14,7 +14,7 @@ from .db import session
 from .errors import Conflict, Invalid, NotFound
 from .library.service import Library
 from .models import ACTIVE_SESSION_STATUSES, Program as ProgramRow, WorkoutSession
-from .schemas import ProgramDocument, ProgramOut, ProgramSummary, StationIn
+from .schemas import CreatedBy, ProgramDocument, ProgramOut, ProgramSummary, StationIn
 
 if TYPE_CHECKING:
     from .training_days import TrainingDays
@@ -57,6 +57,11 @@ def _change(field: str, old: Any, new: Any) -> str:
 def _value(value: Any) -> str:
     """Show a field value in a summary: strings as they are, other values as JSON."""
     return value if isinstance(value, str) else json.dumps(value)
+
+
+def _created_by(client: str) -> CreatedBy:
+    """Return who a create is by: `claude` for an MCP client, `you` for any other (website spec §2.2.2)."""
+    return "claude" if client.startswith("mcp:") else "you"
 
 
 def _update_summary(name: str, old: dict[str, Any], new: dict[str, Any]) -> str:
@@ -113,6 +118,7 @@ class Programs:
             total_seconds=total_seconds(document),
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
         )
 
     def _resolved(self, document: ProgramDocument) -> dict[str, Any]:
@@ -170,6 +176,7 @@ class Programs:
             document=row.document,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
         )
 
     @staticmethod
@@ -222,6 +229,7 @@ class Programs:
                     document=stored,
                     created_at=now,
                     updated_at=now,
+                    created_by=_created_by(client),
                 )
                 db_session.add(row)
                 db_session.flush()

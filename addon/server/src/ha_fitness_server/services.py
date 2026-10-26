@@ -10,6 +10,7 @@ from .music import MusicService
 from .people import People
 from .programs import Programs
 from .sessions import Sessions
+from .setup import SetupService
 from .stats import StatsService
 from .training_days import TrainingDays
 
@@ -25,6 +26,7 @@ class Services:
     people: People
     programs: Programs
     sessions: Sessions
+    setup: SetupService
     stats: StatsService
     training_days: TrainingDays
 

@@ -29,6 +29,7 @@ from .push import Hub, Message
 from .services import Services, ServicesHolder
 from .sessions import Sessions
 from .settings import Settings
+from .setup import SetupService
 from .stats import StatsService
 from .training_days import TrainingDays
 
@@ -150,6 +151,7 @@ def create_app(
                 people=people,
                 programs=programs,
                 sessions=sessions,
+                setup=SetupService(engine, library),
                 stats=stats,
                 training_days=training_days,
             )
