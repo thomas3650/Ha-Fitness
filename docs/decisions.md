@@ -560,3 +560,11 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   website spec's "Show all" checkbox.
 - **Why:** One control instead of a dropdown plus a checkbox. Thomas chose it from the W7 mockup.
 - **Source:** [editor cards spec](superpowers/specs/2026-10-26-editor-cards-design.md) §2.3; Thomas, 2026-10-26
+
+### D67: The add-on image is built when GHCR lacks it, from the release commit
+- **Date:** 2026-10-26 · **Status:** active
+- **Decision:** `addon-image` asks GHCR whether the multi-arch manifest for the version in `addon/config.yaml` exists
+  (200 skip, 404 build, anything else fail), never git. It always builds the commit that set the version.
+- **Why:** A run that GitHub replaced in the queue is made up by the next run (#82). Building the release commit keeps
+  unreleased code out of the image and avoids the race with release-please's tag.
+- **Source:** Claude, 2026-10-26, #82 (Thomas asked Claude to do it alone)
