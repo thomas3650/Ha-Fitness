@@ -135,8 +135,8 @@ Claude edit through the same add-on service layer, and the integration and the c
    editor's music choice.
 4. **Default speaker:** chosen from Music Assistant's speakers. Programs made on the website get it.
 5. **Claude reads the setup:** a read-only MCP tool `get_setup` returns the household's equipment, the favourite
-   playlists and the default speaker; `search_exercises`, and the REST search with it (D3), gets an optional
-   `household` flag (default false, so today's behaviour stays) that applies the household filter. The tool descriptions tell Claude to use them when suggesting
+   playlists and the default speaker; `search_exercises`, and the REST search with it (D3), gets an
+   optional `household` flag (default false, so today's behaviour stays) that applies the household filter. The tool descriptions tell Claude to use them when suggesting
    exercises and when asking about music (#76). (Claude's call: a guess Thomas didn't object to.)
 6. Without Music Assistant the music parts show an empty list and say so; the rest of the setup works.
 
@@ -202,7 +202,8 @@ links to the JSON library status (`/api/v1/library`) and health. It reads them t
 - **Gates and tooling:** the site gets lint, test and build commands and a CI job, a Dependabot npm entry (with the
   TypeScript hold from `docs/notes.md`), `scripts/setup` and `scripts/develop` support, and a `.gitignore` for its
   build output in its own folder. Making the new CI job a required check is a GitHub setting and needs Thomas's OK.
-- **Releases:** the feature touches `addon/`, `docs/` and `scripts/` (none of them releases the integration). Changes
+- **Releases:** the feature touches `addon/`, `docs/`, `scripts/` and `.github/` (none of them releases the
+  integration). Changes
   to root files (`CLAUDE.md`, `.pre-commit-config.yaml`, the root `.gitignore`) go in a separate `docs:`/`chore:` PR
   that merges after the feature PR, so the integration doesn't release unchanged
   ([`releasing.md`](../../releasing.md), D29). The site's build output is ignored by a `.gitignore` inside its own
