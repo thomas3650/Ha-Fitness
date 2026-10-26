@@ -82,12 +82,24 @@ async function openLibrary(fake: FakeApi): Promise<HTMLElement> {
   return root;
 }
 
-function group(root: HTMLElement, name: string): HTMLElement {
-  return getByRole(root, "group", { name });
+/** A filter: the multi-select named by the facet, its parts in its own shadow root. */
+function filter(root: HTMLElement, name: string): HTMLElement {
+  return getByRole(root, "group", { name }).shadowRoot as unknown as HTMLElement;
 }
 
-function toggle(root: HTMLElement, facet: string, value: string): void {
-  fireEvent.click(within(group(root, facet)).getByRole("button", { name: value }));
+/** Open a filter's list and return its options. */
+async function options(root: HTMLElement, facet: string): Promise<HTMLElement[]> {
+  const select = filter(root, facet);
+  fireEvent.click(getByRole(select, "combobox", { name: facet }));
+  const list = await findByRole(select, "listbox", { name: facet });
+  return within(list).getAllByRole("option");
+}
+
+/** Choose a value in a filter, or take it off, through its combobox. */
+async function toggle(root: HTMLElement, facet: string, value: string): Promise<void> {
+  const option = (await options(root, facet)).find((candidate) => text(candidate) === value);
+  if (!option) throw new Error(`no option ${value}`);
+  fireEvent.click(option);
 }
 
 function showAll(root: HTMLElement): void {
@@ -146,13 +158,10 @@ test("the search finds exercises by name, names that start with it first", async
 test("the filters offer every value as the dataset names it", async () => {
   const root = await openLibrary(newFake());
 
-  const values = (name: string) =>
-    within(group(root, name))
-      .getAllByRole("button")
-      .map(text);
-  expect(values(en.library.equipment)).toEqual(["body weight", "cable", "dumbbell", "sofa"]);
-  expect(values(en.library.body_part)).toEqual(["back", "chest", "upper arms", "upper legs", "waist"]);
-  expect(values(en.library.target)).toEqual(["abs", "lats", "pectorals", "quads", "triceps"]);
+  const values = async (name: string) => (await options(root, name)).map(text);
+  expect(await values(en.library.equipment)).toEqual(["body weight", "cable", "dumbbell", "sofa"]);
+  expect(await values(en.library.body_part)).toEqual(["back", "chest", "upper arms", "upper legs", "waist"]);
+  expect(await values(en.library.target)).toEqual(["abs", "lats", "pectorals", "quads", "triceps"]);
   // The rows show the values as they are too.
   const row = rowOf(root, "push-up");
   expect(within(row).getByText("body weight")).toBeTruthy();
@@ -164,38 +173,38 @@ test("several values in one filter show either, and a second filter narrows them
   const root = await openLibrary(newFake());
   showAll(root);
 
-  toggle(root, en.library.body_part, "back");
+  await toggle(root, en.library.body_part, "back");
   await vi.waitFor(() => expect(names(root)).toEqual(["cable row", "dumbbell row"]));
-  expect(
-    within(group(root, en.library.body_part)).getByRole("button", { name: "back", pressed: true }),
-  ).toBeTruthy();
+  await vi.waitFor(() =>
+    expect(getByRole(filter(root, en.library.body_part), "option", { name: "back", selected: true })).toBeTruthy(),
+  );
+  expect(getByRole(filter(root, en.library.body_part), "button", { name: "Remove back" })).toBeTruthy();
 
-  toggle(root, en.library.body_part, "upper legs");
+  await toggle(root, en.library.body_part, "upper legs");
   await vi.waitFor(() => expect(names(root).sort()).toEqual(["cable row", "dumbbell row", "goblet squat", "squat"]));
 
-  toggle(root, en.library.equipment, "dumbbell");
+  await toggle(root, en.library.equipment, "dumbbell");
   await vi.waitFor(() => expect(names(root).sort()).toEqual(["dumbbell row", "goblet squat"]));
 
-  toggle(root, en.library.equipment, "cable");
+  await toggle(root, en.library.equipment, "cable");
   await vi.waitFor(() => expect(names(root).sort()).toEqual(["cable row", "dumbbell row", "goblet squat"]));
 
-  toggle(root, en.library.target, "quads");
+  await toggle(root, en.library.target, "quads");
   await vi.waitFor(() => expect(names(root)).toEqual(["goblet squat"]));
-  toggle(root, en.library.target, "lats");
+  await toggle(root, en.library.target, "lats");
   await vi.waitFor(() => expect(names(root).sort()).toEqual(["cable row", "dumbbell row", "goblet squat"]));
 
   // A second click takes a value off again.
-  toggle(root, en.library.body_part, "back");
+  await toggle(root, en.library.body_part, "back");
   await vi.waitFor(() => expect(names(root)).toEqual(["goblet squat"]));
-  expect(
-    within(group(root, en.library.body_part)).getByRole("button", { name: "back", pressed: false }),
-  ).toBeTruthy();
+  expect(getByRole(filter(root, en.library.body_part), "option", { name: "back", selected: false })).toBeTruthy();
+  expect(queryByRole(filter(root, en.library.body_part), "button", { name: "Remove back" })).toBeNull();
 });
 
 test("the filters and the household filter work together", async () => {
   const root = await openLibrary(newFake());
 
-  toggle(root, en.library.body_part, "back");
+  await toggle(root, en.library.body_part, "back");
   await vi.waitFor(() => expect(names(root)).toEqual(["dumbbell row"]));
 
   showAll(root);

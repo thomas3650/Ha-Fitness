@@ -3,6 +3,7 @@ import { css, html, LitElement, nothing } from "lit";
 
 import { ApiError, createApi, thumbnailUrl, type Api, type ExerciseSummary } from "../api";
 import "../components/exercise-details";
+import "../components/multi-select";
 import { facetValues, FACETS, inHousehold, searchByName, type Facet } from "../components/exercise-picker";
 import { t } from "../i18n";
 import { icon } from "../icons";
@@ -89,11 +90,8 @@ export class LibraryPage extends LitElement {
     return searchByName(kept, this.query);
   }
 
-  private toggle(facet: Facet, value: string): void {
-    const chosen = new Set(this.filters[facet]);
-    if (chosen.has(value)) chosen.delete(value);
-    else chosen.add(value);
-    this.filters = { ...this.filters, [facet]: chosen };
+  private choose(facet: Facet, selected: string[]): void {
+    this.filters = { ...this.filters, [facet]: new Set(selected) };
   }
 
   protected override render() {
@@ -129,6 +127,7 @@ export class LibraryPage extends LitElement {
             @input=${(event: Event) => (this.query = (event.target as HTMLInputElement).value)}
           />
         </label>
+        ${FACETS.map((facet) => this.renderFacet(exercises, facet))}
         <label class="check">
           <input
             type="checkbox"
@@ -138,7 +137,6 @@ export class LibraryPage extends LitElement {
           <span>${t("library.show_all")}</span>
         </label>
       </div>
-      ${FACETS.map((facet) => this.renderFacet(exercises, facet))}
       <p class="secondary">
         ${t("library.count", { count: found.length })}
       </p>
@@ -162,21 +160,12 @@ export class LibraryPage extends LitElement {
   }
 
   private renderFacet(exercises: ExerciseSummary[], facet: Facet) {
-    const chosen = this.filters[facet];
-    const headingId = `library-facet-${facet}`;
-    return html`<div class="library-facet" role="group" aria-labelledby=${headingId}>
-      <span id=${headingId} class="library-facet-name">${t(`library.${facet}`)}</span>
-      ${facetValues(exercises, facet).map(
-        (value) => html`<button
-          type="button"
-          class="chip"
-          aria-pressed=${chosen.has(value) ? "true" : "false"}
-          @click=${() => this.toggle(facet, value)}
-        >
-          ${value}
-        </button>`,
-      )}
-    </div>`;
+    return html`<hf-multi-select
+      .label=${t(`library.${facet}`)}
+      .options=${facetValues(exercises, facet).map((value) => ({ value, label: value }))}
+      .selected=${[...this.filters[facet]]}
+      @change=${(event: CustomEvent<{ selected: string[] }>) => this.choose(facet, event.detail.selected)}
+    ></hf-multi-select>`;
   }
 
   private renderRow(exercise: ExerciseSummary) {
@@ -214,32 +203,24 @@ export const libraryPageStyles = css`
   .library-tools {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     gap: 16px;
     margin-bottom: 12px;
+  }
+  /* The filters have their name above the field; the search and Show all line up with the fields. */
+  .library-tools .search,
+  .library-tools label.check {
+    margin-top: 22px;
   }
   .library-tools label.check {
     display: flex;
     align-items: center;
     gap: 6px;
+    min-height: 40px;
   }
-  .library-facet {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 8px;
-  }
-  .library-facet-name {
-    min-width: 90px;
-    color: var(--hf-text-secondary);
-    font-size: 12px;
-    font-weight: 500;
-    text-transform: uppercase;
-  }
-  .library-facet .chip {
-    padding: 4px 12px;
-    font-size: 13px;
+  .library-tools hf-multi-select {
+    flex: 1 1 180px;
+    max-width: 280px;
   }
   td button.library-name {
     color: var(--hf-text);

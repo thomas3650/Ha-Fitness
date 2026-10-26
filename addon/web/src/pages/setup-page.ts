@@ -2,7 +2,6 @@ import {
   mdiAccountGroup,
   mdiArrowDown,
   mdiArrowUp,
-  mdiCheck,
   mdiClose,
   mdiContentSave,
   mdiDumbbell,
@@ -27,6 +26,7 @@ import {
 } from "../api";
 import "../components/confirm-dialog";
 import { facetValues } from "../components/exercise-picker";
+import "../components/multi-select";
 import { applySelectValues } from "../components/select-value";
 import { t } from "../i18n";
 import { icon } from "../icons";
@@ -43,7 +43,7 @@ const GROUPS: Record<string, string[]> = { band: ["band", "resistance band"] };
 /** The people's colours, by people order, as the cards have them (design §3.4). */
 const PERSON_COLORS = ["#B18CFF", "#3DD6C6"];
 
-/** One equipment chip: its label and the values it stands for. */
+/** One equipment option: its label and the values it stands for. */
 interface Choice {
   label: string;
   values: string[];
@@ -72,9 +72,9 @@ function placeOf(item: ErrorItem): Place {
 }
 
 /**
- * The equipment chips: body weight first, then every equipment of the exercises and of the stored setup, sorted,
- * with a group (band and resistance band) as one chip. A group stands only for the values the exercises or the
- * setup have, so a chip never sends equipment the add-on doesn't know.
+ * The equipment options besides body weight: every equipment of the exercises and of the stored setup, sorted, with a
+ * group (band and resistance band) as one option. A group stands only for the values the exercises or the setup
+ * have, so an option never sends equipment the add-on doesn't know.
  */
 function choices(exercises: ExerciseSummary[], stored: Iterable<string>): Choice[] {
   const known = new Set([...facetValues(exercises, "equipment"), ...stored]);
@@ -216,6 +216,22 @@ export class SetupPage extends LitElement {
     this.saved = false;
   }
 
+  /** Apply the multi-select's choice: each option chosen or taken off toggles the values it stands for. */
+  private choose(all: Choice[], selected: string[]): void {
+    if (!this.setup) return;
+    const before = new Set(this.chosen(all));
+    const after = new Set(selected);
+    for (const choice of all) {
+      if (before.has(choice.label) !== after.has(choice.label)) this.toggle(choice);
+    }
+  }
+
+  /** The options chosen now: those with any of their values in the setup. */
+  private chosen(all: Choice[]): string[] {
+    const equipment = new Set(this.setup?.equipment ?? []);
+    return all.filter((choice) => choice.values.some((value) => equipment.has(value))).map((choice) => choice.label);
+  }
+
   private toggle(choice: Choice): void {
     if (!this.setup) return;
     const equipment = new Set(this.setup.equipment);
@@ -352,28 +368,24 @@ export class SetupPage extends LitElement {
   }
 
   private renderEquipment(setup: Setup) {
-    const equipment = new Set(setup.equipment);
+    const all = choices(this.exercises, setup.equipment);
     return html`<section class="card" aria-labelledby="setup-equipment">
       <h2 id="setup-equipment">${icon(mdiDumbbell)}<span>${t("setup.equipment")}</span></h2>
       <p class="secondary">${t("setup.equipment_hint")}</p>
       ${this.exercisesError ? html`<p class="error" role="alert">${this.exercisesError}</p>` : nothing}
-      <div class="setup-chips">
-        <button type="button" class="chip" aria-pressed="true" disabled>
-          ${icon(mdiCheck)}<span>${BODY_WEIGHT}</span>
-        </button>
-        ${choices(this.exercises, setup.equipment).map((choice) => {
-          const on = choice.values.some((value) => equipment.has(value));
-          return html`<button
-            type="button"
-            class="chip"
-            aria-pressed=${on ? "true" : "false"}
-            @click=${() => this.toggle(choice)}
-          >
-            ${on ? icon(mdiCheck) : nothing}
-            <span>${GROUPS[choice.label] ? t(`setup.${choice.label}`) : choice.label}</span>
-          </button>`;
-        })}
-      </div>
+      <hf-multi-select
+        .label=${t("setup.equipment_have")}
+        .options=${[
+          { value: BODY_WEIGHT, label: BODY_WEIGHT },
+          ...all.map((choice) => ({
+            value: choice.label,
+            label: GROUPS[choice.label] ? t(`setup.${choice.label}`) : choice.label,
+          })),
+        ]}
+        .selected=${[BODY_WEIGHT, ...this.chosen(all)]}
+        .fixed=${[BODY_WEIGHT]}
+        @change=${(event: CustomEvent<{ selected: string[] }>) => this.choose(all, event.detail.selected)}
+      ></hf-multi-select>
       ${this.alerts("equipment")}
     </section>`;
   }
@@ -556,16 +568,9 @@ export const setupPageStyles = css`
   .secondary {
     color: var(--hf-text-secondary);
   }
-  .setup-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+  .card hf-multi-select {
+    max-width: 480px;
     margin: 12px 0 4px;
-  }
-  .setup-chips .chip .icon {
-    width: 16px;
-    height: 16px;
-    color: inherit;
   }
   .setup-columns {
     display: grid;

@@ -118,6 +118,7 @@
     "saved": "Saved",
     "equipment": "Household equipment",
     "equipment_hint": "By default the library and the editor show only exercises you can do. Body weight is always on.",
+    "equipment_have": "Equipment we have",
     "band": "band",
     "people": "People who train",
     "people_hint": "From Home Assistant's persons · at most 2 · the order gives the colour",
@@ -238,5 +239,10 @@
     "instructions": "Instructions",
     "close": "Close",
     "add": "Add to program"
+  },
+  "multi_select": {
+    "none": "No matches",
+    "remove": "Remove {value}",
+    "chosen": "Chosen {label}"
   }
 }

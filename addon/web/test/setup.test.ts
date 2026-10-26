@@ -83,8 +83,32 @@ async function openSetup(fake: FakeApi): Promise<HTMLElement> {
   return root;
 }
 
-function chip(root: HTMLElement, name: string): HTMLButtonElement {
-  return within(region(root, en.setup.equipment)).getByRole("button", { name }) as HTMLButtonElement;
+/** The household equipment's multi-select: its parts are in its own shadow root. */
+function equipment(root: HTMLElement): HTMLElement {
+  const host = within(region(root, en.setup.equipment)).getByRole("group", { name: en.setup.equipment_have });
+  return host.shadowRoot as unknown as HTMLElement;
+}
+
+/** Open the equipment list and return its options. */
+async function options(root: HTMLElement): Promise<HTMLElement[]> {
+  const select = equipment(root);
+  fireEvent.click(getByRole(select, "combobox", { name: en.setup.equipment_have }));
+  return within(await findByRole(select, "listbox", { name: en.setup.equipment_have })).getAllByRole("option");
+}
+
+async function option(root: HTMLElement, name: string): Promise<HTMLElement> {
+  const found = (await options(root)).find((candidate) => text(candidate) === name);
+  if (!found) throw new Error(`no option ${name}`);
+  return found;
+}
+
+/** Choose an equipment, or take it off, through the combobox. */
+async function toggle(root: HTMLElement, name: string): Promise<void> {
+  fireEvent.click(await option(root, name));
+}
+
+async function chosen(root: HTMLElement, name: string): Promise<boolean> {
+  return (await option(root, name)).getAttribute("aria-selected") === "true";
 }
 
 function save(root: HTMLElement): void {
@@ -117,36 +141,36 @@ function favouriteNames(root: HTMLElement): string[] {
     : [];
 }
 
-test("the equipment chips are every equipment of the exercises, the stored ones pressed", async () => {
+test("the equipment options are every equipment of the exercises, the stored ones chosen", async () => {
   const root = await openSetup(newFake());
 
-  const chips = within(region(root, en.setup.equipment)).getAllByRole("button");
-  expect(chips.map(text)).toEqual(["body weight", "band", "cable", "dumbbell", "kettlebell", "sofa"]);
-  expect(chip(root, "dumbbell").getAttribute("aria-pressed")).toBe("true");
-  expect(chip(root, "kettlebell").getAttribute("aria-pressed")).toBe("false");
-  expect(chip(root, "band").getAttribute("aria-pressed")).toBe("false");
+  expect((await options(root)).map(text)).toEqual(["body weight", "band", "cable", "dumbbell", "kettlebell", "sofa"]);
+  expect(await chosen(root, "dumbbell")).toBe(true);
+  expect(await chosen(root, "kettlebell")).toBe(false);
+  expect(await chosen(root, "band")).toBe(false);
+  expect(getByRole(equipment(root), "button", { name: "Remove dumbbell" })).toBeTruthy();
 });
 
 test("body weight is always on and can't be turned off", async () => {
   const fake = newFake({ setup: { ...structuredClone(SETUP), equipment: [] } });
   const root = await openSetup(fake);
 
-  const bodyWeight = chip(root, "body weight");
-  expect(bodyWeight.getAttribute("aria-pressed")).toBe("true");
-  expect(bodyWeight.disabled).toBe(true);
-  fireEvent.click(bodyWeight);
+  expect(await chosen(root, "body weight")).toBe(true);
+  expect(queryByRole(equipment(root), "button", { name: "Remove body weight" })).toBeNull();
+  await toggle(root, "body weight");
+  expect(await chosen(root, "body weight")).toBe(true);
   save(root);
 
   await vi.waitFor(() => expect(writes(fake, "api/v1/setup")).toHaveLength(1));
   expect((writes(fake, "api/v1/setup")[0].body as Setup).equipment).toContain("body weight");
 });
 
-test("the band chip stores both band and resistance band, and turning it off removes both", async () => {
+test("the band option stores both band and resistance band, and taking it off removes both", async () => {
   const fake = newFake();
   const root = await openSetup(fake);
 
-  fireEvent.click(chip(root, "band"));
-  await vi.waitFor(() => expect(chip(root, "band").getAttribute("aria-pressed")).toBe("true"));
+  await toggle(root, "band");
+  await vi.waitFor(async () => expect(await chosen(root, "band")).toBe(true));
   await saveAndWait(root);
   await vi.waitFor(() => expect(writes(fake, "api/v1/setup")).toHaveLength(1));
   expect([...(writes(fake, "api/v1/setup")[0].body as Setup).equipment].sort()).toEqual([
@@ -156,18 +180,18 @@ test("the band chip stores both band and resistance band, and turning it off rem
     "resistance band",
   ]);
 
-  fireEvent.click(chip(root, "band"));
-  await vi.waitFor(() => expect(chip(root, "band").getAttribute("aria-pressed")).toBe("false"));
+  fireEvent.click(getByRole(equipment(root), "button", { name: "Remove band" }));
+  await vi.waitFor(async () => expect(await chosen(root, "band")).toBe(false));
   save(root);
   await vi.waitFor(() => expect(writes(fake, "api/v1/setup")).toHaveLength(2));
   expect([...(writes(fake, "api/v1/setup")[1].body as Setup).equipment].sort()).toEqual(["body weight", "dumbbell"]);
 });
 
-test("with only one of the band names among the exercises, the band chip sends that one", async () => {
+test("with only one of the band names among the exercises, the band option sends that one", async () => {
   const fake = newFake({ exercises: EXERCISES.filter((exercise) => exercise.equipment !== "band") });
   const root = await openSetup(fake);
 
-  fireEvent.click(chip(root, "band"));
+  await toggle(root, "band");
   save(root);
 
   await vi.waitFor(() => expect(writes(fake, "api/v1/setup")).toHaveLength(1));
@@ -181,30 +205,31 @@ test("with only one of the band names among the exercises, the band chip sends t
 test("a change made while the setup saves stays, unsaved", async () => {
   const fake = newFake();
   const root = await openSetup(fake);
+  const kettlebell = await option(root, "kettlebell");
 
   save(root);
-  fireEvent.click(chip(root, "kettlebell"));
+  fireEvent.click(kettlebell);
 
   await vi.waitFor(() => expect(writes(fake, "api/v1/setup")).toHaveLength(1));
   const saveButton = getByRole(root, "button", { name: en.setup.save });
   await vi.waitFor(() => expect(saveButton.hasAttribute("disabled")).toBe(false));
-  expect(chip(root, "kettlebell").getAttribute("aria-pressed")).toBe("true");
+  expect(await chosen(root, "kettlebell")).toBe(true);
   expect(queryByRole(root, "status")).toBeNull();
 });
 
-test("a stored resistance band alone shows the band chip pressed", async () => {
+test("a stored resistance band alone shows the band option chosen", async () => {
   const fake = newFake({ setup: { ...structuredClone(SETUP), equipment: ["body weight", "resistance band"] } });
   const root = await openSetup(fake);
 
-  expect(chip(root, "band").getAttribute("aria-pressed")).toBe("true");
+  expect(await chosen(root, "band")).toBe(true);
 });
 
 test("Save sends the setup's equipment, favourites and default speaker, and only the setup", async () => {
   const fake = newFake();
   const root = await openSetup(fake);
 
-  fireEvent.click(chip(root, "kettlebell"));
-  fireEvent.click(chip(root, "dumbbell"));
+  await toggle(root, "kettlebell");
+  await toggle(root, "dumbbell");
   save(root);
 
   await vi.waitFor(() => expect(writes(fake, "api/v1/setup")).toHaveLength(1));
@@ -227,12 +252,12 @@ test("the add-on's equipment refusal shows at the equipment, and the choice stay
     field: "equipment",
   });
 
-  fireEvent.click(chip(root, "cable"));
+  await toggle(root, "cable");
   save(root);
 
   const equipment = region(root, en.setup.equipment);
   expect(text(await within(equipment).findByRole("alert"))).toBe("Unknown equipment: cable");
-  expect(chip(root, "cable").getAttribute("aria-pressed")).toBe("true");
+  expect(await chosen(root, "cable")).toBe(true);
 });
 
 test("a refusal without a field shows above the setup", async () => {
@@ -299,7 +324,7 @@ test("music reads that fail say so, and the rest of the setup still saves", asyn
   expect(within(region(root, en.setup.playlists)).getByText("Music Assistant can't be reached")).toBeTruthy();
   // The stored speaker and favourites are still shown and kept.
   expect(favouriteNames(root)).toEqual(["Workout Mix"]);
-  fireEvent.click(chip(root, "kettlebell"));
+  await toggle(root, "kettlebell");
   save(root);
 
   await vi.waitFor(() => expect(writes(fake, "api/v1/setup")).toHaveLength(1));
