@@ -19,6 +19,7 @@ import { mount, unmount } from "./mount";
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function summary(
@@ -379,5 +380,4 @@ test("a read that fails with a bug shows the generic message, not the bug's text
   expect(text(alert)).toBe(en.error.unexpected);
   expect(queryByText(root, en.library.loading)).toBeNull();
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
-  logged.mockRestore();
 });

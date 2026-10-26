@@ -9,6 +9,7 @@ import { mount, unmount } from "./mount";
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function text(element: Element): string {
@@ -140,5 +141,4 @@ test("a read that fails with a bug shows the generic message on the Status page 
 
   expect(await findByText(root, en.error.unexpected)).toBeTruthy();
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
-  logged.mockRestore();
 });

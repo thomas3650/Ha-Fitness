@@ -17,6 +17,7 @@ import { mount, unmount } from "./mount";
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function text(element: Element): string {
@@ -389,12 +390,14 @@ test("a list read that fails with a bug shows the generic message and logs the b
 
   expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
-  logged.mockRestore();
 });
 
 /** Delete a program through its dialog and wait until the dialog has closed. */
 async function deleteProgram(root: HTMLElement, name: string): Promise<void> {
-  fireEvent.click(getByRole(root, "button", { name: `Delete ${name}` }));
+  // A click focuses the button in a browser, and the dialog hands the focus back to it when it closes.
+  const button = getByRole(root, "button", { name: `Delete ${name}` });
+  button.focus();
+  fireEvent.click(button);
   const dialog = await findByRole(root, "dialog");
   fireEvent.click(within(dialog).getByRole("button", { name: en.programs.delete_confirm }));
   await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());

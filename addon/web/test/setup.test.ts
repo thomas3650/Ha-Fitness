@@ -10,6 +10,7 @@ import { mount, unmount } from "./mount";
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function summary(id: string, equipment: string | null, custom = false): ExerciseSummary {
@@ -514,5 +515,4 @@ test("a setup read that fails with a bug shows the generic message and logs the 
 
   expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
-  logged.mockRestore();
 });

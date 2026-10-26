@@ -11,6 +11,7 @@ import { mount, unmount } from "./mount";
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const STORED_AT = "2026-10-26T10:00:00+00:00";
@@ -1161,7 +1162,6 @@ test("a program read that fails with a bug shows the generic message, not the bu
   const alert = await findByRole(root, "alert");
   expect(text(alert)).toBe(en.error.unexpected);
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
-  logged.mockRestore();
 });
 
 test("a defaults read that fails with a bug shows the generic message on the new-program page and logs the bug", async () => {
@@ -1171,7 +1171,6 @@ test("a defaults read that fails with a bug shows the generic message on the new
 
   expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
-  logged.mockRestore();
 });
 
 test("a create the user stays through switches the heading to Edit program as Delete shows", async () => {
