@@ -2,8 +2,10 @@ name: addon-image
 # Builds and pushes the add-on image when the registry has no image yet for the version in addon/config.yaml
 # (set by the add-on's release PR). It runs on a push to main that changes addon/config.yaml, and by hand
 # (workflow_dispatch, main only). The registry decides, not git: a run that GitHub replaced in the queue is made up by
-# the next run. To build a missed version, dispatch the workflow on main (or re-run the latest run, not an older one);
-# it skips a version that has an image.
+# the next run. It always builds the commit that set the version, not the commit it runs on.
+# When a run fails: re-run its failed jobs (gh run rerun <run-id> --failed) on the latest run, never an older one.
+# A full re-run or a dispatch would see a manifest pushed before signing failed and skip it. Dispatch on main only when
+# a version got no run at all (its run was replaced in the queue).
 # Steps follow home-assistant/apps-example's build-app.yaml.
 on:
   push:
@@ -40,10 +42,13 @@ jobs:
       name: ${{ steps.version.outputs.name }}
       description: ${{ steps.version.outputs.description }}
       url: ${{ steps.version.outputs.url }}
+      sha: ${{ steps.version.outputs.sha }}
       build_matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          # The full history, to find the commit that set the version.
+          fetch-depth: 0
           persist-credentials: false
       - name: Does the version have an image?
         id: version
@@ -67,7 +72,7 @@ jobs:
           body="$(mktemp)"
           # An anonymous pull token. A missing or non-public package answers 403 here; with that token the
           # manifest check would answer 404, so anything but a token is an error, never "missing".
-          status="$(curl -sS -o "${body}" -w '%{http_code}' \
+          status="$(curl -sS --retry 3 --max-time 30 -o "${body}" -w '%{http_code}' \
             "https://${registry}/token?scope=repository:${repository}:pull")" \
             || { echo "::error::Could not reach ${registry} for a pull token"; exit 1; }
           if [ "${status}" != "200" ]; then
@@ -75,12 +80,13 @@ jobs:
             echo "::error::No anonymous pull token for ${repository} (HTTP ${status}); is the package public?"
             exit 1
           fi
-          token="$(jq -r '.token // empty' "${body}")"
+          token="$(jq -r '.token // empty' "${body}")" \
+            || { echo "::error::The token response for ${repository} is not JSON"; exit 1; }
           if [ -z "${token}" ]; then
             echo "::error::The token response for ${repository} has no token"
             exit 1
           fi
-          status="$(curl -sS -o /dev/null -I -w '%{http_code}' \
+          status="$(curl -sS --retry 3 --max-time 30 -o /dev/null -I -w '%{http_code}' \
             -H "Authorization: Bearer ${token}" \
             -H 'Accept: application/vnd.oci.image.index.v1+json' \
             -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
@@ -102,13 +108,28 @@ jobs:
               exit 1
               ;;
           esac
+          # Build the commit that set the version (the release commit), not a later commit this run happens to see.
+          sha="$(git log -1 --format=%H -G '^version:' -- addon/config.yaml)"
+          if [ -z "${sha}" ]; then
+            echo "::error::No commit changed the version line of addon/config.yaml"
+            exit 1
+          fi
+          # The labels and architectures come from that commit too, so they match the code.
+          config="$(git show "${sha}:addon/config.yaml")"
+          released="$(yq -r '.version' <<< "${config}")"
+          if [ "${released}" != "${version}" ]; then
+            echo "::error::Commit ${sha} sets version ${released}, not ${version}"
+            exit 1
+          fi
+          echo "Building ${version} from ${sha}"
           {
             echo "changed=true"
+            echo "sha=${sha}"
             echo "version=${version}"
-            echo "architectures=$(yq -o=json -I=0 '.arch' addon/config.yaml)"
-            echo "name=$(yq -r '.name' addon/config.yaml)"
-            echo "description=$(yq -r '.description' addon/config.yaml)"
-            echo "url=$(yq -r '.url' addon/config.yaml)"
+            echo "architectures=$(yq -o=json -I=0 '.arch' <<< "${config}")"
+            echo "name=$(yq -r '.name' <<< "${config}")"
+            echo "description=$(yq -r '.description' <<< "${config}")"
+            echo "url=$(yq -r '.url' <<< "${config}")"
           } >> "$GITHUB_OUTPUT"
       - name: Prepare build matrix
         id: matrix
@@ -135,6 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
       - name: Build image
         uses: home-assistant/builder/actions/build-image@7412f0023ea9b6e58e8bb5059f1660f51376f49a  # 2026.09.0
