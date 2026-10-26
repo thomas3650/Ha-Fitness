@@ -9,15 +9,37 @@ import { applySelectValues } from "./select-value";
 /** Body weight needs no equipment, so the household always has it (website spec §2.3.2). */
 const BODY_WEIGHT = "body weight";
 
+/**
+ * Whether the household can do an exercise, as the add-on's household search decides it: its equipment is in the
+ * setup's (body weight always), or it is custom. A library exercise without equipment is not one.
+ */
+export function inHousehold(exercise: ExerciseSummary, household: ReadonlySet<string>): boolean {
+  const equipment = exercise.equipment;
+  return exercise.custom || (equipment !== null && (equipment === BODY_WEIGHT || household.has(equipment)));
+}
+
+/**
+ * The exercises whose name has every word of the search, those that start with the whole search first; the order
+ * is kept otherwise.
+ */
+export function searchByName(exercises: ExerciseSummary[], search: string): ExerciseSummary[] {
+  const needle = search.trim().toLowerCase();
+  const words = needle.split(/\s+/).filter(Boolean);
+  const kept = exercises.filter((exercise) => words.every((word) => exercise.name.toLowerCase().includes(word)));
+  const first = kept.filter((exercise) => exercise.name.toLowerCase().startsWith(needle));
+  const rest = kept.filter((exercise) => !exercise.name.toLowerCase().startsWith(needle));
+  return [...first, ...rest];
+}
+
 /** The most results the panel draws at once; a search narrows the rest. */
 const SHOWN = 100;
 
-type Facet = "equipment" | "body_part" | "target";
+export type Facet = "equipment" | "body_part" | "target";
 
-const FACETS: Facet[] = ["equipment", "body_part", "target"];
+export const FACETS: Facet[] = ["equipment", "body_part", "target"];
 
 /** The values one facet has among the exercises, sorted, as the dataset names them. */
-function values(exercises: ExerciseSummary[], facet: Facet): string[] {
+export function facetValues(exercises: ExerciseSummary[], facet: Facet): string[] {
   return [...new Set(exercises.map((exercise) => exercise[facet]).filter((value): value is string => !!value))].sort();
 }
 
@@ -74,18 +96,13 @@ export class ExercisePicker extends LitElement {
 
   /** The exercises the search and the filters keep; names that start with the search come first. */
   private found(exercises: ExerciseSummary[]): ExerciseSummary[] {
-    const household = new Set([...this.household, BODY_WEIGHT]);
-    const needle = this.query.trim().toLowerCase();
-    const words = needle.split(/\s+/).filter(Boolean);
+    const household = new Set(this.household);
     const kept = exercises.filter(
       (exercise) =>
-        words.every((word) => exercise.name.toLowerCase().includes(word)) &&
         FACETS.every((facet) => !this.filters[facet] || exercise[facet] === this.filters[facet]) &&
-        (this.showAll || exercise.custom || (exercise.equipment !== null && household.has(exercise.equipment))),
+        (this.showAll || inHousehold(exercise, household)),
     );
-    const first = kept.filter((exercise) => exercise.name.toLowerCase().startsWith(needle));
-    const rest = kept.filter((exercise) => !exercise.name.toLowerCase().startsWith(needle));
-    return [...first, ...rest];
+    return searchByName(kept, this.query);
   }
 
   private fire(name: "pick" | "details", detail: unknown): void {
@@ -130,7 +147,7 @@ export class ExercisePicker extends LitElement {
               @change=${(event: Event) => this.setFilter(facet, (event.target as HTMLSelectElement).value)}
             >
               <option value="">${t("picker.any")}</option>
-              ${values(exercises, facet).map(
+              ${facetValues(exercises, facet).map(
                 (value) => html`<option value=${value}>${value}</option>`,
               )}
             </select>

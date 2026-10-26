@@ -95,7 +95,21 @@
     "leave_confirm": "Leave"
   },
   "library": {
-    "title": "Library"
+    "title": "Library",
+    "loading": "Loading…",
+    "search": "Search exercises",
+    "show_all": "Show all",
+    "equipment": "Equipment",
+    "body_part": "Body part",
+    "target": "Target",
+    "count_one": "{count} exercise",
+    "count_other": "{count} exercises",
+    "results": "Exercises",
+    "col_picture": "Picture",
+    "col_name": "Name",
+    "custom": "Custom",
+    "no_thumbnail": "No picture",
+    "none": "No exercises match."
   },
   "setup": {
     "title": "Setup"

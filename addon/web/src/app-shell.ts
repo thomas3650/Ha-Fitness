@@ -8,9 +8,11 @@ import { exerciseDetailsStyles } from "./components/exercise-details";
 import { exercisePickerStyles } from "./components/exercise-picker";
 import { t } from "./i18n";
 import { icon } from "./icons";
+import { libraryPageStyles } from "./pages/library-page";
 import { newProgramStyles } from "./pages/new-program";
 import { programEditorStyles, type LeaveGuard } from "./pages/program-editor";
 import { programsPageStyles } from "./pages/programs-page";
+import "./pages/library-page";
 import "./pages/new-program";
 import "./pages/program-editor";
 import "./pages/status-page";
@@ -160,7 +162,7 @@ export class AppShell extends LitElement {
         );
       }
       case "library":
-        return html`<h1>${t("library.title")}</h1>`;
+        return html`<hf-library-page .api=${this.api}></hf-library-page>`;
       case "setup":
         return html`<h1>${t("setup.title")}</h1>`;
       case "status":
@@ -385,6 +387,7 @@ export class AppShell extends LitElement {
     programEditorStyles,
     exercisePickerStyles,
     exerciseDetailsStyles,
+    libraryPageStyles,
   ];
 }
 
