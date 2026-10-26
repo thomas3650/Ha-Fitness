@@ -595,8 +595,9 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     return html`<p class="field-error" id=${this.errorId(place)}>${errors.join(t("sentence_separator"))}</p>`;
   }
 
+  /** The page's heading: Edit program once the program is stored (when Delete shows), even if a create stays here. */
   private pageTitle(): string {
-    return t(`editor.${this.mode.kind === "new" ? "new" : this.mode.kind}_title`);
+    return t(`editor.${this.storedId !== null ? "edit" : this.mode.kind}_title`);
   }
 
   protected override render() {

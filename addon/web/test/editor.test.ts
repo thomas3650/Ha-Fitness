@@ -1173,3 +1173,34 @@ test("a defaults read that fails with a bug shows the generic message on the new
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
   logged.mockRestore();
 });
+
+test("a create the user stays through switches the heading to Edit program as Delete shows", async () => {
+  const fake = newFake();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let posted = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "POST") {
+      posted = true;
+      await gate;
+    }
+    return fake.fetch(input, init);
+  });
+  const root = await mount("#/programs/new/empty");
+  await findByRole(root, "textbox", { name: en.editor.name });
+  expect(getByRole(root, "heading", { level: 1, name: en.editor.new_title })).toBeTruthy();
+  expect(queryByRole(root, "button", { name: en.editor.delete })).toBeNull();
+
+  rename(root, "First");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  await vi.waitFor(() => expect(posted).toBe(true));
+  rename(root, "Later");
+  release();
+
+  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
+  fireEvent.click(within(dialog).getByRole("button", { name: en.dialog.cancel }));
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+
+  expect(getByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
+  expect(getByRole(root, "heading", { level: 1, name: en.editor.edit_title })).toBeTruthy();
+});
