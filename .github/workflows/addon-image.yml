@@ -3,9 +3,7 @@ name: addon-image
 # (set by the add-on's release PR). It runs on a push to main that changes addon/config.yaml, and by hand
 # (workflow_dispatch, main only). The registry decides, not git: a run that GitHub replaced in the queue is made up by
 # the next run. It always builds the commit that set the version, not the commit it runs on.
-# When a run fails: re-run its failed jobs (gh run rerun <run-id> --failed) on the latest run, never an older one.
-# A full re-run or a dispatch would see a manifest pushed before signing failed and skip it. Dispatch on main only when
-# a version got no run at all (its run was replaced in the queue).
+# When a run fails or a version has no image: docs/releasing.md#when-a-release-fails.
 # Steps follow home-assistant/apps-example's build-app.yaml.
 on:
   push:
@@ -20,9 +18,10 @@ defaults:
   run:
     shell: bash
 
-# One run at a time, in push order, so an older version never overwrites :latest after a newer one.
+# One run at a time per ref, in push order, so an older version never overwrites :latest after a newer one.
+# Per ref, so a dispatch from another branch (which fails at the main-only check) can't replace a pending main run.
 concurrency:
-  group: addon-image
+  group: addon-image-${{ github.ref }}
   cancel-in-progress: false
 
 env:
