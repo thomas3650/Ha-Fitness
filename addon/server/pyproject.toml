@@ -21,6 +21,7 @@ dev = [
   "pytest",
   "pytest-asyncio",
   "pytest-cov",
+  "pytest-timeout",
   "mypy",
   "ruff",
 ]
@@ -41,6 +42,10 @@ fail_under = 90
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# A hanging test fails instead of blocking the run; the slowest test takes about 2 s. The signal method fails
+# only the test and the run goes on; the thread method ends the whole run.
+timeout = 60
+timeout_method = "signal"
 
 # mypy does not read the root pyproject.toml; ruff does (this file has no [tool.ruff]).
 [tool.mypy]
