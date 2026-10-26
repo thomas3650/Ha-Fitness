@@ -74,7 +74,7 @@ in Danish when your browser prefers Danish, otherwise in English.
 
 ## The exercise library
 
-The exercise data is built into the add-on. The GIFs and thumbnails (about 72 MB) are downloaded into the add-on's
+The exercise data is built into the add-on. The GIFs and thumbnails (about 137 MB) are downloaded into the add-on's
 data folder in the background at every start, when any are missing. A failed file is tried again at the next start.
 The status page shows how many are there.
 

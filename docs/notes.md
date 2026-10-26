@@ -39,6 +39,9 @@ exercises. The equipment filter of spec §3.6 (body weight, band, resistance ban
 **67.5 MB of GIFs** (median 89 kB, largest 233 kB) and **4.6 MB of thumbnails**, 1,442 files. All GIFs together are
 129 MB. `data/exercises.json` is 17 MB with ten languages; the 721 records with English steps only are about 0.5 MB.
 
+Since D64 the library holds the whole dataset: **1,324** exercises with 28 equipment values, about 1 MB with English
+steps only. The media is **2,648 files**, about 137 MB (the GIFs' 129 MB and the thumbnails).
+
 From raw.githubusercontent.com to the Mac on the home network: **39 s** with 8 downloads in parallel. One at a time
 takes about 0.25 s per file, so about 6 minutes for the set. The HA host's time is not measured.
 

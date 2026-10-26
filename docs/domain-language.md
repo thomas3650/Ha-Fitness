@@ -110,7 +110,7 @@ Three rules surprise:
 
 | Term | Meaning |
 | --- | --- |
-| **Exercise library** | The exercises filtered from `hasaneyldrm/exercises-dataset`. The data is built into the add-on (D30); the GIFs and thumbnails are downloaded (D13). Names and instructions stay in English. |
+| **Exercise library** | Every exercise of `hasaneyldrm/exercises-dataset` at a pinned commit (D64). The data is built into the add-on (D30); the GIFs and thumbnails are downloaded (D13). Names and instructions stay in English. |
 | **Exercise id** | A library exercise keeps the dataset's id (`0001` …). A custom exercise gets `custom-1`, `custom-2` … in the order added. A station stores the id. |
 | **Custom exercise** | An exercise added through Claude, stored apart from the library. It has no media, and its name may not equal any other exercise's name. |
 

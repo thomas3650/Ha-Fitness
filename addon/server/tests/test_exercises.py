@@ -193,7 +193,17 @@ async def test_library_counts(client: httpx.AsyncClient) -> None:
     """The library reports its library and custom exercise counts."""
     response = await client.get("/api/v1/library")
     assert response.status_code == 200
-    assert response.json()["exercises"] == {"library": 721, "custom": 0}
+    assert response.json()["exercises"] == {"library": 1324, "custom": 0}
     await client.post(EXERCISES, json=_custom("Garden squat"))
     response = await client.get("/api/v1/library")
-    assert response.json()["exercises"] == {"library": 721, "custom": 1}
+    assert response.json()["exercises"] == {"library": 1324, "custom": 1}
+
+
+async def test_library_has_the_whole_dataset(client: httpx.AsyncClient) -> None:
+    """The library holds every exercise of the dataset, gym equipment too (D64)."""
+    response = await client.get("/api/v1/library")
+    assert response.status_code == 200
+    assert response.json()["exercises"]["library"] == 1324
+    body = await _search(client, equipment="cable", limit=100)
+    assert body["results"]
+    assert all(result["equipment"] == "cable" for result in body["results"])

@@ -25,9 +25,9 @@ The cards are built into the integration: one bundle, released and versioned wit
   [stats spec](superpowers/specs/2026-10-24-stats-design.md); the code is the source for the details.
   - **Database:** SQLite in `<data folder>/ha_fitness.db`, in WAL mode (D4, D5). Alembic migrations ship in the
     package and run to `head` at start. A database at a revision the code doesn't know stops the start.
-  - **Exercise library:** the 721 filtered exercises are built into the package; their GIFs and thumbnails are
-    downloaded into `<data folder>/library/media/` in the background at every start (D13, D30). Custom exercises live
-    in their own table.
+  - **Exercise library:** the whole dataset's 1,324 exercises are built into the package (D64); their GIFs and
+    thumbnails are downloaded into `<data folder>/library/media/` in the background at every start (D13, D30). Custom
+    exercises live in their own table.
   - **People** (at most 2) linked to HA person entities, **programs** (one validated JSON document each, D4) and the
     **change log** of every write.
     - Each person has `added_at`, the UTC time their row was created (migration 0004). A person kept by a people write
