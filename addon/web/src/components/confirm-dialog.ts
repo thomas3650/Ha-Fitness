@@ -2,6 +2,7 @@ import { css, html, LitElement, nothing } from "lit";
 
 import { t } from "../i18n";
 import { icon } from "../icons";
+import { trapFocus } from "./focus-trap";
 
 let nextId = 0;
 
@@ -11,7 +12,7 @@ let nextId = 0;
  *
  * It renders in light DOM like the pages (the shell's styles apply) and is shown while it is in the page: the page
  * adds it to ask and removes it on `cancel` or once the action is done. It fires `confirm`, `secondary` and `cancel`
- * (Escape and Cancel); while `busy` its buttons are disabled.
+ * (Escape and Cancel); while `busy` its buttons are disabled. Tab and Shift+Tab keep the focus inside it.
  */
 export class ConfirmDialog extends LitElement {
   static override properties = {
@@ -87,6 +88,7 @@ export class ConfirmDialog extends LitElement {
       event.preventDefault();
       this.fire("cancel");
     }
+    trapFocus(event, event.currentTarget as HTMLElement);
   }
 
   protected override render() {

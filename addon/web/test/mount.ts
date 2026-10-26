@@ -6,7 +6,8 @@ interface AppElement extends HTMLElement {
 
 /**
  * Set the hash, put a fresh `<hf-app>` in the page and wait for its first render. It returns the app's shadow root,
- * which holds the menu and the pages, for Testing Library's queries (they work on a shadow root at runtime).
+ * which holds the menu and the pages, for Testing Library's queries (they work on a shadow root at runtime;
+ * `test/setup.ts` makes a failed query's message readable).
  */
 export async function mount(hash: string): Promise<HTMLElement> {
   history.replaceState(null, "", hash || location.pathname);

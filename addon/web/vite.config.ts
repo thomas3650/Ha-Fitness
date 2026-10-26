@@ -12,6 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: "happy-dom",
+    setupFiles: ["test/setup.ts"],
     // One time zone for the tests, so a local date means the same on a Mac and in CI.
     env: { TZ: "Europe/Copenhagen" },
   },

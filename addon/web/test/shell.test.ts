@@ -82,3 +82,10 @@ test("an unknown route falls back to Programs", async () => {
 test("the page title comes from the language file", () => {
   expect(document.title).toBe(en.title);
 });
+
+test("a query that finds nothing says so", async () => {
+  vi.stubGlobal("fetch", fakeApi().fetch);
+  const root = await mount("#/programs");
+
+  expect(() => getByRole(root, "button", { name: "Nothing like this" })).toThrow(/Unable to find/);
+});

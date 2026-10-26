@@ -251,6 +251,22 @@ test("Escape closes the dialog without a write", async () => {
   expect(writes(fake)).toEqual([]);
 });
 
+test("Tab and Shift+Tab keep the focus inside the dialog", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  fireEvent.click(getByRole(root, "button", { name: "Delete Core" }));
+  const dialog = await findByRole(root, "dialog");
+  const first = within(dialog).getByRole("button", { name: en.programs.turn_off });
+  const last = within(dialog).getByRole("button", { name: en.programs.delete_confirm });
+
+  last.focus();
+  fireEvent.keyDown(last, { key: "Tab" });
+  expect((root as unknown as ShadowRoot).activeElement).toBe(first);
+
+  fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+  expect((root as unknown as ShadowRoot).activeElement).toBe(last);
+});
+
 test("confirming the delete sends DELETE and the row goes", async () => {
   const fake = fakeApi({ programs: programs() });
   const root = await open(fake);
