@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { ApiError, createApi } from "../src/api";
+import { ApiError, createApi, gifUrl, thumbnailUrl } from "../src/api";
 import { fakeApi, program } from "./fake-api";
 
 async function refusal(promise: Promise<unknown>): Promise<ApiError> {
@@ -48,6 +48,34 @@ test("every call goes to a relative path, so it works under Ingress's prefix", a
     "PUT api/v1/programs/5/active",
     "DELETE api/v1/programs/5",
   ]);
+});
+
+test("the people write, one exercise, a playlist search and the media URLs are relative too", async () => {
+  const fake = fakeApi();
+  fake.answer("GET", "api/v1/exercises/0001", 200, {
+    id: "0001",
+    name: "push-up",
+    equipment: "body weight",
+    body_part: "chest",
+    target: "pectorals",
+    custom: false,
+    steps: ["Push."],
+    secondary_muscles: [],
+    attribution: "ExerciseDB",
+  });
+  const api = createApi(fake.fetch);
+
+  await api.putPeople([{ name: "Thomas", person_entity_id: "person.thomas" }]);
+  await api.exercise("0001");
+  await api.playlists("mix");
+
+  expect(fake.requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+    "PUT api/v1/people",
+    "GET api/v1/exercises/0001",
+    "GET api/v1/music/playlists?search=mix",
+  ]);
+  expect(thumbnailUrl("0001")).toBe("api/v1/exercises/0001/thumbnail");
+  expect(gifUrl("0001")).toBe("api/v1/exercises/0001/gif");
 });
 
 test("a write sends its JSON body and returns the answer", async () => {
