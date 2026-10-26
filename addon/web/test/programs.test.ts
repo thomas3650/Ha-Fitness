@@ -33,7 +33,7 @@ function programs() {
         active: true,
         weekdays: ["mon", "wed", "fri"],
         stations: [{ exercise: "0001" }, { exercise: "0002" }],
-        music: { playlist: "library://playlist/1", playlist_name: "Workout Mix", speaker: "media_player.kitchen" },
+        music: { playlist: "library://playlist/1", playlist_name: "Workout Mix", speaker: "media_player.speaker" },
       },
       { station_names: ["push-up", "squat"], total_seconds: 1320, created_by: "claude" },
     ),
@@ -111,7 +111,7 @@ test("a row shows the name, length, weekdays, music, who created it and the acti
 test("music without a playlist name shows the playlist", async () => {
   const stored = program(1, {
     name: "Mix",
-    music: { playlist: "library://playlist/9", speaker: "media_player.kitchen" },
+    music: { playlist: "library://playlist/9", speaker: "media_player.speaker" },
   });
   const root = await open(fakeApi({ programs: [stored] }));
 
@@ -280,12 +280,19 @@ test("“Turn it off instead” switches the program off and keeps it", async ()
   expect(switchOf(root, "Core").getAttribute("aria-checked")).toBe("false");
 });
 
-test("a program that is already off isn't offered “Turn it off instead”", async () => {
-  const root = await open(fakeApi({ programs: programs() }));
+test("“Turn it off instead” is offered for a program that is already off, too", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
 
   fireEvent.click(getByRole(root, "button", { name: "Delete Legs" }));
   const dialog = await findByRole(root, "dialog");
-  expect(within(dialog).queryByRole("button", { name: en.programs.turn_off })).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: en.programs.turn_off }));
+
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+  expect(fake.requests.filter((request) => request.method !== "GET")).toEqual([
+    { method: "PUT", path: "api/v1/programs/3/active", body: { active: false } },
+  ]);
+  expect(rowOf(root, "Legs")).toBeTruthy();
 });
 
 test("a running session refuses the delete: the dialog says why and the row stays", async () => {

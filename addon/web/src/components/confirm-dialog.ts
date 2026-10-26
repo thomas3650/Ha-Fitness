@@ -1,4 +1,3 @@
-import { mdiPauseCircleOutline } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
 import { t } from "../i18n";
@@ -21,6 +20,7 @@ export class ConfirmDialog extends LitElement {
     points: { attribute: false },
     secondaryLead: {},
     secondaryLabel: {},
+    secondaryIcon: {},
     confirmLabel: {},
     icon: {},
     confirmIcon: {},
@@ -33,6 +33,7 @@ export class ConfirmDialog extends LitElement {
   declare points: string[];
   declare secondaryLead: string;
   declare secondaryLabel: string;
+  declare secondaryIcon: string;
   declare confirmLabel: string;
   declare icon: string;
   declare confirmIcon: string;
@@ -49,6 +50,7 @@ export class ConfirmDialog extends LitElement {
     this.points = [];
     this.secondaryLead = "";
     this.secondaryLabel = "";
+    this.secondaryIcon = "";
     this.confirmLabel = "";
     this.icon = "";
     this.confirmIcon = "";
@@ -101,7 +103,7 @@ export class ConfirmDialog extends LitElement {
         ${this.points.length ? html`<ul>${this.points.map((point) => html`<li>${point}</li>`)}</ul>` : nothing}
         ${this.secondaryLabel
           ? html`<p class="dialog-secondary">
-              ${icon(mdiPauseCircleOutline)}<span>${this.secondaryLead}</span>
+              ${this.secondaryIcon ? icon(this.secondaryIcon) : nothing}<span>${this.secondaryLead}</span>
               <button type="button" class="link" ?disabled=${this.busy} @click=${() => this.fire("secondary")}>
                 ${this.secondaryLabel}
               </button>

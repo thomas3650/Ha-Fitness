@@ -6,6 +6,7 @@ import {
   mdiDeleteAlertOutline,
   mdiDumbbell,
   mdiMagnify,
+  mdiPauseCircleOutline,
   mdiPencil,
   mdiPlus,
 } from "@mdi/js";
@@ -314,13 +315,13 @@ export class ProgramsPage extends LitElement {
     const deleting = this.deleting;
     const stored = deleting && this.programs?.find((candidate) => candidate.id === deleting.id);
     if (!deleting || !stored) return nothing;
-    const offerOff = isActive(stored);
     return html`<hf-confirm-dialog
       .heading=${t("programs.delete_title", { name: stored.program.name })}
       .message=${t("programs.delete_message")}
       .points=${[t("programs.delete_history"), t("programs.delete_open_days"), t("programs.delete_undo")]}
-      .secondaryLead=${offerOff ? t("programs.delete_pause") : ""}
-      .secondaryLabel=${offerOff ? t("programs.turn_off") : ""}
+      .secondaryLead=${t("programs.delete_pause")}
+      .secondaryLabel=${t("programs.turn_off")}
+      .secondaryIcon=${mdiPauseCircleOutline}
       .confirmLabel=${t("programs.delete_confirm")}
       .icon=${mdiDeleteAlertOutline}
       .confirmIcon=${mdiDelete}
