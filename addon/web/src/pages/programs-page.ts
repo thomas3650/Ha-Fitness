@@ -363,6 +363,10 @@ export const programsPageStyles = css`
   .page-header h1 {
     margin: 0;
   }
+  /* The heading takes the focus from code after the last row is deleted; a heading draws no ring. */
+  .page-header h1[tabindex="-1"]:focus {
+    outline: none;
+  }
   .toolbar {
     display: flex;
     align-items: center;
