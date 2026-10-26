@@ -140,7 +140,7 @@ export class LibraryPage extends LitElement {
       </div>
       ${FACETS.map((facet) => this.renderFacet(exercises, facet))}
       <p class="secondary">
-        ${t(found.length === 1 ? "library.count_one" : "library.count_other", { count: found.length })}
+        ${t("library.count", { count: found.length })}
       </p>
       ${found.length
         ? html`<table aria-label=${t("library.results")}>
