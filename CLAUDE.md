@@ -11,6 +11,8 @@ workout, runs it for one or two people and keeps per-person stats; programs are 
 - `addon/` — the add-on: `config.yaml`, `Dockerfile`, changelog, and the server in `addon/server/` (its own uv project)
 - `custom_components/ha_fitness/` — the integration; `frontend/` holds the built cards bundle (git-ignored)
 - `cards/` — the cards' source (Lit + TypeScript, Vite, Vitest)
+- `addon/web/` — the add-on's website (Lit + TypeScript, Vite, Vitest), built into the add-on image
+- `addon/web/` — the add-on's website (Lit + TypeScript, Vite, Vitest), built into the add-on image
 - `tests/` — the integration's tests
 - `scripts/` — the fast loop, the full loop and the link check; `scripts/dev/` holds the fake Music Assistant
 - `.devcontainer/supervisor/` — the Supervisor dev container of the full loop
@@ -42,6 +44,7 @@ uv run pytest --cov=custom_components.ha_fitness --cov-report=term-missing
 uv run --directory addon/server ruff check && uv run --directory addon/server ruff format --check
 uv run --directory addon/server mypy && uv run --directory addon/server pytest --cov=ha_fitness_server --cov-report=term-missing
 npm run lint --prefix cards && npm test --prefix cards && npm run build --prefix cards
+npm run lint --prefix addon/web && npm test --prefix addon/web && npm run build --prefix addon/web
 uv run actionlint && uv run zizmor --offline .github/workflows && uv run python scripts/check_links.py
 ```
 
@@ -62,7 +65,7 @@ uv run actionlint && uv run zizmor --offline .github/workflows && uv run python 
    states, events, rendered text and roles. No snapshot, CSS-selector or exact-log-text tests. A frozen clock for
    anything time-based.
 6. Every UI text comes from a language file. English is the base and Danish ships too. Exercise names and
-   instructions are never translated.
+   instructions are never translated. The add-on's website ships English only in v2 (D62).
 7. Never bypass a hook (`--no-verify`, `-n`, `SKIP=`). Never read `.env`. Subagents also never read anything under
    `config/` or `local/`.
 8. GitHub Actions: every `uses:` pinned to a full commit SHA with a version comment, least permissions per job,
