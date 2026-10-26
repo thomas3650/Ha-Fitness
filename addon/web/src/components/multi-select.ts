@@ -71,6 +71,15 @@ export class MultiSelect extends LitElement {
 
   protected override updated(): void {
     this.setAttribute("aria-label", this.label);
+    // The active option stays in view while the arrow keys move through a long list.
+    const active = this.shadowRoot?.querySelector<HTMLElement>('[role="option"].active');
+    active?.scrollIntoView?.({ block: "nearest" });
+  }
+
+  /** Focus leaving the component (Tab to the next field) closes the list; focus on a tag's button doesn't. */
+  private onFocusOut(event: FocusEvent): void {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node && this.shadowRoot?.contains(next))) this.open = false;
   }
 
   private chosen(value: string): boolean {
@@ -170,6 +179,7 @@ export class MultiSelect extends LitElement {
           @click=${() => (this.open = true)}
           @input=${(event: Event) => this.onInput(event)}
           @keydown=${(event: KeyboardEvent) => this.onKeyDown(event)}
+          @focusout=${(event: FocusEvent) => this.onFocusOut(event)}
         />
         ${this.open
           ? html`<div class="popup">
@@ -182,6 +192,7 @@ export class MultiSelect extends LitElement {
                     aria-disabled=${this.fixed.includes(option.value) ? "true" : nothing}
                     class=${index === this.active ? "active" : ""}
                     @pointerdown=${(event: Event) => event.preventDefault()}
+                    @mousedown=${(event: Event) => event.preventDefault()}
                     @click=${() => {
                       this.active = index;
                       this.toggle(option.value);

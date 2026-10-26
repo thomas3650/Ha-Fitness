@@ -167,3 +167,20 @@ test("a click outside closes the list", async () => {
   await settle(element);
   expect(queryByRole(root, "listbox")).toBeNull();
 });
+
+test("focus leaving the field closes the list; focus on a tag's remove button keeps it open", async () => {
+  const { element, root } = await place({ selected: ["cable"] });
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  const input = combobox(root);
+  fireEvent.click(input);
+  await settle(element);
+
+  fireEvent.focusOut(input, { relatedTarget: getByRole(root, "button", { name: "Remove cable" }) });
+  await settle(element);
+  expect(getByRole(root, "listbox")).toBeTruthy();
+
+  fireEvent.focusOut(input, { relatedTarget: outside });
+  await settle(element);
+  expect(queryByRole(root, "listbox")).toBeNull();
+});
