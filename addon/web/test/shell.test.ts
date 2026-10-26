@@ -1,4 +1,4 @@
-import { findByText, getByRole, queryByRole } from "@testing-library/dom";
+import { findByText, getByRole, getByText, queryByRole } from "@testing-library/dom";
 import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
@@ -11,7 +11,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("the menu has the four pages, as links to their hash routes", async () => {
+test("the bar has the four pages, as links to their hash routes", async () => {
   vi.stubGlobal("fetch", fakeApi().fetch);
   const root = await mount("");
 
@@ -22,7 +22,16 @@ test("the menu has the four pages, as links to their hash routes", async () => {
   expect(getByRole(menu, "link", { name: en.menu.status }).getAttribute("href")).toBe("#/status");
 });
 
-test("the foot of the menu shows the add-on's version", async () => {
+test("the bar shows the brand as plain text, not a link", async () => {
+  vi.stubGlobal("fetch", fakeApi().fetch);
+  const root = await mount("");
+
+  const menu = getByRole(root, "navigation", { name: en.menu.label });
+  expect(getByText(menu, en.title)).toBeTruthy();
+  expect(queryByRole(menu, "link", { name: en.title })).toBeNull();
+});
+
+test("the bar shows the add-on's version", async () => {
   vi.stubGlobal("fetch", fakeApi({ health: { status: "ok", version: "2.3.1", api_version: 1 } }).fetch);
   const root = await mount("#/programs");
 
