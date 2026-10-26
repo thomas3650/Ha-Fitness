@@ -1,7 +1,8 @@
 import { html, LitElement, nothing } from "lit";
 
-import { ApiError, createApi, type Api, type Health, type LibraryStatus, type Person, type ProgramOut } from "../api";
-import { minutes } from "../format";
+import { createApi, type Api, type Health, type LibraryStatus, type Person, type ProgramOut } from "../api";
+import { failure } from "../failure";
+import { duration } from "../format";
 import { t } from "../i18n";
 
 /** What the page read; a read that was refused stays null, and its message is in `errors`. */
@@ -13,11 +14,11 @@ interface StatusData {
   errors: string[];
 }
 
-/** The value of a settled read, or null; a refusal's message goes into `errors` once. */
+/** The value of a settled read, or null; a failure's text goes into `errors` once. */
 function settled<T>(result: PromiseSettledResult<T>, errors: string[]): T | null {
   if (result.status === "fulfilled") return result.value;
-  if (!(result.reason instanceof ApiError)) throw result.reason;
-  if (!errors.includes(result.reason.message)) errors.push(result.reason.message);
+  const text = failure(result.reason);
+  if (!errors.includes(text)) errors.push(text);
   return null;
 }
 
@@ -140,7 +141,7 @@ export class StatusPage extends LitElement {
               ${stored.program.weekdays.map((day) => t(`weekday.${day}`)).join(t("list_separator")) ||
               t("status.no_weekdays")}
             </td>
-            <td>${t("status.minutes", { minutes: minutes(stored.total_seconds) })}</td>
+            <td>${duration(stored.total_seconds)}</td>
           </tr>`,
         )}
       </tbody>

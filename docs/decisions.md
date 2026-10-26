@@ -568,3 +568,11 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Why:** A run that GitHub replaced in the queue is made up by the next run (#82). Building the release commit keeps
   unreleased code out of the image and avoids the race with release-please's tag.
 - **Source:** Claude, 2026-10-26, #82 (Thomas asked Claude to do it alone)
+
+### D68: The website handles every failure through one helper
+- **Date:** 2026-10-26 · **Status:** active
+- **Decision:** Every catch on the website goes through `addon/web/src/failure.ts`. An `ApiError` keeps its message
+  (a refusal, an HTTP status, no answer); anything else shows `error.unexpected` and is logged with `console.error`.
+  Nothing rethrows.
+- **Why:** A bug never shows raw text, and never leaves the user with nothing on screen.
+- **Source:** Claude, 2026-10-26, #88 (Thomas asked Claude to do it alone)

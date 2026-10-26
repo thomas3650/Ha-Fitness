@@ -217,3 +217,12 @@ export function fakeApi(initial: Partial<FakeState> = {}) {
 }
 
 export type FakeApi = ReturnType<typeof fakeApi>;
+
+/**
+ * A `fetch` that answers `path` (with its query) with no Response at all, so the site's client fails with a plain
+ * `TypeError` rather than a refusal: a bug, as the site sees it. Every other request goes to `fake`.
+ */
+export function brokenAt(fake: FakeApi, path: string) {
+  return async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> =>
+    String(input) === path ? (undefined as unknown as Response) : fake.fetch(input, init);
+}

@@ -11,12 +11,13 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
 import "../src/main";
-import { fakeApi, program, type FakeApi } from "./fake-api";
+import { brokenAt, fakeApi, program, type FakeApi } from "./fake-api";
 import { mount, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function text(element: Element): string {
@@ -364,4 +365,111 @@ test("when the add-on can't be reached, the page says so", async () => {
   const root = await mount("#/programs");
 
   expect(text(await findByRole(root, "alert"))).toBe(en.error.network);
+});
+
+test("a program under half a minute shows “< 1 min”; half a minute shows 1 min, and an empty one 0 min", async () => {
+  const root = await open(
+    fakeApi({
+      programs: [
+        program(1, { name: "Short" }, { total_seconds: 20 }),
+        program(2, { name: "Half" }, { total_seconds: 30 }),
+        program(3, { name: "Empty", stations: [] }, { total_seconds: 0 }),
+      ],
+    }),
+  );
+
+  expect(within(rowOf(root, "Short")).getByText("< 1 min")).toBeTruthy();
+  expect(within(rowOf(root, "Half")).getByText("1 min")).toBeTruthy();
+  expect(within(rowOf(root, "Empty")).getByText("0 min")).toBeTruthy();
+});
+
+test("a list read that fails with a bug shows the generic message and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(fakeApi({ programs: programs() }), "api/v1/programs"));
+  const root = await mount("#/programs");
+
+  expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});
+
+/** Delete a program through its dialog and wait until the dialog has closed. */
+async function deleteProgram(root: HTMLElement, name: string): Promise<void> {
+  // A click focuses the button in a browser, and the dialog hands the focus back to it when it closes.
+  const button = getByRole(root, "button", { name: `Delete ${name}` });
+  button.focus();
+  fireEvent.click(button);
+  const dialog = await findByRole(root, "dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: en.programs.delete_confirm }));
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+}
+
+function focused(root: HTMLElement): Element | null {
+  return (root as unknown as ShadowRoot).activeElement;
+}
+
+test("after a delete the focus goes to the next row's first control", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() => expect(focused(root)).toBe(switchOf(root, "Legs")));
+});
+
+test("after deleting the last row the focus goes to the row before it", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+
+  await deleteProgram(root, "Legs");
+
+  await vi.waitFor(() => expect(focused(root)).toBe(switchOf(root, "Core")));
+});
+
+test("after deleting the only shown row the focus goes to the page heading", async () => {
+  const root = await open(fakeApi({ programs: [programs()[1]] }));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() =>
+    expect(focused(root)).toBe(getByRole(root, "heading", { level: 1, name: en.programs.title })),
+  );
+});
+
+test("the neighbour rows are the ones shown: under the Active filter, deleting its last row focuses the one before", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+  fireEvent.click(getByRole(root, "button", { name: "Active 2" }));
+  await vi.waitFor(() => expect(names(root)).toEqual(["Active: Full body", "Active: Core"]));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() => expect(focused(root)).toBe(switchOf(root, "Full body")));
+});
+
+test("under a search, deleting its only match focuses the heading", async () => {
+  const root = await open(fakeApi({ programs: programs() }));
+  fireEvent.input(getByRole(root, "searchbox", { name: en.programs.search }), { target: { value: "core" } });
+  await vi.waitFor(() => expect(names(root)).toEqual(["Active: Core"]));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() =>
+    expect(focused(root)).toBe(getByRole(root, "heading", { level: 1, name: en.programs.title })),
+  );
+});
+
+test("while the next row's switch waits for the add-on, the focus goes to its edit link", async () => {
+  const fake = fakeApi({ programs: programs() });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "PUT" && String(input) === "api/v1/programs/3/active") await gate;
+    return fake.fetch(input, init);
+  });
+  const root = await mount("#/programs");
+  await findByRole(root, "table", { name: en.programs.title });
+  fireEvent.click(switchOf(root, "Legs"));
+  await vi.waitFor(() => expect((switchOf(root, "Legs") as HTMLButtonElement).disabled).toBe(true));
+
+  await deleteProgram(root, "Core");
+
+  await vi.waitFor(() => expect(focused(root)).toBe(getByRole(root, "link", { name: "Edit Legs" })));
+  release();
 });

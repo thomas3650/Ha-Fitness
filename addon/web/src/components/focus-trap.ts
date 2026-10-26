@@ -1,4 +1,5 @@
-const FOCUSABLE = [
+/** What can take the focus: links, enabled form controls and anything with a tabindex. */
+export const FOCUSABLE = [
   "a[href]",
   "button:not([disabled])",
   "input:not([disabled])",

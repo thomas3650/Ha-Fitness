@@ -3,12 +3,13 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
 import "../src/main";
-import { fakeApi, program } from "./fake-api";
+import { brokenAt, fakeApi, program } from "./fake-api";
 import { mount, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function text(element: Element): string {
@@ -112,4 +113,32 @@ test("when the add-on can't be reached, the page says so instead of loading fore
   const alert = await findByRole(root, "alert");
   expect(text(alert)).toContain(en.error.network);
   expect(queryByText(root, en.status.loading)).toBeNull();
+});
+
+test("the Status page shows “< 1 min” for a program under half a minute", async () => {
+  const fake = fakeApi({
+    programs: [
+      program(1, { name: "Short" }, { total_seconds: 20 }),
+      program(2, { name: "Half" }, { total_seconds: 30 }),
+      program(3, { name: "Empty", stations: [] }, { total_seconds: 0 }),
+    ],
+  });
+  vi.stubGlobal("fetch", fake.fetch);
+  const root = await mount("#/status");
+
+  const table = await findByRole(root, "table", { name: en.status.programs });
+  const lengths = within(table)
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) => text(within(row).getAllByRole("cell")[3]));
+  expect(lengths).toEqual(["< 1 min", "1 min", "0 min"]);
+});
+
+test("a read that fails with a bug shows the generic message on the Status page and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(fakeApi(), "api/v1/programs"));
+  const root = await mount("#/status");
+
+  expect(await findByText(root, en.error.unexpected)).toBeTruthy();
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
 });

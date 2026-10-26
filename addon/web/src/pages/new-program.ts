@@ -1,15 +1,11 @@
 import { mdiContentCopy, mdiDumbbell, mdiFileOutline } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
-import { ApiError, createApi, thumbnailUrl, type Api, type ProgramDefaults, type ProgramOut } from "../api";
-import { minutes } from "../format";
+import { createApi, thumbnailUrl, type Api, type ProgramDefaults, type ProgramOut } from "../api";
+import { failure } from "../failure";
+import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
-
-function message(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  throw error;
-}
 
 /**
  * The new-program page (W2, website spec §2.2.3): start empty, with the add-on's defaults, or copy a stored program.
@@ -55,9 +51,9 @@ export class NewProgramPage extends LitElement {
   private async load(): Promise<void> {
     const [defaults, programs] = await Promise.allSettled([this.api.programDefaults(), this.api.programs()]);
     if (defaults.status === "fulfilled") this.defaults = defaults.value;
-    else this.defaultsError = message(defaults.reason);
+    else this.defaultsError = failure(defaults.reason);
     if (programs.status === "fulfilled") this.programs = programs.value;
-    else this.programsError = message(programs.reason);
+    else this.programsError = failure(programs.reason);
   }
 
   protected override render() {
@@ -120,7 +116,7 @@ export class NewProgramPage extends LitElement {
                   @error=${() => (this.missing = new Set([...this.missing, first]))}
                 />`}
             <strong>${stored.program.name}</strong>
-            <span class="secondary">${t("new_program.minutes", { minutes: minutes(stored.total_seconds) })}</span>
+            <span class="secondary">${duration(stored.total_seconds)}</span>
           </a>
         </li>`;
       })}

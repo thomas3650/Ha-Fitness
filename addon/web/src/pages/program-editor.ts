@@ -43,7 +43,8 @@ import "../components/confirm-dialog";
 import "../components/exercise-details";
 import "../components/exercise-picker";
 import { applySelectValues } from "../components/select-value";
-import { minutes } from "../format";
+import { failure } from "../failure";
+import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { BODY_WEIGHT, foldBand } from "../library-filter";
@@ -173,17 +174,6 @@ function placeOf(field: string | null, stations: number): string | null {
     return `stations.${index}`;
   }
   return PLACES.has(head) ? head : null;
-}
-
-function message(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  throw error;
-}
-
-/** A failed read's text for the page: the add-on's message, or the error's own, so no read leaves "Loading…". */
-function failure(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -522,8 +512,9 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       // so the leave guard asks first; staying keeps it, and the next Save replaces the stored program.
       if (location.hash !== route) location.hash = route;
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      this.showRefusal(error);
+      // A refusal shows at its fields; a bug shows the generic message above the form.
+      if (error instanceof ApiError) this.showRefusal(error);
+      else this.formErrors = [failure(error)];
     } finally {
       this.busy = false;
     }
@@ -539,7 +530,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       this.clearRefusals();
       this.useStored(stored);
     } catch (error) {
-      this.formErrors = [message(error)];
+      this.formErrors = [failure(error)];
     } finally {
       this.busy = false;
     }
@@ -568,7 +559,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       if (this.form) this.saved = JSON.stringify(documentOf(this.form));
       location.hash = "#/programs";
     } catch (error) {
-      this.deleting = { busy: false, error: message(error) };
+      this.deleting = { busy: false, error: failure(error) };
     }
   }
 
@@ -584,7 +575,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       this.change({ active: false });
       this.deleting = null;
     } catch (error) {
-      this.deleting = { busy: false, error: message(error) };
+      this.deleting = { busy: false, error: failure(error) };
     }
   }
 
@@ -605,8 +596,9 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     return html`<p class="field-error" id=${this.errorId(place)}>${errors.join(t("sentence_separator"))}</p>`;
   }
 
+  /** The page's heading: Edit program once the program is stored (when Delete shows), even if a create stays here. */
   private pageTitle(): string {
-    return t(`editor.${this.mode.kind === "new" ? "new" : this.mode.kind}_title`);
+    return t(`editor.${this.storedId !== null ? "edit" : this.mode.kind}_title`);
   }
 
   protected override render() {
@@ -831,7 +823,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     </section>`;
   }
 
-  /** The total time, as the add-on counts it: S·R·(W + switch) + (R − 1)·round rest, in whole minutes. */
+  /** The total time, as the add-on counts it: S·R·(W + switch) + (R − 1)·round rest, as a duration. */
   private renderTotal(form: Form) {
     const stations = form.stations.length;
     const rounds = form.rounds ?? 0;
@@ -840,7 +832,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       Math.max(0, rounds - 1) * (form.round_rest_seconds ?? 0);
     return html`<span class="secondary card-end"
       >${t("editor.total", {
-        minutes: minutes(Math.max(0, seconds)),
+        duration: duration(Math.max(0, seconds)),
         rounds: t("editor.round_count", { count: rounds }),
         exercises: t("editor.exercises", { count: stations }),
       })}</span

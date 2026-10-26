@@ -12,9 +12,11 @@ import {
 } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
-import { ApiError, createApi, thumbnailUrl, type Api, type ProgramOut, type Weekday } from "../api";
+import { createApi, thumbnailUrl, type Api, type ProgramOut, type Weekday } from "../api";
 import "../components/confirm-dialog";
-import { minutes } from "../format";
+import { FOCUSABLE } from "../components/focus-trap";
+import { failure } from "../failure";
+import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
 
@@ -33,12 +35,6 @@ interface Deleting {
   id: number;
   busy: boolean;
   error: string | null;
-}
-
-/** The refusal's message; anything that isn't a refusal is a bug and is thrown on. */
-function message(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  throw error;
 }
 
 /**
@@ -97,7 +93,7 @@ export class ProgramsPage extends LitElement {
     try {
       this.programs = await this.api.programs();
     } catch (error) {
-      this.loadError = message(error);
+      this.loadError = failure(error);
     }
   }
 
@@ -121,7 +117,7 @@ export class ProgramsPage extends LitElement {
     try {
       this.replace(await this.api.setActive(stored.id, !isActive(stored)));
     } catch (error) {
-      this.setRowError(stored.id, message(error));
+      this.setRowError(stored.id, failure(error));
     } finally {
       const pending = new Set(this.pending);
       pending.delete(stored.id);
@@ -135,12 +131,29 @@ export class ProgramsPage extends LitElement {
     this.deleting = { ...deleting, busy: true, error: null };
     try {
       await this.api.deleteProgram(deleting.id);
-      this.programs = (this.programs ?? []).filter((stored) => stored.id !== deleting.id);
-      this.setRowError(deleting.id, null);
-      this.deleting = null;
     } catch (error) {
-      this.deleting = { ...deleting, busy: false, error: message(error) };
+      this.deleting = { ...deleting, busy: false, error: failure(error) };
+      return;
     }
+    // The focus was on the deleted row's Delete button: it goes to the row shown after it, else the one before it,
+    // else (no row left) the page heading.
+    const shown = this.shown(this.programs ?? []);
+    const at = shown.findIndex((stored) => stored.id === deleting.id);
+    const neighbour = shown[at + 1] ?? shown[at - 1] ?? null;
+    this.programs = (this.programs ?? []).filter((stored) => stored.id !== deleting.id);
+    this.setRowError(deleting.id, null);
+    this.deleting = null;
+    await this.updateComplete;
+    this.focusAfterDelete(neighbour?.id ?? null);
+  }
+
+  /** Focus a row's first control (its switch, or its edit link while the switch waits), or the heading for none. */
+  private focusAfterDelete(id: number | null): void {
+    const row = id === null ? null : this.querySelector(`tr[data-program="${id}"]`);
+    const control = row
+      ? [...row.querySelectorAll<HTMLElement>(FOCUSABLE)].find((element) => element.tabIndex >= 0)
+      : undefined;
+    (control ?? this.querySelector<HTMLElement>("h1"))?.focus();
   }
 
   private async turnOffInstead(): Promise<void> {
@@ -152,7 +165,7 @@ export class ProgramsPage extends LitElement {
       this.setRowError(deleting.id, null);
       this.deleting = null;
     } catch (error) {
-      this.deleting = { ...deleting, busy: false, error: message(error) };
+      this.deleting = { ...deleting, busy: false, error: failure(error) };
     }
   }
 
@@ -163,11 +176,21 @@ export class ProgramsPage extends LitElement {
   protected override render() {
     return html`
       <header class="page-header">
-        <h1>${t("programs.title")}</h1>
+        <h1 tabindex="-1">${t("programs.title")}</h1>
         <a class="button primary" href="#/programs/new">${icon(mdiPlus)}<span>${t("programs.new")}</span></a>
       </header>
       ${this.renderBody()} ${this.renderDialog()}
     `;
+  }
+
+  /** The programs the search and the filter keep, in the table's order. */
+  private shown(programs: ProgramOut[]): ProgramOut[] {
+    const query = this.search.trim().toLowerCase();
+    return programs.filter(
+      (stored) =>
+        (this.filter === "all" || isActive(stored) === (this.filter === "active")) &&
+        stored.program.name.toLowerCase().includes(query),
+    );
   }
 
   private renderBody() {
@@ -180,12 +203,7 @@ export class ProgramsPage extends LitElement {
       active: programs.filter(isActive).length,
       off: programs.filter((stored) => !isActive(stored)).length,
     };
-    const query = this.search.trim().toLowerCase();
-    const shown = programs.filter(
-      (stored) =>
-        (this.filter === "all" || isActive(stored) === (this.filter === "active")) &&
-        stored.program.name.toLowerCase().includes(query),
-    );
+    const shown = this.shown(programs);
     return html`
       <div class="toolbar">
         <label class="search">
@@ -239,10 +257,10 @@ export class ProgramsPage extends LitElement {
     const error = this.rowErrors.get(stored.id);
     const days = program.weekdays.map((day) => t(`weekday.${day}`)).join(t("list_separator"));
     const music = program.music ? program.music.playlist_name || program.music.playlist : null;
-    return html`<tr class=${active ? "" : "off"}>
+    return html`<tr class=${active ? "" : "off"} data-program=${stored.id}>
       <th scope="row">
         <strong>${name}</strong>
-        <span class="secondary">${t("programs.minutes", { minutes: minutes(stored.total_seconds) })}</span>
+        <span class="secondary">${duration(stored.total_seconds)}</span>
         ${error ? html`<p class="error" role="alert">${error}</p>` : nothing}
       </th>
       <td>
@@ -344,6 +362,10 @@ export const programsPageStyles = css`
   }
   .page-header h1 {
     margin: 0;
+  }
+  /* The heading takes the focus from code after the last row is deleted; a heading draws no ring. */
+  .page-header h1[tabindex="-1"]:focus {
+    outline: none;
   }
   .toolbar {
     display: flex;

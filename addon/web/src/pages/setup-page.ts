@@ -27,6 +27,7 @@ import {
 import "../components/confirm-dialog";
 import "../components/multi-select";
 import { applySelectValues } from "../components/select-value";
+import { failure } from "../failure";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { BAND, BAND_NAMES, BODY_WEIGHT, facetValues } from "../library-filter";
@@ -55,9 +56,10 @@ interface MusicRead<T> {
 /** Where a setup refusal shows: at a card, or above the page. */
 type Place = "equipment" | "playlists" | "speaker" | "page";
 
-function failure(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  throw error;
+/** A failed save's items: a refusal's own, or a bug's generic message without a field (above the card). */
+function itemsOf(error: unknown): ErrorItem[] {
+  // The code stays empty: nothing reads the code of an item without a field.
+  return error instanceof ApiError ? error.items : [{ field: null, code: "", message: failure(error) }];
 }
 
 function placeOf(item: ErrorItem): Place {
@@ -268,8 +270,7 @@ export class SetupPage extends LitElement {
         this.saved = true;
       }
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      this.errors = error.items;
+      this.errors = itemsOf(error);
     } finally {
       this.saving = false;
     }
@@ -316,8 +317,7 @@ export class SetupPage extends LitElement {
         this.peopleSaved = true;
       }
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      this.peopleErrors = error.items;
+      this.peopleErrors = itemsOf(error);
     } finally {
       this.peopleSaving = false;
     }

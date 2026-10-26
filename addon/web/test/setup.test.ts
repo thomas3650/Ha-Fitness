@@ -4,12 +4,13 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ExerciseSummary, PeopleView, Setup } from "../src/api";
 import en from "../src/i18n/en.json";
 import "../src/main";
-import { fakeApi, type FakeApi } from "./fake-api";
+import { brokenAt, fakeApi, type FakeApi } from "./fake-api";
 import { mount, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function summary(id: string, equipment: string | null, custom = false): ExerciseSummary {
@@ -505,4 +506,49 @@ test("a person Home Assistant doesn't know is refused, and the add-on's message 
   savePeople(root);
 
   expect(text(await within(people).findByRole("alert"))).toBe("'person.guest' isn't a person in Home Assistant");
+});
+
+test("a setup read that fails with a bug shows the generic message and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(newFake(), "api/v1/setup"));
+  const root = await mount("#/setup");
+
+  expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});
+
+test("a setup save that fails with a bug shows the generic message above the setup and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  const fake = newFake();
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) =>
+    init.method === "PUT" && String(input) === "api/v1/setup"
+      ? (undefined as unknown as Response)
+      : fake.fetch(input, init),
+  );
+  const root = await mount("#/setup");
+  await findByRole(root, "button", { name: en.setup.save });
+
+  save(root);
+
+  expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
+  expect(within(region(root, en.setup.equipment)).queryByRole("alert")).toBeNull();
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});
+
+test("a people save that fails with a bug shows the generic message at the people and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  const fake = newFake();
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) =>
+    init.method === "PUT" && String(input) === "api/v1/people"
+      ? (undefined as unknown as Response)
+      : fake.fetch(input, init),
+  );
+  const root = await mount("#/setup");
+  await findByRole(root, "button", { name: en.setup.save });
+  const people = region(root, en.setup.people);
+
+  savePeople(root);
+
+  expect(text(await within(people).findByRole("alert"))).toBe(en.error.unexpected);
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
 });

@@ -5,12 +5,13 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { Exercise, ExerciseSummary, ProgramDocument } from "../src/api";
 import en from "../src/i18n/en.json";
 import "../src/main";
-import { fakeApi, program, type FakeApi } from "./fake-api";
+import { brokenAt, fakeApi, program, type FakeApi } from "./fake-api";
 import { mount, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const STORED_AT = "2026-10-26T10:00:00+00:00";
@@ -1119,4 +1120,103 @@ test("the timing's title row shows the total, and Countdown is still a choice of
 
   const countdown = field(root, "combobox", en.editor.countdown);
   expect(within(countdown).getAllByRole("option").map(text)).toEqual(["0 s", "5 s", "10 s"]);
+});
+
+test("a program under half a minute shows “< 1 min” on the new-program page and in the editor's total", async () => {
+  const short = program(
+    1,
+    {
+      name: "Short",
+      stations: [{ exercise: "0001" }],
+      rounds: 1,
+      work_seconds: 20,
+      switch_seconds: 0,
+      round_rest_seconds: 0,
+    },
+    { station_names: ["push-up"], total_seconds: 20 },
+  );
+  const fake = newFake({ programs: [short] });
+  vi.stubGlobal("fetch", fake.fetch);
+  let root = await mount("#/programs/new");
+  const copy = await findByRole(root, "link", { name: /Short/ });
+  expect(within(copy).getByText("< 1 min")).toBeTruthy();
+  unmount();
+
+  root = await openEditor(fake, "#/programs/1");
+  expect(within(root).getByText("< 1 min in all · 1 round × 1 exercise")).toBeTruthy();
+  fireEvent.input(field(root, "spinbutton", en.editor.work), { target: { value: "30" } });
+  expect(await within(root).findByText("1 min in all · 1 round × 1 exercise")).toBeTruthy();
+  unmount();
+
+  // An empty program of one round lasts 0 s, and shows 0 min as before.
+  const oneRound = { rounds: 1, work_seconds: 45, switch_seconds: 15, round_rest_seconds: 60, countdown_seconds: 5 };
+  root = await openEditor(newFake({ defaults: oneRound }), "#/programs/new/empty");
+  expect(within(root).getByText("0 min in all · 1 round × 0 exercises")).toBeTruthy();
+});
+
+test("a program read that fails with a bug shows the generic message, not the bug's text, and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(newFake({ programs: [fullBody()] }), "api/v1/programs/1"));
+  const root = await mount("#/programs/1");
+
+  const alert = await findByRole(root, "alert");
+  expect(text(alert)).toBe(en.error.unexpected);
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});
+
+test("a defaults read that fails with a bug shows the generic message on the new-program page and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(newFake(), "api/v1/programs/defaults"));
+  const root = await mount("#/programs/new");
+
+  expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});
+
+test("a create the user stays through switches the heading to Edit program as Delete shows", async () => {
+  const fake = newFake();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let posted = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "POST") {
+      posted = true;
+      await gate;
+    }
+    return fake.fetch(input, init);
+  });
+  const root = await mount("#/programs/new/empty");
+  await findByRole(root, "textbox", { name: en.editor.name });
+  expect(getByRole(root, "heading", { level: 1, name: en.editor.new_title })).toBeTruthy();
+  expect(queryByRole(root, "button", { name: en.editor.delete })).toBeNull();
+
+  rename(root, "First");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  await vi.waitFor(() => expect(posted).toBe(true));
+  rename(root, "Later");
+  release();
+
+  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
+  fireEvent.click(within(dialog).getByRole("button", { name: en.dialog.cancel }));
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+
+  expect(getByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
+  expect(getByRole(root, "heading", { level: 1, name: en.editor.edit_title })).toBeTruthy();
+});
+
+test("a save that fails with a bug shows the generic message above the form, keeps the form, and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  const fake = newFake({ programs: [fullBody()] });
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) =>
+    init.method === "PUT" ? (undefined as unknown as Response) : fake.fetch(input, init),
+  );
+  const root = await mount("#/programs/1");
+  await findByRole(root, "textbox", { name: en.editor.name });
+  rename(root, "Renamed");
+
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+
+  expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
+  expect(field(root, "textbox", en.editor.name).value).toBe("Renamed");
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
 });

@@ -1,14 +1,15 @@
-import { findByText, getByRole, getByText, queryByRole } from "@testing-library/dom";
+import { findByText, getByRole, getByText, queryByRole, queryByText } from "@testing-library/dom";
 import { afterEach, expect, test, vi } from "vitest";
 
 import en from "../src/i18n/en.json";
 import "../src/main";
-import { fakeApi, program } from "./fake-api";
+import { brokenAt, fakeApi, program } from "./fake-api";
 import { mount, unmount } from "./mount";
 
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 test("the bar has the four pages, as links to their hash routes", async () => {
@@ -112,4 +113,14 @@ test.each([
     const link = getByRole(root, "link", { name: en.menu[name] });
     expect(link.getAttribute("aria-current")).toBe(name === page ? "page" : null);
   }
+});
+
+test("a version read that fails with a bug leaves the version empty and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(fakeApi(), "api/v1/health"));
+  const root = await mount("#/programs");
+
+  await vi.waitFor(() => expect(logged).toHaveBeenCalledWith(expect.any(TypeError)));
+  // The fake's version is 2.0.0; the bar would show it as the language file says.
+  expect(queryByText(root, en.menu.version.replace("{version}", "2.0.0"))).toBeNull();
 });

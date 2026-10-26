@@ -2,10 +2,11 @@ import { mdiBookshelf, mdiDumbbell, mdiFormatListBulleted, mdiHeartPulse, mdiTun
 import { css, html, LitElement, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 
-import { ApiError, createApi, type Api } from "./api";
+import { createApi, type Api } from "./api";
 import { confirmDialogStyles } from "./components/confirm-dialog";
 import { exerciseDetailsStyles } from "./components/exercise-details";
 import { exercisePickerStyles } from "./components/exercise-picker";
+import { failure } from "./failure";
 import { t } from "./i18n";
 import { icon } from "./icons";
 import { libraryPageStyles } from "./pages/library-page";
@@ -115,7 +116,8 @@ export class AppShell extends LitElement {
     try {
       this.version = (await this.api.health()).version;
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
+      // Without an answer the version stays empty; failure() puts a bug in the console.
+      failure(error);
     }
   }
 
