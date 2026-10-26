@@ -503,6 +503,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       this.createdBy = stored.created_by;
       this.storedName = stored.program.name;
       this.saved = sent;
+      // The user left while the request ran: they stay on the page they went to.
+      if (!this.isConnected) return;
       if (!this.dirty) {
         // Saved as it is shown: back to the Programs page, which says so (#96). Nothing is unsaved, so nothing asks.
         const note = t("programs.saved", { name: stored.program.name });

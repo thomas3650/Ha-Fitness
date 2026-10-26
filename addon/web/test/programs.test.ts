@@ -514,3 +514,33 @@ test("a click on Delete asks and doesn't open the program", async () => {
   expect(await findByRole(root, "dialog", { name: "Delete “Core”?" })).toBeTruthy();
   expect(location.hash).toBe("#/programs");
 });
+
+test("a click with a modifier key, or one that ends a text selection, doesn't open the program", async () => {
+  const fake = fakeApi({ programs: programs() });
+  const root = await open(fake);
+  const days = within(rowOf(root, "Core")).getByText("Tue, Sat");
+
+  fireEvent.click(days, { metaKey: true });
+  fireEvent.click(days, { ctrlKey: true });
+  fireEvent.click(days, { shiftKey: true });
+  document.getSelection()?.selectAllChildren(days);
+  fireEvent.click(days);
+  document.getSelection()?.removeAllRanges();
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(location.hash).toBe("#/programs");
+  expect(getByRole(root, "heading", { level: 1, name: en.programs.title })).toBeTruthy();
+});
+
+test("a click on a row's refusal message doesn't open the program", async () => {
+  const fake = fakeApi({ programs: programs() });
+  fake.answer("PUT", "api/v1/programs/1/active", 409, SESSION_RUNNING);
+  const root = await open(fake);
+  fireEvent.click(switchOf(root, "Full body"));
+
+  fireEvent.click(await findByRole(root, "alert"));
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(location.hash).toBe("#/programs");
+  expect(getByRole(root, "heading", { level: 1, name: en.programs.title })).toBeTruthy();
+});

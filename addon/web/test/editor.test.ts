@@ -1340,3 +1340,35 @@ test("a refused save stays in the editor with its message", async () => {
   expect(field(root, "textbox", en.editor.name).value).toBe("Mine");
   expect(within(root).queryByText(/^Saved /)).toBeNull();
 });
+
+test("a save that answers after the user left doesn't pull them off the page they went to", async () => {
+  const fake = newFake({ programs: [fullBody()] });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let put = false;
+  let answered = false;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method !== "PUT") return fake.fetch(input, init);
+    put = true;
+    await gate;
+    const response = await fake.fetch(input, init);
+    answered = true;
+    return response;
+  });
+  const root = await mount("#/programs/1");
+  await findByRole(root, "textbox", { name: en.editor.name });
+
+  rename(root, "Renamed");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+  await vi.waitFor(() => expect(put).toBe(true));
+  location.hash = "#/library";
+  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
+  fireEvent.click(within(dialog).getByRole("button", { name: en.editor.leave_confirm }));
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+
+  release();
+  await vi.waitFor(() => expect(answered).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(location.hash).toBe("#/library");
+  expect(getByRole(root, "heading", { level: 1, name: en.library.title })).toBeTruthy();
+});

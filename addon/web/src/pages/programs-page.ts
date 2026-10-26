@@ -54,6 +54,7 @@ export class ProgramsPage extends LitElement {
     missing: { state: true },
     deleting: { state: true },
     note: { attribute: false },
+    noteShown: { state: true },
   };
 
   declare api: Api;
@@ -70,6 +71,8 @@ export class ProgramsPage extends LitElement {
   declare deleting: Deleting | null;
   /** The shell's note after a save in the editor ("Saved …"); it goes on the next navigation. */
   declare note: string | null;
+  /** False on the first render: the note's live region is in the page empty first, so screen readers announce it. */
+  declare noteShown: boolean;
 
   constructor() {
     super();
@@ -83,6 +86,11 @@ export class ProgramsPage extends LitElement {
     this.missing = new Set();
     this.deleting = null;
     this.note = null;
+    this.noteShown = false;
+  }
+
+  protected override firstUpdated(): void {
+    this.noteShown = true;
   }
 
   protected override createRenderRoot(): HTMLElement {
@@ -181,11 +189,14 @@ export class ProgramsPage extends LitElement {
 
   /**
    * A click on a row opens the program, for touch (the name link is the keyboard's way). A click on a link or a
-   * button, or anywhere in the Active and Actions cells, does only what it does there.
+   * button, anywhere in the Active and Actions cells, or on the row's refusal does only what it does there; so does a
+   * click with a modifier key or one that ends a text selection.
    */
   private openFromRow(event: MouseEvent, id: number): void {
     const target = event.target as Element | null;
-    if (!target || target.closest("a, button, .active-cell, .actions")) return;
+    if (!target || target.closest("a, button, .active-cell, .actions, .error")) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+    if (this.ownerDocument.getSelection()?.isCollapsed === false) return;
     location.hash = `#/programs/${id}`;
   }
 
@@ -199,7 +210,10 @@ export class ProgramsPage extends LitElement {
         <h1 tabindex="-1">${t("programs.title")}</h1>
         <a class="button primary" href="#/programs/new">${icon(mdiPlus)}<span>${t("programs.new")}</span></a>
       </header>
-      ${this.note ? html`<p class="saved-note" role="status">${this.note}</p>` : nothing} ${this.renderBody()}
+      ${this.note
+        ? html`<p class="saved-note" role="status">${this.noteShown ? this.note : nothing}</p>`
+        : nothing}
+      ${this.renderBody()}
       ${this.renderDialog()}
     `;
   }
