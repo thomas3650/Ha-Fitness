@@ -155,7 +155,7 @@ page showed.
   page filters in the browser. The search has `household=true` (REST and MCP): it keeps the exercises with the
   setup's equipment, and every custom one.
 - **Setup:** `GET /api/v1/setup` and `PUT /api/v1/setup` hold the household's equipment (body weight is always in),
-  the people, the favourite playlists and the default speaker (D63). A `PUT` with equipment no exercise has is refused
+  the favourite playlists and the default speaker (D63). A `PUT` with equipment no exercise has is refused
   with `equipment_unknown`. The people are written with `PUT /api/v1/people`. Claude reads the setup with the MCP
   tool `get_setup`.
 
