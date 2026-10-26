@@ -293,7 +293,9 @@ async def test_active_without_weekdays_names_the_weekday_rule(
     """Creating or updating an active program without weekdays tells Claude the field and the rule."""
     async with mcp_client(make_app()) as session:
         with pytest.raises(ToolError) as created:
-            await call(session, "create_program", program=_program(weekdays=[]))
+            await call(
+                session, "create_program", program=_program(weekdays=[], active=True)
+            )
         program = await call(session, "create_program", program=_program())
         with pytest.raises(ToolError) as updated:
             await call(
