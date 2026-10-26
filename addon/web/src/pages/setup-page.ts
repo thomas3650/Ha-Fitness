@@ -56,6 +56,11 @@ interface MusicRead<T> {
 /** Where a setup refusal shows: at a card, or above the page. */
 type Place = "equipment" | "playlists" | "speaker" | "page";
 
+/** A failed save's items: a refusal's own, or a bug's generic message without a field (above the card). */
+function itemsOf(error: unknown): ErrorItem[] {
+  return error instanceof ApiError ? error.items : [{ field: null, code: "", message: failure(error) }];
+}
+
 function placeOf(item: ErrorItem): Place {
   const field = item.field ?? "";
   if (field === "equipment" || field.startsWith("equipment.")) return "equipment";
@@ -264,8 +269,7 @@ export class SetupPage extends LitElement {
         this.saved = true;
       }
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      this.errors = error.items;
+      this.errors = itemsOf(error);
     } finally {
       this.saving = false;
     }
@@ -312,8 +316,7 @@ export class SetupPage extends LitElement {
         this.peopleSaved = true;
       }
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      this.peopleErrors = error.items;
+      this.peopleErrors = itemsOf(error);
     } finally {
       this.peopleSaving = false;
     }

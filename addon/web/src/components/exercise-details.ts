@@ -1,7 +1,8 @@
 import { mdiClose, mdiDumbbell, mdiPlus } from "@mdi/js";
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 
-import { ApiError, createApi, gifUrl, type Api, type Exercise, type ExerciseSummary } from "../api";
+import { createApi, gifUrl, type Api, type Exercise, type ExerciseSummary } from "../api";
+import { failure } from "../failure";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import { trapFocus } from "./focus-trap";
@@ -77,8 +78,7 @@ export class ExerciseDetails extends LitElement {
       const details = await this.api.exercise(id);
       if (this.exercise?.id === id) this.details = details;
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      if (this.exercise?.id === id) this.error = error.message;
+      if (this.exercise?.id === id) this.error = failure(error);
     }
   }
 

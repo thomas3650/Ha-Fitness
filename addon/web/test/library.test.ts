@@ -381,3 +381,16 @@ test("a read that fails with a bug shows the generic message, not the bug's text
   expect(queryByText(root, en.library.loading)).toBeNull();
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
 });
+
+test("an exercise's details that fail with a bug show the generic message in the dialog and log the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", brokenAt(newFake(), "api/v1/exercises/0003"));
+  const root = await mount("#/library");
+  await findByRole(root, "table", { name: en.library.results });
+
+  fireEvent.click(within(table(root)).getByRole("button", { name: "goblet squat" }));
+
+  const dialog = await findByRole(root, "dialog", { name: "goblet squat" });
+  expect(await within(dialog).findByText(en.error.unexpected)).toBeTruthy();
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});

@@ -1203,3 +1203,20 @@ test("a create the user stays through switches the heading to Edit program as De
   expect(getByRole(root, "button", { name: en.editor.delete })).toBeTruthy();
   expect(getByRole(root, "heading", { level: 1, name: en.editor.edit_title })).toBeTruthy();
 });
+
+test("a save that fails with a bug shows the generic message above the form, keeps the form, and logs the bug", async () => {
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  const fake = newFake({ programs: [fullBody()] });
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) =>
+    init.method === "PUT" ? (undefined as unknown as Response) : fake.fetch(input, init),
+  );
+  const root = await mount("#/programs/1");
+  await findByRole(root, "textbox", { name: en.editor.name });
+  rename(root, "Renamed");
+
+  fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
+
+  expect(text(await findByRole(root, "alert"))).toBe(en.error.unexpected);
+  expect(field(root, "textbox", en.editor.name).value).toBe("Renamed");
+  expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});

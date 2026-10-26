@@ -512,8 +512,9 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       // so the leave guard asks first; staying keeps it, and the next Save replaces the stored program.
       if (location.hash !== route) location.hash = route;
     } catch (error) {
-      if (!(error instanceof ApiError)) throw error;
-      this.showRefusal(error);
+      // A refusal shows at its fields; a bug shows the generic message above the form.
+      if (error instanceof ApiError) this.showRefusal(error);
+      else this.formErrors = [failure(error)];
     } finally {
       this.busy = false;
     }
