@@ -1,7 +1,7 @@
 """Tests for the push channel `GET /api/v1/ws` (step 4 spec §3.6), with a frozen clock in Copenhagen time.
 
-`receive_json()` has no timeout, so every test asserts on the exact next message: a missing message shows up as a
-wrong one. The scheduler runs every 0.05 s, so a test that only moves the clock sees what the loop's tick pushes.
+`receive_json()` has no timeout of its own, so every test asserts on the exact next message: a missing message shows
+up as a wrong one. A read that never gets a message fails on the per-test timeout (`pytest-timeout`). The scheduler runs every 0.05 s, so a test that only moves the clock sees what the loop's tick pushes.
 """
 
 from collections.abc import Iterator
