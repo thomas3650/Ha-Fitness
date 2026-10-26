@@ -62,6 +62,11 @@ export function matchesEquipment(
   }
 }
 
+/** How many of the exercises My equipment shows: its line's count, ignoring the search and the other filters. */
+export function countMine(exercises: ExerciseSummary[], home: ReadonlySet<string>): number {
+  return exercises.filter((exercise) => matchesEquipment(exercise, { mode: "mine" }, home)).length;
+}
+
 /**
  * The exercises whose name has every word of the search, those that start with the whole search first; the order
  * is kept otherwise.

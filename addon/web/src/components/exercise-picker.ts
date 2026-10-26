@@ -5,6 +5,7 @@ import { thumbnailUrl, type ExerciseSummary, type Setup } from "../api";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import {
+  countMine,
   equipmentValues,
   facetValues,
   household,
@@ -107,7 +108,6 @@ export class ExercisePicker extends LitElement {
     const exercises = this.exercises;
     if (!exercises || !found) return html`<p>${t("picker.loading")}</p>`;
     const shown = found.slice(0, SHOWN);
-    const mine = exercises.filter((exercise) => matchesEquipment(exercise, { mode: "mine" }, home)).length;
     return html`
       <label class="search">
         ${icon(mdiMagnify)}
@@ -125,7 +125,7 @@ export class ExercisePicker extends LitElement {
           .label=${t("picker.equipment")}
           .values=${equipmentValues(exercises)}
           .home=${[...home]}
-          .counts=${{ mine, all: exercises.length }}
+          .counts=${{ mine: countMine(exercises, home), all: exercises.length }}
           .choice=${this.equipment}
           @change=${(event: CustomEvent<{ choice: EquipmentChoice }>) => (this.equipment = event.detail.choice)}
         ></hf-equipment-filter>
@@ -198,7 +198,7 @@ export const exercisePickerStyles = css`
   }
   .picker-note {
     margin: 0 0 12px;
-    color: var(--hf-error);
+    color: var(--hf-text-secondary);
     font-size: 13px;
   }
   .picker-note span {

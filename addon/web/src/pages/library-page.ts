@@ -8,6 +8,7 @@ import "../components/multi-select";
 import { t } from "../i18n";
 import { icon } from "../icons";
 import {
+  countMine,
   equipmentValues,
   facetValues,
   household,
@@ -130,7 +131,6 @@ export class LibraryPage extends LitElement {
   private renderLibrary(exercises: ExerciseSummary[]) {
     const home = household(this.setup);
     const found = this.found(exercises, home);
-    const mine = exercises.filter((exercise) => matchesEquipment(exercise, { mode: "mine" }, home)).length;
     return html`
       <div class="library-tools">
         <div class="library-search">
@@ -150,7 +150,7 @@ export class LibraryPage extends LitElement {
           .label=${t("library.equipment")}
           .values=${equipmentValues(exercises)}
           .home=${[...home]}
-          .counts=${{ mine, all: exercises.length }}
+          .counts=${{ mine: countMine(exercises, home), all: exercises.length }}
           .choice=${this.equipment}
           @change=${(event: CustomEvent<{ choice: EquipmentChoice }>) => (this.equipment = event.detail.choice)}
         ></hf-equipment-filter>

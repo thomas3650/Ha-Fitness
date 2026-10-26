@@ -386,7 +386,6 @@ export class EquipmentFilter extends LitElement {
       .field {
         position: relative;
         display: flex;
-        flex-wrap: wrap;
         align-items: center;
         gap: 4px;
         box-sizing: border-box;
@@ -399,9 +398,10 @@ export class EquipmentFilter extends LitElement {
       .field:focus-within {
         border-color: var(--hf-primary);
       }
+      /* The search shrinks before the tags do, so the field stays one line high. */
       input {
-        flex: 1;
-        min-width: 40px;
+        flex: 1 1 0;
+        min-width: 16px;
         height: 28px;
         padding: 0 4px;
         border: none;
@@ -433,7 +433,8 @@ export class EquipmentFilter extends LitElement {
         left: 0;
         min-width: 100%;
         width: max-content;
-        max-width: 320px;
+        /* A narrow place (the editor's library panel) caps it to fit its width. */
+        max-width: var(--hf-equipment-popup-width, 320px);
         max-height: 360px;
         overflow-y: auto;
         background: var(--hf-card);
@@ -522,8 +523,10 @@ export class EquipmentFilter extends LitElement {
       }
       .tags {
         display: flex;
+        flex: 0 1 auto;
         flex-wrap: wrap;
         gap: 4px;
+        min-width: 0;
         margin: 0;
         padding: 0;
         list-style: none;
@@ -532,10 +535,18 @@ export class EquipmentFilter extends LitElement {
         display: inline-flex;
         align-items: center;
         gap: 2px;
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
         padding: 2px 4px 2px 10px;
         border-radius: 12px;
         background: var(--hf-primary-light);
         font-size: 13px;
+      }
+      .tags li > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .tags li.mode {
         color: var(--hf-primary);

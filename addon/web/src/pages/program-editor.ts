@@ -668,6 +668,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
             type="text"
             aria-label=${t("editor.name")}
             placeholder=${t("editor.untitled")}
+            size=${Math.max(form.name.length, t("editor.untitled").length) + 1}
             .value=${form.name}
             aria-invalid=${this.fieldErrors.has("name") ? "true" : "false"}
             aria-describedby=${this.describedBy("name")}
@@ -1067,6 +1068,8 @@ export const programEditorStyles = css`
     flex: 0 0 300px;
     padding-left: 20px;
     border-left: 1px solid var(--hf-border);
+    /* The equipment list spans the panel at most (300px less the padding), never past the window. */
+    --hf-equipment-popup-width: 280px;
   }
   .editor-main .editor-head {
     display: flex;
@@ -1102,8 +1105,9 @@ export const programEditorStyles = css`
     font-size: 13px;
     font-weight: 400;
   }
+  /* The field is as wide as the name, so the pencil sits right after it (W7). */
   .editor-main .name-field {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
     max-width: 100%;
@@ -1121,8 +1125,9 @@ export const programEditorStyles = css`
     background: var(--hf-card);
   }
   .editor-main .name-field input {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
+    field-sizing: content;
     padding: 2px 6px;
     border: none;
     outline: none;
@@ -1176,10 +1181,16 @@ export const programEditorStyles = css`
   .editor-main .error p {
     margin: 4px 0;
   }
+  /* When gets the wider column, so the days and Active fit one row; a narrow column stacks them (spec §2.2.7). */
   .editor-main .editor-pair {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     gap: 0 16px;
+  }
+  @container (max-width: 900px) {
+    .editor-main .editor-pair {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   .editor-main .editor-card {
     min-width: 0;
@@ -1214,6 +1225,9 @@ export const programEditorStyles = css`
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+  }
+  .editor-main .chips .chip {
+    padding: 6px 12px;
   }
   .editor-main .active {
     display: inline-flex;

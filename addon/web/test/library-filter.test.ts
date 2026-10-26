@@ -4,6 +4,7 @@ import type { ExerciseSummary } from "../src/api";
 import {
   atHome,
   BAND,
+  countMine,
   equipmentValues,
   homeKinds,
   household,
@@ -114,4 +115,19 @@ test("the My equipment line's kinds: body weight first, then the rest sorted, ba
   ]);
   expect(homeKinds(["resistance band"])).toEqual(["body weight", BAND]);
   expect(homeKinds(household(null))).toEqual(["body weight"]);
+});
+
+test("My equipment's count is how many exercises it shows: the household's kinds and every custom one", () => {
+  const exercises = [
+    exercise("1", "body weight"),
+    exercise("2", "dumbbell"),
+    exercise("3", "barbell"),
+    exercise("4", null),
+    exercise("c1", "barbell", true),
+    exercise("c2", null, true),
+  ];
+  expect(countMine(exercises, HOME)).toBe(4);
+  expect(countMine(exercises, HOME)).toBe(exercises.filter((one) => matchesEquipment(one, MINE, HOME)).length);
+  expect(countMine(exercises, household(null))).toBe(3);
+  expect(countMine([], HOME)).toBe(0);
 });
