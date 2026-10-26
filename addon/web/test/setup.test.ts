@@ -442,3 +442,36 @@ test("when Home Assistant's persons can't be read, the stored people show and th
   expect(peopleNames(root)).toEqual(["Thomas", "Elin"]);
   expect(within(people).getByText("HA is restarting")).toBeTruthy();
 });
+
+test("people that can't be read can't be saved, so no empty list is ever sent", async () => {
+  const fake = newFake();
+  fake.answer("GET", "api/v1/people", 500, { detail: "The people can't be read", code: "", field: null });
+  const root = await openSetup(fake);
+  const people = region(root, en.setup.people);
+
+  expect(within(people).getByText("The people can't be read")).toBeTruthy();
+  expect(within(people).queryByRole("button", { name: en.setup.save_people })).toBeNull();
+  expect(within(people).queryByRole("combobox", { name: en.setup.add_person })).toBeNull();
+  expect(within(people).queryByText(en.setup.no_people)).toBeNull();
+  expect(writes(fake, "api/v1/people")).toHaveLength(0);
+});
+
+test("a person Home Assistant doesn't know is refused, and the add-on's message shows", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const people = region(root, en.setup.people);
+  fake.answer("PUT", "api/v1/people", 422, {
+    detail: {
+      message: "'person.guest' isn't a person in Home Assistant",
+      entity_id: GUEST.entity_id,
+      ha_persons: [THOMAS, ELIN],
+    },
+    code: "person_unknown",
+    field: "people",
+  });
+
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin up" }));
+  savePeople(root);
+
+  expect(text(await within(people).findByRole("alert"))).toBe("'person.guest' isn't a person in Home Assistant");
+});

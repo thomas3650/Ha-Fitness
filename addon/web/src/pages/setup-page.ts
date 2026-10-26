@@ -126,8 +126,11 @@ export class SetupPage extends LitElement {
   declare exercisesError: string | null;
   declare speakers: MusicRead<SpeakerOut>;
   declare playlists: MusicRead<PlaylistOut>;
-  /** The people as edited, in order. */
-  declare people: NewPerson[];
+  /**
+   * The people as edited, in order; null when they couldn't be read. Then nothing is offered for saving: a save
+   * would replace the stored people with an empty list (D33).
+   */
+  declare people: NewPerson[] | null;
   /** HA's persons; null when HA can't be read. */
   declare haPersons: HaPerson[] | null;
   /** Why the people or HA's persons couldn't be read. */
@@ -151,7 +154,7 @@ export class SetupPage extends LitElement {
     this.exercisesError = null;
     this.speakers = { items: [], error: null };
     this.playlists = { items: [], error: null };
-    this.people = [];
+    this.people = null;
     this.haPersons = null;
     this.peopleNote = null;
     this.errors = [];
@@ -261,6 +264,7 @@ export class SetupPage extends LitElement {
 
   /** Change the people being edited; a new change hides "People saved". */
   private editPeople(people: NewPerson[]): void {
+    if (!this.people) return;
     this.people = people;
     this.peopleSaved = false;
   }
@@ -268,10 +272,12 @@ export class SetupPage extends LitElement {
   private addPerson(entityId: string): void {
     const person = this.haPersons?.find((candidate) => candidate.entity_id === entityId);
     if (!person) return;
+    if (!this.people) return;
     this.editPeople([...this.people, { name: person.friendly_name, person_entity_id: person.entity_id }]);
   }
 
   private move(index: number, by: -1 | 1): void {
+    if (!this.people) return;
     const people = [...this.people];
     const [person] = people.splice(index, 1);
     people.splice(index + by, 0, person);
@@ -279,12 +285,12 @@ export class SetupPage extends LitElement {
   }
 
   private removePerson(index: number): void {
-    this.editPeople(this.people.filter((_, kept) => kept !== index));
+    this.editPeople((this.people ?? []).filter((_, kept) => kept !== index));
     this.removing = null;
   }
 
   private async savePeople(): Promise<void> {
-    if (this.peopleSaving) return;
+    if (!this.people || this.peopleSaving) return;
     this.peopleSaving = true;
     this.peopleErrors = [];
     this.peopleSaved = false;
@@ -341,7 +347,7 @@ export class SetupPage extends LitElement {
           ? html`<div class="card setup-music">${this.renderSpeaker(setup)} ${this.renderPlaylists(setup)}</div>`
           : nothing}
       </div>
-      ${this.removing !== null ? this.renderRemove(this.people[this.removing]) : nothing}
+      ${this.people && this.removing !== null ? this.renderRemove(this.people[this.removing]) : nothing}
     `;
   }
 
@@ -373,16 +379,22 @@ export class SetupPage extends LitElement {
   }
 
   private renderPeople() {
-    const listed = new Set(this.people.map((person) => person.person_entity_id));
-    const addable = (this.haPersons ?? []).filter((person) => !listed.has(person.entity_id));
-    const last = this.people.length - 1;
     return html`<section class="card" aria-labelledby="setup-people">
       <h2 id="setup-people">${icon(mdiAccountGroup)}<span>${t("setup.people")}</span></h2>
       <p class="secondary">${t("setup.people_hint")}</p>
       ${this.peopleNote ? html`<p class="error">${this.peopleNote}</p>` : nothing}
+      ${this.people ? this.renderPeopleForm(this.people) : nothing}
+    </section>`;
+  }
+
+  private renderPeopleForm(people: NewPerson[]) {
+    const listed = new Set(people.map((person) => person.person_entity_id));
+    const addable = (this.haPersons ?? []).filter((person) => !listed.has(person.entity_id));
+    const last = people.length - 1;
+    return html`
       ${this.peopleAlerts((field) => field === null)}
       <ul class="setup-people" aria-label=${t("setup.people")}>
-        ${this.people.map(
+        ${people.map(
           (person, index) => html`<li>
             <span class="dot" style="background: ${PERSON_COLORS[index] ?? "var(--hf-primary)"}"></span>
             <span class="setup-name">${person.name}</span>
@@ -415,7 +427,7 @@ export class SetupPage extends LitElement {
           </li>`,
         )}
       </ul>
-      ${this.people.length ? nothing : html`<p class="secondary">${t("setup.no_people")}</p>`}
+      ${people.length ? nothing : html`<p class="secondary">${t("setup.no_people")}</p>`}
       ${this.haPersons
         ? addable.length
           ? html`<label class="setup-add">
@@ -437,7 +449,7 @@ export class SetupPage extends LitElement {
           ${icon(mdiContentSave)}<span>${t("setup.save_people")}</span>
         </button>
       </div>
-    </section>`;
+    `;
   }
 
   private renderSpeaker(setup: Setup) {
