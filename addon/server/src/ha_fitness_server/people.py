@@ -128,6 +128,7 @@ class People:
             names = ", ".join(person.name for person in people) or "none"
             changes.record(
                 db_session,
+                at=now,
                 client=client,
                 action="people.set",
                 target="people",

@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import changes
+from .clock import Clock
 from .db import session
 from .errors import Conflict, Invalid, NotFound
 from .library.service import Library
@@ -80,18 +81,24 @@ def _update_summary(name: str, old: dict[str, Any], new: dict[str, Any]) -> str:
 class Programs:
     """Lists, stores and changes programs; the library resolves and names the stations.
 
-    Each write runs under the training days' lock. They reconcile before it, so a write just after midnight acts on
-    the new date; their hook runs in the write's session before the commit; and they reconcile the same date again
-    after it (step 4 spec §3.3), so the `today` and `stats` a write publishes are for one date (#79).
+    Each write runs under the training days' lock. It reads the clock once, and reconciles the date of that instant
+    before it, so a write just after midnight acts on the new date; it stamps the program and its change-log entry
+    with the same instant (#97); its hook runs in the write's session before the commit; and it reconciles the same
+    date again after it (step 4 spec §3.3), so the `today` and `stats` a write publishes are for one date (#79).
     """
 
     def __init__(
-        self, engine: Engine, library: Library, training_days: TrainingDays
+        self,
+        engine: Engine,
+        library: Library,
+        training_days: TrainingDays,
+        clock: Clock,
     ) -> None:
-        """Use `engine` for the programs, `library` for their exercises and `training_days` to keep days in step."""
+        """Use `engine`, `library` for the exercises, `training_days` to keep days in step and `clock` for the time."""
         self._engine = engine
         self._library = library
         self._training_days = training_days
+        self._clock = clock
 
     def _out(self, row: ProgramRow) -> ProgramOut:
         """Turn a row into a `ProgramOut`, with the station names looked up now.
@@ -205,9 +212,9 @@ class Programs:
     def create(self, document: ProgramDocument, client: str) -> ProgramOut:
         """Store a new program and log it; raise `Invalid` for a station that can't be resolved, `Conflict` for a taken name."""
         stored = self._resolved(document)
-        now = datetime.now(UTC)
         with self._training_days.lock:
-            today = self._training_days.reconcile_now()
+            now = self._clock.now()
+            today = self._training_days.reconcile_at(now)
             out = self._create(document, stored, now, client)
             self._training_days.reconcile(today)
             return out
@@ -235,6 +242,7 @@ class Programs:
                 db_session.flush()
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="program.created",
                     target=f"program:{row.id}",
@@ -262,8 +270,11 @@ class Programs:
         """
         stored = self._resolved(document)
         with self._training_days.lock:
-            today = self._training_days.reconcile_now()
-            out = self._replace(program_id, document, stored, client, if_updated_at)
+            now = self._clock.now()
+            today = self._training_days.reconcile_at(now)
+            out = self._replace(
+                program_id, document, stored, now, client, if_updated_at
+            )
             self._training_days.reconcile(today)
             return out
 
@@ -272,6 +283,7 @@ class Programs:
         program_id: int,
         document: ProgramDocument,
         stored: dict[str, Any],
+        now: datetime,
         client: str,
         if_updated_at: datetime | None,
     ) -> ProgramOut:
@@ -292,6 +304,7 @@ class Programs:
                 # The log row and the update share the write's transaction, so a name clash at the flush rolls back both.
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="program.updated",
                     target=f"program:{program_id}",
@@ -301,7 +314,7 @@ class Programs:
                 row.name_key = document.name.casefold()
                 row.active = document.active
                 row.document = stored
-                row.updated_at = datetime.now(UTC)
+                row.updated_at = now
                 db_session.flush()
                 self._training_days.on_program_written(db_session, before, row)
                 return self._out(row)
@@ -317,12 +330,15 @@ class Programs:
         session is active.
         """
         with self._training_days.lock:
-            today = self._training_days.reconcile_now()
-            out = self._set_active(program_id, active, client)
+            now = self._clock.now()
+            today = self._training_days.reconcile_at(now)
+            out = self._set_active(program_id, active, now, client)
             self._training_days.reconcile(today)
             return out
 
-    def _set_active(self, program_id: int, active: bool, client: str) -> ProgramOut:
+    def _set_active(
+        self, program_id: int, active: bool, now: datetime, client: str
+    ) -> ProgramOut:
         """Switch and log a program, in one transaction."""
         with session(self._engine) as db_session:
             row = self._row(db_session, program_id)
@@ -338,9 +354,10 @@ class Programs:
             # A new dict, as the JSON column doesn't track changes inside the old one.
             row.document = {**row.document, "active": active}
             row.active = active
-            row.updated_at = datetime.now(UTC)
+            row.updated_at = now
             changes.record(
                 db_session,
+                at=now,
                 client=client,
                 action="program.activated" if active else "program.deactivated",
                 target=f"program:{program_id}",
@@ -352,11 +369,12 @@ class Programs:
     def delete(self, program_id: int, client: str) -> None:
         """Delete a program for good and log it; raise `NotFound`, or `Conflict` while a session of it is active."""
         with self._training_days.lock:
-            today = self._training_days.reconcile_now()
-            self._delete(program_id, client)
+            now = self._clock.now()
+            today = self._training_days.reconcile_at(now)
+            self._delete(program_id, now, client)
             self._training_days.reconcile(today)
 
-    def _delete(self, program_id: int, client: str) -> None:
+    def _delete(self, program_id: int, now: datetime, client: str) -> None:
         """Delete and log a program, in one transaction; its open days go first."""
         with session(self._engine) as db_session:
             row = self._row(db_session, program_id)
@@ -367,6 +385,7 @@ class Programs:
             db_session.delete(row)
             changes.record(
                 db_session,
+                at=now,
                 client=client,
                 action="program.deleted",
                 target=f"program:{program_id}",

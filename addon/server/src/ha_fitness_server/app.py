@@ -129,7 +129,7 @@ def create_app(
         running session is paused and the snapshot written (spec §3.6).
         """
         engine = open_database(settings.data_dir)
-        library = Library(engine)
+        library = Library(engine, the_clock)
         media = MediaStore(settings.data_dir, settings.media_base_url, media_transport)
         ha = HaClient(
             settings.ha_url, settings.ha_token, settings.ha_token_file, ha_transport
@@ -139,7 +139,7 @@ def create_app(
             engine, the_clock, settings.timezone, publish, settings.late_days
         )
         people = People(engine, ha, training_days, the_clock)
-        programs = Programs(engine, library, training_days)
+        programs = Programs(engine, library, training_days, the_clock)
         sessions = Sessions(engine, the_clock, training_days, programs, people, publish)
         stats = StatsService(engine, training_days, sessions)
         holder.set(
@@ -151,7 +151,7 @@ def create_app(
                 people=people,
                 programs=programs,
                 sessions=sessions,
-                setup=SetupService(engine, library),
+                setup=SetupService(engine, library, the_clock),
                 stats=stats,
                 training_days=training_days,
             )

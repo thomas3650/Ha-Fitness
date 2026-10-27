@@ -289,7 +289,10 @@ class Sessions:
         isn't `media_player.<name>`, an empty list, more than two, duplicates, or more people than stations.
         """
         with self._training_days.lock:
-            today = self._training_days.reconcile_now()
+            # One read of the clock: the date it reconciles and the instant of the tick and the new session, so an
+            # old session the tick ends is settled for that date (#97).
+            now = self._clock.now()
+            today = self._training_days.reconcile_at(now)
             if training_day_id is not None and date is not None:
                 raise SessionError(
                     422, "invalid", "Give a training day or a date, not both"
@@ -305,7 +308,6 @@ class Sessions:
                     "invalid",
                     f"{len(people)} participants, but {program.program.name} has {station_count} station(s)",
                 )
-            now = self._clock.now()
             self._tick_alone(now)
             messages: list[dict[str, Any]] = []
             with session(self._engine) as db_session:
@@ -315,7 +317,7 @@ class Sessions:
                     self._check_day(db_session, training_day_id, program_id)
                 if date is not None:
                     training_day_id = self._open_early(
-                        db_session, program_id, date, today
+                        db_session, program_id, date, today, now
                     )
                 plan = build_plan(program, people, speaker)
                 first = phases(plan)[0]
@@ -339,6 +341,7 @@ class Sessions:
                 names = ", ".join(name for _id, name in people)
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="session.started",
                     target=f"session:{row.id}",
@@ -536,6 +539,7 @@ class Sessions:
                 plan = Plan.model_validate(row.plan)
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="session.feeling",
                     target=f"session:{row.id}",
@@ -729,6 +733,7 @@ class Sessions:
         rounds = f"{row.rounds_completed} of {plan.rounds} rounds"
         changes.record(
             db_session,
+            at=now,
             client=client,
             action=f"session.{status.value}",
             target=f"session:{row.id}",
@@ -803,11 +808,17 @@ class Sessions:
         ]
 
     def _open_early(
-        self, db_session: Session, program_id: int, day: date, today: date
+        self,
+        db_session: Session,
+        program_id: int,
+        day: date,
+        today: date,
+        now: datetime,
     ) -> int:
         """Make the program's day on its upcoming date `day`, open, and return its id; 409 unless it is startable.
 
-        The upcoming date is the one after `today`, the date the start reconciled.
+        The upcoming date is the one after `today`, the date the start reconciled. The day is stamped `now`, the
+        start's one read of the clock.
         """
         entry = TrainingDays.upcoming_for(db_session, program_id, today)
         if entry is None or entry.date != day or not entry.startable:
@@ -816,7 +827,7 @@ class Sessions:
                 "conflict",
                 f"{day.isoformat()} isn't the program's next training, or it can't be started yet",
             )
-        return self._training_days.open_early(db_session, program_id, day)
+        return self._training_days.open_early(db_session, program_id, day, now)
 
     @staticmethod
     def _check_day(db_session: Session, day_id: int, program_id: int) -> None:
