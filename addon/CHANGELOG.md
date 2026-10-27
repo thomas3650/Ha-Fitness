@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0](https://github.com/thomas3650/Ha-Fitness/compare/ha-fitness-addon-v1.2.0...ha-fitness-addon-v1.3.0) (2026-10-27)
+
+
+### Features
+
+* **addon:** open programs and added exercises by clicking; Save goes back to the list ([#102](https://github.com/thomas3650/Ha-Fitness/issues/102)) ([e204032](https://github.com/thomas3650/Ha-Fitness/commit/e2040323bc435e22ce11a0b8aa45edf79f7d7fc6))
+* **addon:** Setup page asks before leaving with unsaved changes ([#104](https://github.com/thomas3650/Ha-Fitness/issues/104)) ([9ceb6f1](https://github.com/thomas3650/Ha-Fitness/commit/9ceb6f162adcedc51ac5f251c45489f288b2832e))
+
+
+### Bug Fixes
+
+* **addon:** one clock read per write, and the change log on the clock ([#103](https://github.com/thomas3650/Ha-Fitness/issues/103)) ([1bb8665](https://github.com/thomas3650/Ha-Fitness/commit/1bb8665e5eff26c4851508ecc9b43e3b6b3e131f))
+* **addon:** one date per request around midnight ([#98](https://github.com/thomas3650/Ha-Fitness/issues/98)) ([e9d0c2f](https://github.com/thomas3650/Ha-Fitness/commit/e9d0c2f9f2aa26798713efe4b58edcdaf882e777))
+* **addon:** website polish: focus after delete, one error message, &lt; 1 min ([#101](https://github.com/thomas3650/Ha-Fitness/issues/101)) ([0d790aa](https://github.com/thomas3650/Ha-Fitness/commit/0d790aac820e74094be8b80534b8c4862621e722))
+
 ## [1.2.0](https://github.com/thomas3650/Ha-Fitness/compare/ha-fitness-addon-v1.1.0...ha-fitness-addon-v1.2.0) (2026-10-26)
 
 
