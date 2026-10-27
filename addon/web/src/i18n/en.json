@@ -99,14 +99,11 @@
     "total": "{duration} in all · {rounds} × {exercises}",
     "equipment": "Equipment: {equipment}",
     "no_equipment": "No equipment",
-    "not_saved": "Not saved",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
     "reload": "Reload",
-    "leave_title": "Leave without saving?",
-    "leave_message": "Your changes to this program are not saved.",
-    "leave_confirm": "Leave"
+    "leave_message": "Your changes to this program are not saved."
   },
   "library": {
     "title": "Library",
@@ -216,6 +213,11 @@
   "breadcrumb_separator": "›",
   "dialog": {
     "cancel": "Cancel"
+  },
+  "common": {
+    "not_saved": "Not saved",
+    "leave_title": "Leave without saving?",
+    "leave_confirm": "Leave"
   },
   "duration": {
     "minutes": "{minutes} min",

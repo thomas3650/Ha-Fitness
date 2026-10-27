@@ -361,6 +361,8 @@ test("a setup that can't be read is not offered for saving", async () => {
   expect(queryByRole(root, "button", { name: en.setup.save })).toBeNull();
   // The people don't depend on the setup.
   expect(await within(region(root, en.setup.people)).findByText("Thomas")).toBeTruthy();
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
 });
 
 test("people are listed in order, reordered, added and saved on their own", async () => {
@@ -488,6 +490,8 @@ test("people that can't be read can't be saved, so no empty list is ever sent", 
   expect(within(people).queryByRole("combobox", { name: en.setup.add_person })).toBeNull();
   expect(within(people).queryByText(en.setup.no_people)).toBeNull();
   expect(writes(fake, "api/v1/people")).toHaveLength(0);
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
 });
 
 test("a person Home Assistant doesn't know is refused, and the add-on's message shows", async () => {
@@ -567,14 +571,14 @@ function unloadPrevented(): boolean {
 /** The "Not saved" markers on the page, and those by "Save people". */
 function markers(root: HTMLElement): { all: number; people: number } {
   return {
-    all: within(pageOf(root)).queryAllByText(en.editor.not_saved).length,
-    people: within(region(root, en.setup.people)).queryAllByText(en.editor.not_saved).length,
+    all: within(pageOf(root)).queryAllByText(en.common.not_saved).length,
+    people: within(region(root, en.setup.people)).queryAllByText(en.common.not_saved).length,
   };
 }
 
 async function leaveTo(root: HTMLElement, hash: string): Promise<HTMLElement> {
   location.hash = hash;
-  return findByRole(root, "dialog", { name: en.editor.leave_title });
+  return findByRole(root, "dialog", { name: en.common.leave_title });
 }
 
 test("an untouched Setup page shows no Not saved and lets the user go without asking", async () => {
@@ -615,7 +619,7 @@ test("a setup change shows Not saved by Save, and leaving asks first", async () 
   expect(markers(root)).toEqual({ all: 1, people: 0 });
 
   const again = await leaveTo(root, "#/library");
-  fireEvent.click(within(again).getByRole("button", { name: en.editor.leave_confirm }));
+  fireEvent.click(within(again).getByRole("button", { name: en.common.leave_confirm }));
   await findByRole(root, "heading", { level: 1, name: en.library.title });
   expect(location.hash).toBe("#/library");
   expect(writes(fake, "api/v1/setup")).toHaveLength(0);
@@ -758,5 +762,87 @@ test("a favourite removed and added again is not unsaved, whatever order its fie
   await vi.waitFor(() => expect(favouriteNames(root)).toEqual(["Workout Mix"]));
 
   expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
+});
+
+/** Hold every PUT to `path` until `release` is called; `started` says whether one was sent. */
+function holdPut(fake: FakeApi, path: string) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const held = { started: false, release: () => release() };
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "PUT" && String(input) === path) {
+      held.started = true;
+      await gate;
+    }
+    return fake.fetch(input, init);
+  });
+  return held;
+}
+
+test("a people change made while the people save keeps Not saved", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const held = holdPut(fake, "api/v1/people");
+  const people = region(root, en.setup.people);
+
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin up" }));
+  await vi.waitFor(() => expect(peopleNames(root)).toEqual(["Elin", "Thomas"]));
+  savePeople(root);
+  await vi.waitFor(() => expect(held.started).toBe(true));
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin down" }));
+  await vi.waitFor(() => expect(peopleNames(root)).toEqual(["Thomas", "Elin"]));
+  held.release();
+
+  const button = within(people).getByRole("button", { name: en.setup.save_people });
+  await vi.waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  expect(peopleNames(root)).toEqual(["Thomas", "Elin"]);
+  expect(within(people).queryByRole("status")).toBeNull();
+  expect(markers(root)).toEqual({ all: 1, people: 1 });
+  expect(unloadPrevented()).toBe(true);
+});
+
+test("a setup save that lands while the leave dialog is open, with nothing else unsaved, goes where the user was going", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const held = holdPut(fake, "api/v1/setup");
+
+  await toggle(root, "kettlebell");
+  save(root);
+  await vi.waitFor(() => expect(held.started).toBe(true));
+  await leaveTo(root, "#/library");
+  held.release();
+
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+  expect(location.hash).toBe("#/library");
+  expect(queryByRole(root, "dialog")).toBeNull();
+  expect((writes(fake, "api/v1/setup")[0].body as Setup).equipment).toContain("kettlebell");
+});
+
+test("a setup save that lands while the leave dialog is open and the people are unsaved keeps the dialog", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const held = holdPut(fake, "api/v1/setup");
+
+  await toggle(root, "kettlebell");
+  fireEvent.click(within(region(root, en.setup.people)).getByRole("button", { name: "Move Elin up" }));
+  save(root);
+  await vi.waitFor(() => expect(held.started).toBe(true));
+  await leaveTo(root, "#/library");
+  held.release();
+
+  await findByRole(pageOf(root), "status");
+  expect(getByRole(root, "dialog", { name: en.common.leave_title })).toBeTruthy();
+  expect(location.hash).toBe("#/setup");
+  expect(markers(root)).toEqual({ all: 1, people: 1 });
+});
+
+test("a page taken away without Leave no longer asks on unload", async () => {
+  const root = await openSetup(newFake());
+
+  await toggle(root, "kettlebell");
+  await vi.waitFor(() => expect(unloadPrevented()).toBe(true));
+  unmount();
+
   expect(unloadPrevented()).toBe(false);
 });

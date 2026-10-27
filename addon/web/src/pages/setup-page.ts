@@ -259,6 +259,14 @@ export class SetupPage extends LitElement implements LeaveGuard {
     go();
   }
 
+  /**
+   * After a save: with the leave dialog open and nothing unsaved any more, the user was going elsewhere, so go there.
+   * With the other part still unsaved, the dialog stays.
+   */
+  private leaveIfSaved(): void {
+    if (this.leaving && this.isConnected && !this.dirty) this.leave();
+  }
+
   private async load(): Promise<void> {
     const [setup, exercises, people, speakers, playlists] = await Promise.allSettled([
       this.api.setup(),
@@ -358,6 +366,7 @@ export class SetupPage extends LitElement implements LeaveGuard {
         this.setup = stored;
         this.saved = true;
       }
+      this.leaveIfSaved();
     } catch (error) {
       this.errors = itemsOf(error);
     } finally {
@@ -406,6 +415,7 @@ export class SetupPage extends LitElement implements LeaveGuard {
         this.people = stored;
         this.peopleSaved = true;
       }
+      this.leaveIfSaved();
     } catch (error) {
       this.peopleErrors = itemsOf(error);
     } finally {
@@ -456,9 +466,9 @@ export class SetupPage extends LitElement implements LeaveGuard {
       ${this.people && this.removing !== null ? this.renderRemove(this.people[this.removing]) : nothing}
       ${this.leaving
         ? html`<hf-confirm-dialog
-            .heading=${t("editor.leave_title")}
+            .heading=${t("common.leave_title")}
             .message=${t("setup.leave_message")}
-            .confirmLabel=${t("editor.leave_confirm")}
+            .confirmLabel=${t("common.leave_confirm")}
             .icon=${mdiAlertOutline}
             .confirmIcon=${mdiExitRun}
             @confirm=${() => this.leave()}
@@ -650,7 +660,7 @@ export class SetupPage extends LitElement implements LeaveGuard {
 
 /** The "Not saved" marker by a Save button, as in the program editor. */
 function notSaved() {
-  return html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("editor.not_saved")}</span>`;
+  return html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("common.not_saved")}</span>`;
 }
 
 /** The page's styles, for the shell's shadow root (it renders in light DOM). */

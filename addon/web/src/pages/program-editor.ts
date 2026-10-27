@@ -675,7 +675,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       </div>
       <div class="editor-actions">
         ${this.dirty
-          ? html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("editor.not_saved")}</span>`
+          ? html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("common.not_saved")}</span>`
           : nothing}
         ${this.storedId !== null
           ? html`<button
@@ -1027,9 +1027,9 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         : nothing}
       ${this.leaving
         ? html`<hf-confirm-dialog
-            .heading=${t("editor.leave_title")}
+            .heading=${t("common.leave_title")}
             .message=${t("editor.leave_message")}
-            .confirmLabel=${t("editor.leave_confirm")}
+            .confirmLabel=${t("common.leave_confirm")}
             .icon=${mdiAlertOutline}
             .confirmIcon=${mdiExitRun}
             @confirm=${() => this.leave()}
