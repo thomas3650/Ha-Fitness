@@ -80,11 +80,15 @@ function withBodyWeight(equipment: string[]): string[] {
 
 /**
  * What Save would send, for telling whether the setup is unsaved. The equipment is a set, so its order doesn't count
- * (taking an option off and on again puts its values last); the favourites' order does.
+ * (taking an option off and on again puts its values last); the favourites' order does, their fields' order doesn't.
  */
 function setupKey(setup: Setup): string {
   const { equipment, favourite_playlists, default_speaker } = setup;
-  return JSON.stringify({ equipment: [...withBodyWeight(equipment)].sort(), favourite_playlists, default_speaker });
+  return JSON.stringify({
+    equipment: [...withBodyWeight(equipment)].sort(),
+    favourite_playlists: favourite_playlists.map(({ uri, name }) => ({ uri, name })),
+    default_speaker,
+  });
 }
 
 /** What "Save people" would send, in order, for telling whether the people are unsaved. */

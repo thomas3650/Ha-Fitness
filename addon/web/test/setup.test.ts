@@ -742,3 +742,21 @@ test("a change undone by hand is not unsaved", async () => {
   location.hash = "#/library";
   await findByRole(root, "heading", { level: 1, name: en.library.title });
 });
+
+test("a favourite removed and added again is not unsaved, whatever order its fields came in", async () => {
+  const fake = newFake({
+    setup: { ...structuredClone(SETUP), favourite_playlists: [{ name: "Workout Mix", uri: "library://playlist/1" }] },
+  });
+  const root = await openSetup(fake);
+  const playlists = region(root, en.setup.playlists);
+
+  fireEvent.click(within(playlists).getByRole("button", { name: en.setup.remove.replace("{name}", "Workout Mix") }));
+  await vi.waitFor(() => expect(favouriteNames(root)).toEqual([]));
+  fireEvent.change(within(playlists).getByRole("combobox", { name: en.setup.add_playlist }), {
+    target: { value: "library://playlist/1" },
+  });
+  await vi.waitFor(() => expect(favouriteNames(root)).toEqual(["Workout Mix"]));
+
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
+});
