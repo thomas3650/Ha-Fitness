@@ -297,6 +297,36 @@ async def test_start_across_midnight_settles_an_old_early_day_for_its_date(
     assert early_day not in [day["id"] for day in listed]
 
 
+async def test_early_start_across_midnight_stamps_its_day_with_its_one_read(
+    make_app: MakeApp,
+) -> None:
+    """An early start for Sunday whose one read is Saturday makes the day early, so an uncounted end sends its `due`.
+
+    The day is stamped with the start's read, Saturday. The session ends before a round just after midnight: the day
+    was made early and its date is now today, so it stays due and the end's batch carries its `due` (#97).
+    """
+    clock = MidnightClock(SATURDAY_NIGHT)
+    async with _app(clock, make_app) as (client, drain):
+        [thomas] = await set_people(client, THOMAS)
+        lille = await create_small(client, "Lille", weekdays=["sun"])
+        await drain()
+        clock.arm(LAST_READ, FIRST_READ)
+        body = {"program_id": lille["id"], "participants": [thomas], "date": SUNDAY}
+        response = await client.post(SESSION, json=body, headers=AGENT)
+        assert response.status_code == 201, response.text
+        early_day = response.json()["training_day_id"]
+        await drain()
+        clock.set(at(LAST_READ, 11))  # Sunday 00:00:10, in round 1's first work phase
+        ended = await ok(client, "end")
+        messages = await drain()
+    assert ended["counted"] is False
+    [due] = [message for message in messages if message.get("event") == "due"]
+    assert (due["training_day"]["id"], due["training_day"]["date"]) == (
+        early_day,
+        SUNDAY,
+    )
+
+
 async def test_counting_from_set_after_midnight_leaves_the_old_dates_stats_alone(
     make_app: MakeApp,
 ) -> None:

@@ -268,10 +268,14 @@ class TrainingDays:
         db_session.flush()
         return _event("done", day)
 
-    def open_early(self, db_session: Session, program_id: int, day: date) -> int:
-        """Make a program's day on a date after today, open, in the caller's session; return its id.
+    def open_early(
+        self, db_session: Session, program_id: int, day: date, now: datetime
+    ) -> int:
+        """Make a program's day on a date after today, open, stamped `now`, in the caller's session; return its id.
 
         For a session started early (today-ahead spec §2.2.4); the caller has checked the date against `upcoming_for`.
+        `now` is the start's one read of the clock, so the stamp's date is the date the start reconciled, before the
+        day's date: `settle_uncounted` tells a day made early by it (#97).
         """
         program = db_session.get_one(ProgramRow, program_id)
         row = TrainingDay(
@@ -279,7 +283,7 @@ class TrainingDays:
             program_name=program.name,
             date=day,
             status=TrainingDayStatus.OPEN,
-            created_at=self._clock.now(),
+            created_at=now,
         )
         db_session.add(row)
         db_session.flush()

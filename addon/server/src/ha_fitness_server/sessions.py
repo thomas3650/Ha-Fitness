@@ -317,7 +317,7 @@ class Sessions:
                     self._check_day(db_session, training_day_id, program_id)
                 if date is not None:
                     training_day_id = self._open_early(
-                        db_session, program_id, date, today
+                        db_session, program_id, date, today, now
                     )
                 plan = build_plan(program, people, speaker)
                 first = phases(plan)[0]
@@ -805,11 +805,17 @@ class Sessions:
         ]
 
     def _open_early(
-        self, db_session: Session, program_id: int, day: date, today: date
+        self,
+        db_session: Session,
+        program_id: int,
+        day: date,
+        today: date,
+        now: datetime,
     ) -> int:
         """Make the program's day on its upcoming date `day`, open, and return its id; 409 unless it is startable.
 
-        The upcoming date is the one after `today`, the date the start reconciled.
+        The upcoming date is the one after `today`, the date the start reconciled. The day is stamped `now`, the
+        start's one read of the clock.
         """
         entry = TrainingDays.upcoming_for(db_session, program_id, today)
         if entry is None or entry.date != day or not entry.startable:
@@ -818,7 +824,7 @@ class Sessions:
                 "conflict",
                 f"{day.isoformat()} isn't the program's next training, or it can't be started yet",
             )
-        return self._training_days.open_early(db_session, program_id, day)
+        return self._training_days.open_early(db_session, program_id, day, now)
 
     @staticmethod
     def _check_day(db_session: Session, day_id: int, program_id: int) -> None:
