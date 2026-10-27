@@ -47,6 +47,7 @@ import { failure } from "../failure";
 import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
+import type { LeaveGuard } from "../leave-guard";
 import { BODY_WEIGHT, foldBand } from "../library-filter";
 
 /** Which program the editor works on: a new one, a copy of a stored one (stored only on Save), or a stored one. */
@@ -115,12 +116,6 @@ interface MusicRead<T> {
 interface Deleting {
   busy: boolean;
   error: string | null;
-}
-
-/** An element the shell asks before it leaves the page (website spec §2.2.4). */
-export interface LeaveGuard {
-  /** Return true to hold the leave; the page calls `go` once the user agrees. */
-  guardLeave(go: () => void): boolean;
 }
 
 let nextId = 0;

@@ -132,6 +132,7 @@
     "loading": "Loading…",
     "save": "Save",
     "saved": "Saved",
+    "leave_message": "Your changes on the Setup page are not saved.",
     "equipment": "Household equipment",
     "equipment_hint": "By default the library and the editor show only exercises you can do. Body weight is always on.",
     "equipment_have": "Equipment we have",
