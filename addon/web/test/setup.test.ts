@@ -222,6 +222,8 @@ test("a change made while the setup saves stays, unsaved", async () => {
   await vi.waitFor(() => expect(saveButton.hasAttribute("disabled")).toBe(false));
   expect(await chosen(root, "kettlebell")).toBe(true);
   expect(queryByRole(pageOf(root), "status")).toBeNull();
+  expect(markers(root)).toEqual({ all: 1, people: 0 });
+  expect(unloadPrevented()).toBe(true);
 });
 
 test("a stored resistance band alone shows the band option chosen", async () => {
@@ -359,6 +361,8 @@ test("a setup that can't be read is not offered for saving", async () => {
   expect(queryByRole(root, "button", { name: en.setup.save })).toBeNull();
   // The people don't depend on the setup.
   expect(await within(region(root, en.setup.people)).findByText("Thomas")).toBeTruthy();
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
 });
 
 test("people are listed in order, reordered, added and saved on their own", async () => {
@@ -486,6 +490,8 @@ test("people that can't be read can't be saved, so no empty list is ever sent", 
   expect(within(people).queryByRole("combobox", { name: en.setup.add_person })).toBeNull();
   expect(within(people).queryByText(en.setup.no_people)).toBeNull();
   expect(writes(fake, "api/v1/people")).toHaveLength(0);
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
 });
 
 test("a person Home Assistant doesn't know is refused, and the add-on's message shows", async () => {
@@ -551,4 +557,292 @@ test("a people save that fails with a bug shows the generic message at the peopl
 
   expect(text(await within(people).findByRole("alert"))).toBe(en.error.unexpected);
   expect(logged).toHaveBeenCalledWith(expect.any(TypeError));
+});
+
+// Unsaved changes.
+
+/** Dispatch a `beforeunload` and say whether the page cancelled it. */
+function unloadPrevented(): boolean {
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+/** The "Not saved" markers on the page, and those by "Save people". */
+function markers(root: HTMLElement): { all: number; people: number } {
+  return {
+    all: within(pageOf(root)).queryAllByText(en.common.not_saved).length,
+    people: within(region(root, en.setup.people)).queryAllByText(en.common.not_saved).length,
+  };
+}
+
+async function leaveTo(root: HTMLElement, hash: string): Promise<HTMLElement> {
+  location.hash = hash;
+  return findByRole(root, "dialog", { name: en.common.leave_title });
+}
+
+test("an untouched Setup page shows no Not saved and lets the user go without asking", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
+  location.hash = "#/library";
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+  expect(queryByRole(root, "dialog")).toBeNull();
+});
+
+test("a stored setup without body weight doesn't count as changed", async () => {
+  const fake = newFake({ setup: { ...structuredClone(SETUP), equipment: ["dumbbell"] } });
+  const root = await openSetup(fake);
+
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
+});
+
+test("a setup change shows Not saved by Save, and leaving asks first", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+
+  await toggle(root, "kettlebell");
+  await vi.waitFor(() => expect(markers(root)).toEqual({ all: 1, people: 0 }));
+  expect(unloadPrevented()).toBe(true);
+
+  const dialog = await leaveTo(root, "#/library");
+  expect(within(dialog).getByText(en.setup.leave_message)).toBeTruthy();
+  expect(location.hash).toBe("#/setup");
+  expect(getByRole(root, "heading", { level: 1, name: en.setup.title })).toBeTruthy();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: en.dialog.cancel }));
+  await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
+  expect(await chosen(root, "kettlebell")).toBe(true);
+  expect(markers(root)).toEqual({ all: 1, people: 0 });
+
+  const again = await leaveTo(root, "#/library");
+  fireEvent.click(within(again).getByRole("button", { name: en.common.leave_confirm }));
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+  expect(location.hash).toBe("#/library");
+  expect(writes(fake, "api/v1/setup")).toHaveLength(0);
+  expect(unloadPrevented()).toBe(false);
+});
+
+test("a new default speaker or favourite playlist counts as unsaved", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+
+  const speaker = within(region(root, en.setup.speaker)).getByRole("combobox", { name: en.setup.speaker });
+  fireEvent.change(speaker, { target: { value: "media_player.living" } });
+  await vi.waitFor(() => expect(markers(root)).toEqual({ all: 1, people: 0 }));
+  fireEvent.change(speaker, { target: { value: "media_player.kitchen" } });
+  await vi.waitFor(() => expect(markers(root)).toEqual({ all: 0, people: 0 }));
+
+  const playlists = region(root, en.setup.playlists);
+  fireEvent.click(within(playlists).getByRole("button", { name: en.setup.remove.replace("{name}", "Workout Mix") }));
+  await vi.waitFor(() => expect(markers(root)).toEqual({ all: 1, people: 0 }));
+  await leaveTo(root, "#/library");
+});
+
+test("a people change shows Not saved by Save people, and leaving asks first", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+
+  fireEvent.click(within(region(root, en.setup.people)).getByRole("button", { name: "Move Elin up" }));
+  await vi.waitFor(() => expect(markers(root)).toEqual({ all: 1, people: 1 }));
+  expect(unloadPrevented()).toBe(true);
+  await leaveTo(root, "#/library");
+});
+
+test("with both parts changed, each Save has its own Not saved", async () => {
+  const root = await openSetup(newFake());
+
+  await toggle(root, "kettlebell");
+  fireEvent.click(within(region(root, en.setup.people)).getByRole("button", { name: "Move Elin up" }));
+  await vi.waitFor(() => expect(markers(root)).toEqual({ all: 2, people: 1 }));
+});
+
+test("saving the setup clears its Not saved, says Saved and lets the user go", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+
+  await toggle(root, "kettlebell");
+  await vi.waitFor(() => expect(markers(root)).toEqual({ all: 1, people: 0 }));
+  await saveAndWait(root);
+
+  expect(text(getByRole(pageOf(root), "status"))).toBe(en.setup.saved);
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
+  location.hash = "#/library";
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+});
+
+test("saving the people clears their Not saved, says People saved and lets the user go", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const people = region(root, en.setup.people);
+
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin up" }));
+  await vi.waitFor(() => expect(markers(root)).toEqual({ all: 1, people: 1 }));
+  savePeople(root);
+
+  expect(text(await within(people).findByRole("status"))).toBe(en.setup.people_saved);
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
+  location.hash = "#/library";
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+});
+
+test("a refused setup save keeps Not saved and the leave prompt", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  fake.answer("PUT", "api/v1/setup", 500, { detail: "Something broke", code: "", field: null });
+
+  await toggle(root, "kettlebell");
+  save(root);
+
+  await findByRole(root, "alert");
+  expect(markers(root)).toEqual({ all: 1, people: 0 });
+  expect(unloadPrevented()).toBe(true);
+  await leaveTo(root, "#/library");
+});
+
+test("a refused people save keeps Not saved and the leave prompt", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const people = region(root, en.setup.people);
+  fake.answer("PUT", "api/v1/people", 503, {
+    detail: "Home Assistant can't be reached",
+    code: "ha_unavailable",
+    field: null,
+  });
+
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin up" }));
+  savePeople(root);
+
+  await within(people).findByRole("alert");
+  expect(markers(root)).toEqual({ all: 1, people: 1 });
+  expect(unloadPrevented()).toBe(true);
+  await leaveTo(root, "#/library");
+});
+
+test("a change undone by hand is not unsaved", async () => {
+  const fake = newFake({
+    setup: { ...structuredClone(SETUP), equipment: ["body weight", "band", "dumbbell", "resistance band"] },
+  });
+  const root = await openSetup(fake);
+  const people = region(root, en.setup.people);
+
+  // Band off and on again puts its values last; the household is the same.
+  await toggle(root, "band");
+  await vi.waitFor(async () => expect(await chosen(root, "band")).toBe(false));
+  await toggle(root, "band");
+  await vi.waitFor(async () => expect(await chosen(root, "band")).toBe(true));
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin up" }));
+  await vi.waitFor(() => expect(peopleNames(root)).toEqual(["Elin", "Thomas"]));
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin down" }));
+  await vi.waitFor(() => expect(peopleNames(root)).toEqual(["Thomas", "Elin"]));
+
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
+  location.hash = "#/library";
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+});
+
+test("a favourite removed and added again is not unsaved, whatever order its fields came in", async () => {
+  const fake = newFake({
+    setup: { ...structuredClone(SETUP), favourite_playlists: [{ name: "Workout Mix", uri: "library://playlist/1" }] },
+  });
+  const root = await openSetup(fake);
+  const playlists = region(root, en.setup.playlists);
+
+  fireEvent.click(within(playlists).getByRole("button", { name: en.setup.remove.replace("{name}", "Workout Mix") }));
+  await vi.waitFor(() => expect(favouriteNames(root)).toEqual([]));
+  fireEvent.change(within(playlists).getByRole("combobox", { name: en.setup.add_playlist }), {
+    target: { value: "library://playlist/1" },
+  });
+  await vi.waitFor(() => expect(favouriteNames(root)).toEqual(["Workout Mix"]));
+
+  expect(markers(root)).toEqual({ all: 0, people: 0 });
+  expect(unloadPrevented()).toBe(false);
+});
+
+/** Hold every PUT to `path` until `release` is called; `started` says whether one was sent. */
+function holdPut(fake: FakeApi, path: string) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const held = { started: false, release: () => release() };
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    if (init.method === "PUT" && String(input) === path) {
+      held.started = true;
+      await gate;
+    }
+    return fake.fetch(input, init);
+  });
+  return held;
+}
+
+test("a people change made while the people save keeps Not saved", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const held = holdPut(fake, "api/v1/people");
+  const people = region(root, en.setup.people);
+
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin up" }));
+  await vi.waitFor(() => expect(peopleNames(root)).toEqual(["Elin", "Thomas"]));
+  savePeople(root);
+  await vi.waitFor(() => expect(held.started).toBe(true));
+  fireEvent.click(within(people).getByRole("button", { name: "Move Elin down" }));
+  await vi.waitFor(() => expect(peopleNames(root)).toEqual(["Thomas", "Elin"]));
+  held.release();
+
+  const button = within(people).getByRole("button", { name: en.setup.save_people });
+  await vi.waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  expect(peopleNames(root)).toEqual(["Thomas", "Elin"]);
+  expect(within(people).queryByRole("status")).toBeNull();
+  expect(markers(root)).toEqual({ all: 1, people: 1 });
+  expect(unloadPrevented()).toBe(true);
+});
+
+test("a setup save that lands while the leave dialog is open, with nothing else unsaved, goes where the user was going", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const held = holdPut(fake, "api/v1/setup");
+
+  await toggle(root, "kettlebell");
+  save(root);
+  await vi.waitFor(() => expect(held.started).toBe(true));
+  await leaveTo(root, "#/library");
+  held.release();
+
+  await findByRole(root, "heading", { level: 1, name: en.library.title });
+  expect(location.hash).toBe("#/library");
+  expect(queryByRole(root, "dialog")).toBeNull();
+  expect((writes(fake, "api/v1/setup")[0].body as Setup).equipment).toContain("kettlebell");
+});
+
+test("a setup save that lands while the leave dialog is open and the people are unsaved keeps the dialog", async () => {
+  const fake = newFake();
+  const root = await openSetup(fake);
+  const held = holdPut(fake, "api/v1/setup");
+
+  await toggle(root, "kettlebell");
+  fireEvent.click(within(region(root, en.setup.people)).getByRole("button", { name: "Move Elin up" }));
+  save(root);
+  await vi.waitFor(() => expect(held.started).toBe(true));
+  await leaveTo(root, "#/library");
+  held.release();
+
+  await findByRole(pageOf(root), "status");
+  expect(getByRole(root, "dialog", { name: en.common.leave_title })).toBeTruthy();
+  expect(location.hash).toBe("#/setup");
+  expect(markers(root)).toEqual({ all: 1, people: 1 });
+});
+
+test("a page taken away without Leave no longer asks on unload", async () => {
+  const root = await openSetup(newFake());
+
+  await toggle(root, "kettlebell");
+  await vi.waitFor(() => expect(unloadPrevented()).toBe(true));
+  unmount();
+
+  expect(unloadPrevented()).toBe(false);
 });

@@ -47,6 +47,7 @@ import { failure } from "../failure";
 import { duration } from "../format";
 import { t } from "../i18n";
 import { icon } from "../icons";
+import type { LeaveGuard } from "../leave-guard";
 import { BODY_WEIGHT, foldBand } from "../library-filter";
 
 /** Which program the editor works on: a new one, a copy of a stored one (stored only on Save), or a stored one. */
@@ -115,12 +116,6 @@ interface MusicRead<T> {
 interface Deleting {
   busy: boolean;
   error: string | null;
-}
-
-/** An element the shell asks before it leaves the page (website spec §2.2.4). */
-export interface LeaveGuard {
-  /** Return true to hold the leave; the page calls `go` once the user agrees. */
-  guardLeave(go: () => void): boolean;
 }
 
 let nextId = 0;
@@ -680,7 +675,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       </div>
       <div class="editor-actions">
         ${this.dirty
-          ? html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("editor.not_saved")}</span>`
+          ? html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("common.not_saved")}</span>`
           : nothing}
         ${this.storedId !== null
           ? html`<button
@@ -1032,9 +1027,9 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         : nothing}
       ${this.leaving
         ? html`<hf-confirm-dialog
-            .heading=${t("editor.leave_title")}
+            .heading=${t("common.leave_title")}
             .message=${t("editor.leave_message")}
-            .confirmLabel=${t("editor.leave_confirm")}
+            .confirmLabel=${t("common.leave_confirm")}
             .icon=${mdiAlertOutline}
             .confirmIcon=${mdiExitRun}
             @confirm=${() => this.leave()}

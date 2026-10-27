@@ -1,10 +1,12 @@
 import {
   mdiAccountGroup,
+  mdiAlertOutline,
   mdiArrowDown,
   mdiArrowUp,
   mdiClose,
   mdiContentSave,
   mdiDumbbell,
+  mdiExitRun,
   mdiPlaylistStar,
   mdiSpeaker,
   mdiStar,
@@ -30,6 +32,7 @@ import { applySelectValues } from "../components/select-value";
 import { failure } from "../failure";
 import { t } from "../i18n";
 import { icon } from "../icons";
+import type { LeaveGuard } from "../leave-guard";
 import { BAND, BAND_NAMES, BODY_WEIGHT, facetValues } from "../library-filter";
 
 /**
@@ -70,6 +73,29 @@ function placeOf(item: ErrorItem): Place {
   return "page";
 }
 
+/** The equipment as Save sends it: body weight is always in the household; the add-on adds it as well. */
+function withBodyWeight(equipment: string[]): string[] {
+  return equipment.includes(BODY_WEIGHT) ? equipment : [BODY_WEIGHT, ...equipment];
+}
+
+/**
+ * What Save would send, for telling whether the setup is unsaved. The equipment is a set, so its order doesn't count
+ * (taking an option off and on again puts its values last); the favourites' order does, their fields' order doesn't.
+ */
+function setupKey(setup: Setup): string {
+  const { equipment, favourite_playlists, default_speaker } = setup;
+  return JSON.stringify({
+    equipment: [...withBodyWeight(equipment)].sort(),
+    favourite_playlists: favourite_playlists.map(({ uri, name }) => ({ uri, name })),
+    default_speaker,
+  });
+}
+
+/** What "Save people" would send, in order, for telling whether the people are unsaved. */
+function peopleKey(people: NewPerson[]): string {
+  return JSON.stringify(people.map(({ name, person_entity_id }) => ({ name, person_entity_id })));
+}
+
 /**
  * The equipment options besides body weight: every equipment of the exercises and of the stored setup, sorted, with a
  * group (band and resistance band) as one option. A group stands only for the values the exercises or the setup
@@ -92,9 +118,9 @@ function choices(exercises: ExerciseSummary[], stored: Iterable<string>): Choice
  * The Setup page (website spec §2.4, W6): the household's equipment, the people who train, the default speaker and
  * the favourite playlists. Save stores the setup; the people save on their own with "Save people", since that write
  * can fail while Home Assistant is unreachable. The add-on decides both writes; its refusal shows where it belongs and
- * nothing chosen is lost.
+ * nothing chosen is lost. Either part unsaved shows "Not saved" by its Save, and leaving the page asks first.
  */
-export class SetupPage extends LitElement {
+export class SetupPage extends LitElement implements LeaveGuard {
   static override properties = {
     api: { attribute: false },
     loaded: { state: true },
@@ -114,6 +140,9 @@ export class SetupPage extends LitElement {
     peopleSaving: { state: true },
     peopleSaved: { state: true },
     removing: { state: true },
+    savedSetup: { state: true },
+    savedPeople: { state: true },
+    leaving: { state: true },
   };
 
   declare api: Api;
@@ -142,6 +171,19 @@ export class SetupPage extends LitElement {
   declare peopleSaved: boolean;
   /** The index of the person the removal dialog asks about. */
   declare removing: number | null;
+  /** The setup as last loaded or saved (`setupKey`); empty while it isn't read. */
+  declare savedSetup: string;
+  /** The people as last loaded or saved (`peopleKey`); empty while they aren't read. */
+  declare savedPeople: string;
+  /** The way out the user asked for while something is unsaved; the leave dialog shows while it is set. */
+  declare leaving: (() => void) | null;
+
+  private readonly onBeforeUnload = (event: BeforeUnloadEvent) => {
+    if (!this.dirty) return;
+    event.preventDefault();
+    // Older browsers ask only when the return value is set.
+    event.returnValue = "";
+  };
 
   constructor() {
     super();
@@ -163,6 +205,9 @@ export class SetupPage extends LitElement {
     this.peopleSaving = false;
     this.peopleSaved = false;
     this.removing = null;
+    this.savedSetup = "";
+    this.savedPeople = "";
+    this.leaving = null;
   }
 
   protected override createRenderRoot(): HTMLElement {
@@ -175,7 +220,51 @@ export class SetupPage extends LitElement {
 
   override connectedCallback(): void {
     super.connectedCallback();
+    window.addEventListener("beforeunload", this.onBeforeUnload);
     void this.load();
+  }
+
+  override disconnectedCallback(): void {
+    window.removeEventListener("beforeunload", this.onBeforeUnload);
+    super.disconnectedCallback();
+  }
+
+  /** Whether the setup differs from the one last loaded or saved; a setup that couldn't be read never does. */
+  get setupDirty(): boolean {
+    return this.setup !== null && setupKey(this.setup) !== this.savedSetup;
+  }
+
+  /** Whether the people differ from those last loaded or saved; people that couldn't be read never do. */
+  get peopleDirty(): boolean {
+    return this.people !== null && peopleKey(this.people) !== this.savedPeople;
+  }
+
+  get dirty(): boolean {
+    return this.setupDirty || this.peopleDirty;
+  }
+
+  guardLeave(go: () => void): boolean {
+    if (!this.dirty) return false;
+    this.leaving = go;
+    return true;
+  }
+
+  private leave(): void {
+    const go = this.leaving;
+    this.leaving = null;
+    if (!go) return;
+    // The user chose to drop the changes: they count as saved, so nothing asks again.
+    if (this.setup) this.savedSetup = setupKey(this.setup);
+    if (this.people) this.savedPeople = peopleKey(this.people);
+    go();
+  }
+
+  /**
+   * After a save: with the leave dialog open and nothing unsaved any more, the user was going elsewhere, so go there.
+   * With the other part still unsaved, the dialog stays.
+   */
+  private leaveIfSaved(): void {
+    if (this.leaving && this.isConnected && !this.dirty) this.leave();
   }
 
   private async load(): Promise<void> {
@@ -186,12 +275,17 @@ export class SetupPage extends LitElement {
       this.api.speakers(),
       this.api.playlists(),
     ]);
-    if (setup.status === "fulfilled") this.setup = setup.value;
-    else this.loadError = failure(setup.reason);
+    if (setup.status === "fulfilled") {
+      this.setup = setup.value;
+      this.savedSetup = setupKey(setup.value);
+    } else {
+      this.loadError = failure(setup.reason);
+    }
     if (exercises.status === "fulfilled") this.exercises = exercises.value;
     else this.exercisesError = failure(exercises.reason);
     if (people.status === "fulfilled") {
       this.people = people.value.people.map(({ name, person_entity_id }) => ({ name, person_entity_id }));
+      this.savedPeople = peopleKey(this.people);
       this.haPersons = people.value.ha_persons;
       this.peopleNote = people.value.ha_error;
     } else {
@@ -261,14 +355,18 @@ export class SetupPage extends LitElement {
     const sent = this.setup;
     const { equipment, favourite_playlists, default_speaker } = sent;
     try {
-      // Body weight is always in the household; the add-on adds it as well.
-      const all = equipment.includes(BODY_WEIGHT) ? equipment : [BODY_WEIGHT, ...equipment];
-      const stored = await this.api.putSetup({ equipment: all, favourite_playlists, default_speaker });
+      const stored = await this.api.putSetup({
+        equipment: withBodyWeight(equipment),
+        favourite_playlists,
+        default_speaker,
+      });
+      this.savedSetup = setupKey(stored);
       // A change made while saving stays, unsaved.
       if (this.setup === sent) {
         this.setup = stored;
         this.saved = true;
       }
+      this.leaveIfSaved();
     } catch (error) {
       this.errors = itemsOf(error);
     } finally {
@@ -310,12 +408,14 @@ export class SetupPage extends LitElement {
     this.peopleSaved = false;
     try {
       const sent = this.people;
-      const stored = await this.api.putPeople(sent);
+      const stored = (await this.api.putPeople(sent)).map(({ name, person_entity_id }) => ({ name, person_entity_id }));
+      this.savedPeople = peopleKey(stored);
       // A change made while saving stays, unsaved.
       if (this.people === sent) {
-        this.people = stored.map(({ name, person_entity_id }) => ({ name, person_entity_id }));
+        this.people = stored;
         this.peopleSaved = true;
       }
+      this.leaveIfSaved();
     } catch (error) {
       this.peopleErrors = itemsOf(error);
     } finally {
@@ -345,7 +445,10 @@ export class SetupPage extends LitElement {
     return html`
       <div class="setup-head">
         <h1>${t("setup.title")}</h1>
-        ${this.saved ? html`<span class="secondary" role="status">${t("setup.saved")}</span>` : nothing}
+        ${this.setupDirty ? notSaved() : nothing}
+        ${this.saved && !this.setupDirty
+          ? html`<span class="secondary" role="status">${t("setup.saved")}</span>`
+          : nothing}
         ${setup
           ? html`<button type="button" class="button primary" ?disabled=${this.saving} @click=${() => this.save()}>
               ${icon(mdiContentSave)}<span>${t("setup.save")}</span>
@@ -361,6 +464,17 @@ export class SetupPage extends LitElement {
           : nothing}
       </div>
       ${this.people && this.removing !== null ? this.renderRemove(this.people[this.removing]) : nothing}
+      ${this.leaving
+        ? html`<hf-confirm-dialog
+            .heading=${t("common.leave_title")}
+            .message=${t("setup.leave_message")}
+            .confirmLabel=${t("common.leave_confirm")}
+            .icon=${mdiAlertOutline}
+            .confirmIcon=${mdiExitRun}
+            @confirm=${() => this.leave()}
+            @cancel=${() => (this.leaving = null)}
+          ></hf-confirm-dialog>`
+        : nothing}
     `;
   }
 
@@ -454,7 +568,10 @@ export class SetupPage extends LitElement {
         : nothing}
       ${this.peopleAlerts((field) => field !== null)}
       <div class="setup-actions">
-        ${this.peopleSaved ? html`<span class="secondary" role="status">${t("setup.people_saved")}</span>` : nothing}
+        ${this.peopleDirty ? notSaved() : nothing}
+        ${this.peopleSaved && !this.peopleDirty
+          ? html`<span class="secondary" role="status">${t("setup.people_saved")}</span>`
+          : nothing}
         <button type="button" class="button primary" ?disabled=${this.peopleSaving} @click=${() => this.savePeople()}>
           ${icon(mdiContentSave)}<span>${t("setup.save_people")}</span>
         </button>
@@ -539,6 +656,11 @@ export class SetupPage extends LitElement {
       @cancel=${() => (this.removing = null)}
     ></hf-confirm-dialog>`;
   }
+}
+
+/** The "Not saved" marker by a Save button, as in the program editor. */
+function notSaved() {
+  return html`<span class="not-saved"><span class="dot" aria-hidden="true"></span>${t("common.not_saved")}</span>`;
 }
 
 /** The page's styles, for the shell's shadow root (it renders in light DOM). */
@@ -627,6 +749,19 @@ export const setupPageStyles = css`
     border-radius: 6px;
     background: var(--hf-card);
     font: inherit;
+  }
+  .setup-head .not-saved,
+  .setup-actions .not-saved {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--hf-warning-text);
+  }
+  .setup-head .not-saved .dot,
+  .setup-actions .not-saved .dot {
+    width: 8px;
+    height: 8px;
+    background: var(--hf-warning);
   }
   .setup-actions {
     display: flex;

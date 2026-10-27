@@ -722,19 +722,19 @@ test("a change shows Not saved, and only then the page's unload is cancelled", a
   const fake = newFake({ programs: [fullBody()] });
   const root = await openEditor(fake, "#/programs/1");
 
-  expect(within(root).queryByText(en.editor.not_saved)).toBeNull();
+  expect(within(root).queryByText(en.common.not_saved)).toBeNull();
   const clean = new Event("beforeunload", { cancelable: true });
   window.dispatchEvent(clean);
   expect(clean.defaultPrevented).toBe(false);
 
   rename(root, "Changed");
-  expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
+  expect(await within(root).findByText(en.common.not_saved)).toBeTruthy();
   const dirty = new Event("beforeunload", { cancelable: true });
   window.dispatchEvent(dirty);
   expect(dirty.defaultPrevented).toBe(true);
 
   await save(root, fake);
-  await vi.waitFor(() => expect(within(root).queryByText(en.editor.not_saved)).toBeNull());
+  await vi.waitFor(() => expect(within(root).queryByText(en.common.not_saved)).toBeNull());
   const saved = new Event("beforeunload", { cancelable: true });
   window.dispatchEvent(saved);
   expect(saved.defaultPrevented).toBe(false);
@@ -746,7 +746,7 @@ test("leaving within the site with unsaved changes asks first", async () => {
   rename(root, "Changed");
 
   location.hash = "#/library";
-  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
+  const dialog = await findByRole(root, "dialog", { name: en.common.leave_title });
   expect(location.hash).toBe("#/programs/1");
   expect(getByRole(root, "heading", { level: 1, name: en.editor.edit_title })).toBeTruthy();
 
@@ -755,8 +755,8 @@ test("leaving within the site with unsaved changes asks first", async () => {
   expect(field(root, "textbox", en.editor.name).value).toBe("Changed");
 
   location.hash = "#/library";
-  const again = await findByRole(root, "dialog", { name: en.editor.leave_title });
-  fireEvent.click(within(again).getByRole("button", { name: en.editor.leave_confirm }));
+  const again = await findByRole(root, "dialog", { name: en.common.leave_title });
+  fireEvent.click(within(again).getByRole("button", { name: en.common.leave_confirm }));
   await findByRole(root, "heading", { level: 1, name: en.library.title });
   expect(location.hash).toBe("#/library");
   expect(writes(fake)).toEqual([]);
@@ -782,8 +782,8 @@ test("Cancel with unsaved changes asks first", async () => {
   rename(root, "Changed");
 
   fireEvent.click(getByRole(root, "button", { name: en.editor.cancel }));
-  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
-  fireEvent.click(within(dialog).getByRole("button", { name: en.editor.leave_confirm }));
+  const dialog = await findByRole(root, "dialog", { name: en.common.leave_title });
+  fireEvent.click(within(dialog).getByRole("button", { name: en.common.leave_confirm }));
 
   await findByRole(root, "heading", { level: 1, name: en.programs.title });
   expect(writes(fake)).toEqual([]);
@@ -927,7 +927,7 @@ test("a change typed while a new program is being created isn't lost, and no sec
   rename(root, "Later");
   release();
 
-  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
+  const dialog = await findByRole(root, "dialog", { name: en.common.leave_title });
   expect(field(root, "textbox", en.editor.name).value).toBe("Later");
   fireEvent.click(within(dialog).getByRole("button", { name: en.dialog.cancel }));
   await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
@@ -970,7 +970,7 @@ test("“Turn it off instead” in the editor switches the program off, and a la
   await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
   expect(lastWrite(fake)).toMatchObject({ method: "PUT", path: "api/v1/programs/1/active", body: { active: false } });
   expect(getByRole(root, "switch", { name: en.editor.active }).getAttribute("aria-checked")).toBe("false");
-  expect(within(root).queryByText(en.editor.not_saved)).toBeNull();
+  expect(within(root).queryByText(en.common.not_saved)).toBeNull();
 
   const answered = fake.state.programs[0].updated_at;
   rename(root, "Paused");
@@ -1034,11 +1034,11 @@ test("Not saved shows while there are changes, and the list says Saved after a s
   expect(queryByRole(pageOf(root), "status")).toBeNull();
   expect(within(root).queryByText(/^Saved /)).toBeNull();
   rename(root, "Changed");
-  expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
+  expect(await within(root).findByText(en.common.not_saved)).toBeTruthy();
   await save(root, fake);
   await findByRole(root, "heading", { level: 1, name: en.programs.title });
   expect(within(root).getByText("Saved Changed").getAttribute("role")).toBe("status");
-  expect(within(root).queryByText(en.editor.not_saved)).toBeNull();
+  expect(within(root).queryByText(en.common.not_saved)).toBeNull();
 });
 
 test("+ and − step the timing: rounds by 1, the seconds by 5, and − stops at 0", async () => {
@@ -1063,7 +1063,7 @@ test("+ and − step the timing: rounds by 1, the seconds by 5, and − stops at
   await shows(root, en.editor.round_rest, "0");
   fireEvent.click(stepper(root, "Longer rest"));
   await shows(root, en.editor.round_rest, "5");
-  expect(await within(root).findByText(en.editor.not_saved)).toBeTruthy();
+  expect(await within(root).findByText(en.common.not_saved)).toBeTruthy();
 
   await save(root, fake);
   expect(lastWrite(fake).body).toMatchObject({ rounds: 4, work_seconds: 40, switch_seconds: 5, round_rest_seconds: 5 });
@@ -1197,7 +1197,7 @@ test("a create the user stays through switches the heading to Edit program as De
   rename(root, "Later");
   release();
 
-  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
+  const dialog = await findByRole(root, "dialog", { name: en.common.leave_title });
   fireEvent.click(within(dialog).getByRole("button", { name: en.dialog.cancel }));
   await vi.waitFor(() => expect(queryByRole(root, "dialog")).toBeNull());
 
@@ -1319,7 +1319,7 @@ test("a save with typing while it ran stays in the editor, and the next Save use
 
   expect(location.hash).toBe("#/programs/1");
   expect(field(root, "textbox", en.editor.name).value).toBe("Later");
-  expect(within(root).getByText(en.editor.not_saved)).toBeTruthy();
+  expect(within(root).getByText(en.common.not_saved)).toBeTruthy();
   expect(within(root).queryByText(/^Saved /)).toBeNull();
 
   const answered = fake.state.programs[0].updated_at;
@@ -1365,8 +1365,8 @@ test("a save that answers after the user left doesn't pull them off the page the
   fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
   await vi.waitFor(() => expect(put).toBe(true));
   location.hash = "#/library";
-  const dialog = await findByRole(root, "dialog", { name: en.editor.leave_title });
-  fireEvent.click(within(dialog).getByRole("button", { name: en.editor.leave_confirm }));
+  const dialog = await findByRole(root, "dialog", { name: en.common.leave_title });
+  fireEvent.click(within(dialog).getByRole("button", { name: en.common.leave_confirm }));
   await findByRole(root, "heading", { level: 1, name: en.library.title });
 
   release();
@@ -1395,7 +1395,7 @@ test("a save that lands while the leave dialog is open, with nothing typed since
   fireEvent.click(getByRole(root, "button", { name: en.editor.save }));
   await vi.waitFor(() => expect(put).toBe(true));
   location.hash = "#/library";
-  await findByRole(root, "dialog", { name: en.editor.leave_title });
+  await findByRole(root, "dialog", { name: en.common.leave_title });
   release();
 
   await findByRole(root, "heading", { level: 1, name: en.library.title });
