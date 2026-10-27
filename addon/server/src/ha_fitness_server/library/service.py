@@ -15,6 +15,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.exc import IntegrityError
 
 from ha_fitness_server import changes
+from ha_fitness_server.clock import Clock
 from ha_fitness_server.db import session
 from ha_fitness_server.errors import Conflict, Invalid, NotFound
 from ha_fitness_server.models import CustomExercise
@@ -96,9 +97,10 @@ def _sort_key(exercise: Exercise) -> tuple[str, str]:
 class Library:
     """The library and custom exercises, searched and looked up together."""
 
-    def __init__(self, engine: Engine) -> None:
-        """Load the built-in exercises; custom ones are read from `engine` per call."""
+    def __init__(self, engine: Engine, clock: Clock) -> None:
+        """Load the built-in exercises; custom ones are read from `engine` per call, `clock` stamps the change log."""
         self._engine = engine
+        self._clock = clock
         records = _load_records()
         self._library = _library_exercises(records)
         self._media = {
@@ -258,6 +260,7 @@ class Library:
                 db_session.flush()
                 changes.record(
                     db_session,
+                    at=self._clock.now(),
                     client=client,
                     action="exercise.added",
                     target=f"exercise:{CUSTOM_PREFIX}{row.number}",

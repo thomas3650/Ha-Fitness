@@ -341,6 +341,7 @@ class Sessions:
                 names = ", ".join(name for _id, name in people)
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="session.started",
                     target=f"session:{row.id}",
@@ -538,6 +539,7 @@ class Sessions:
                 plan = Plan.model_validate(row.plan)
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="session.feeling",
                     target=f"session:{row.id}",
@@ -731,6 +733,7 @@ class Sessions:
         rounds = f"{row.rounds_completed} of {plan.rounds} rounds"
         changes.record(
             db_session,
+            at=now,
             client=client,
             action=f"session.{status.value}",
             target=f"session:{row.id}",

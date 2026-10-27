@@ -7,7 +7,7 @@ from fastmcp.exceptions import ToolError
 import httpx
 import pytest
 
-from tests.conftest import FrozenClock, MakeApp
+from tests.conftest import FrozenClock, MakeApp, running
 from tests.session_helpers import (
     PROGRAMS,
     SESSION,
@@ -232,21 +232,26 @@ async def test_if_updated_at_compares_instants(client: httpx.AsyncClient) -> Non
 
 
 async def test_if_updated_at_different_is_changed_elsewhere(
-    client: httpx.AsyncClient,
+    make_app: MakeApp,
 ) -> None:
-    """After another write, the old `updated_at` is refused with `changed_elsewhere` and nothing changes."""
-    program = await _create(client)
-    url = f"{PROGRAMS}/{program['id']}"
-    other = await client.put(url, json=_program(rounds=4))
-    assert other.status_code == 200, other.text
-    response = await client.put(
-        url, json=_program(rounds=3), params={"if_updated_at": program["updated_at"]}
-    )
-    body = _refusal(response, 409)
-    assert body["code"] == "changed_elsewhere"
-    assert body["field"] is None
-    assert isinstance(body["detail"], str)
-    assert (await client.get(url)).json()["program"]["rounds"] == 4
+    """After another write a second later, the old `updated_at` is refused with `changed_elsewhere`; nothing changes."""
+    clock = FrozenClock(WEDNESDAY_9)
+    async with running(make_app(clock=clock)) as client:
+        program = await _create(client)
+        url = f"{PROGRAMS}/{program['id']}"
+        clock.advance(timedelta(seconds=1))
+        other = await client.put(url, json=_program(rounds=4))
+        assert other.status_code == 200, other.text
+        response = await client.put(
+            url,
+            json=_program(rounds=3),
+            params={"if_updated_at": program["updated_at"]},
+        )
+        body = _refusal(response, 409)
+        assert body["code"] == "changed_elsewhere"
+        assert body["field"] is None
+        assert isinstance(body["detail"], str)
+        assert (await client.get(url)).json()["program"]["rounds"] == 4
 
 
 async def test_if_updated_at_omitted_saves_after_another_write(

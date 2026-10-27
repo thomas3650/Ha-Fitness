@@ -221,6 +221,8 @@ integration reads their codes. FastAPI's own validation 422 keeps its list; the 
 - A program write and a session start read the clock once. Their reconcile handles the date of that instant. They use
   the same instant for their stamps and their tick. So a session the start's tick ends is settled for the start's
   date. A day an early start makes is stamped with that instant too, so it counts as made early (#97).
+- Every write's change-log entry is stamped with the write's own read of the add-on's clock. For a program write
+  and a session start that is the same instant as their other stamps (#97).
 - Not every change is one batch. A write that reconciles first publishes two: the reconcile's, then its own. A
   finished session publishes its session messages, then `today` and `stats`. Right after a catch-up of more than 100
   events, such a second batch can still drop the client (#61).

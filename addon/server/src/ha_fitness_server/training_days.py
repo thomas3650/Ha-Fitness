@@ -95,9 +95,9 @@ class TrainingDays:
 
     A request reads the clock's date once, in its reconcile, and carries that date into its own checks and into the
     `today` and `stats` it publishes (#79). A program write and a session start read the clock once, take the date
-    from that instant (`reconcile_at`) and use the same instant for their stamps and their tick (#97). A change that
-    doesn't reconcile (a session's finish, by a command or the session loop) publishes them for the date reconciled
-    last: a later date's days aren't made until a reconcile.
+    from that instant (`reconcile_at`) and use the same instant for their stamps (the change log's too) and their tick
+    (#97). A change that doesn't reconcile (a session's finish, by a command or the session loop) publishes them for
+    the date reconciled last: a later date's days aren't made until a reconcile.
     """
 
     def __init__(
@@ -139,12 +139,14 @@ class TrainingDays:
 
         A write that reconciles first publishes its own `today` for this date too: the clock may pass midnight between.
         """
-        return self.reconcile_at(self._clock.now())
+        with self.lock:
+            return self.reconcile_at(self._clock.now())
 
     def reconcile_at(self, now: datetime) -> date:
         """Reconcile up to and including the local date of `now`; return that date.
 
-        For a write that reads the clock once and uses that instant for its stamps and its tick too.
+        For a write that reads the clock once and uses that instant for its stamps and its tick too. The caller reads
+        `now` while it holds the lock, so no other reconcile can handle a later date in between.
         """
         with self.lock:
             today = self.local_date(now)
@@ -536,7 +538,8 @@ class TrainingDays:
         Raise `NotFound`, or `Conflict` for a closed day or one whose session is running or paused.
         """
         with self.lock:
-            today = self.reconcile_now()
+            now = self._clock.now()
+            today = self.reconcile_at(now)
             with session(self._engine) as db_session:
                 day = db_session.get(TrainingDay, day_id)
                 if day is None:
@@ -548,9 +551,10 @@ class TrainingDays:
                 if db_session.scalar(select(_in_session(day_id))):
                     raise Conflict(f"A session for training day {day_id} is running")
                 day.status = TrainingDayStatus.SKIPPED
-                day.closed_at = self._clock.now()
+                day.closed_at = now
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="training_day.skipped",
                     target=f"training_day:{day_id}",

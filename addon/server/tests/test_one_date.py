@@ -24,6 +24,7 @@ import httpx
 from tests.conftest import FrozenClock, MakeApp, MidnightClock, running
 from tests.session_helpers import (
     AGENT,
+    CHANGES,
     DAYS,
     PROGRAMS,
     SESSION,
@@ -114,6 +115,14 @@ async def _get_today(client: httpx.AsyncClient) -> dict[str, Any]:
     assert response.status_code == 200, response.text
     body: dict[str, Any] = response.json()
     return body
+
+
+async def _newest_change(client: httpx.AsyncClient) -> dict[str, Any]:
+    """Return the newest change-log entry."""
+    response = await client.get(CHANGES)
+    assert response.status_code == 200, response.text
+    newest: dict[str, Any] = response.json()[0]
+    return newest
 
 
 async def _then_sunday(
@@ -235,9 +244,16 @@ async def test_program_create_across_midnight_stamps_its_one_read(
         clock.arm(LAST_READ, FIRST_READ)
         created = await create_small(client, "Lille", weekdays=["sat"])
         messages = await drain()
+        logged = await _newest_change(client)
     assert datetime.fromisoformat(created["created_at"]) == LAST_READ
     assert datetime.fromisoformat(created["updated_at"]) == LAST_READ
+    assert (logged["action"], datetime.fromisoformat(logged["at"])) == (
+        "program.created",
+        LAST_READ,
+    )
     assert _todays(messages) == [(SATURDAY, [("Lille", SATURDAY, "due")])]
+    # The open day leaves the stats as they were: none go out, so none for Sunday's month.
+    assert _months(messages) == []
 
 
 async def test_program_update_across_midnight_stamps_and_publishes_one_date(
@@ -253,14 +269,45 @@ async def test_program_update_across_midnight_stamps_and_publishes_one_date(
         document = {**lille["program"], "weekdays": ["sat"]}
         response = await client.put(f"{PROGRAMS}/{lille['id']}", json=document)
         messages = await drain()
+        logged = await _newest_change(client)
         sunday, later = await _then_sunday(client, drain)
     assert response.status_code == 200, response.text
     updated = response.json()
     assert datetime.fromisoformat(updated["updated_at"]) == LAST_READ
     assert updated["created_at"] == lille["created_at"]
+    assert (logged["action"], datetime.fromisoformat(logged["at"])) == (
+        "program.updated",
+        LAST_READ,
+    )
     assert _day_events(messages) == [("due", SATURDAY)]
     assert _todays(messages) == [(SATURDAY, [("Lille", SATURDAY, "due")])]
+    assert _months(messages) == []
     _moved_on_together(sunday, later)
+
+
+async def test_program_activate_across_midnight_stamps_its_one_read(
+    make_app: MakeApp,
+) -> None:
+    """Switching a program on with one read of Saturday 23:59:59 stamps and logs it then and makes Saturday's day."""
+    clock = MidnightClock(SATURDAY_NIGHT)
+    async with _app(clock, make_app) as (client, drain):
+        await set_people(client, THOMAS)
+        lille = await create_small(client, "Lille", weekdays=["sat"], active=False)
+        await drain()
+        clock.arm(LAST_READ, FIRST_READ)
+        response = await client.put(
+            f"{PROGRAMS}/{lille['id']}/active", json={"active": True}
+        )
+        messages = await drain()
+        logged = await _newest_change(client)
+    assert response.status_code == 200, response.text
+    assert datetime.fromisoformat(response.json()["updated_at"]) == LAST_READ
+    assert (logged["action"], datetime.fromisoformat(logged["at"])) == (
+        "program.activated",
+        LAST_READ,
+    )
+    assert _day_events(messages) == [("due", SATURDAY)]
+    assert _todays(messages) == [(SATURDAY, [("Lille", SATURDAY, "due")])]
 
 
 async def test_start_across_midnight_settles_an_old_early_day_for_its_date(
@@ -353,6 +400,9 @@ async def test_counting_from_set_after_midnight_leaves_the_old_dates_stats_alone
             # The finish's `stats` come in a second batch, after its session messages.
             if any(message["type"] == "stats" for message in messages):
                 break
+    assert any(message["type"] == "stats" for message in messages), (
+        "no stats batch arrived after the finish"
+    )
     assert "session_completed" in [message.get("event") for message in messages]
     [stats] = [message["data"] for message in messages if message["type"] == "stats"]
     assert (stats["month"], stats["counting_from"]) == ("2026-10", SUNDAY)

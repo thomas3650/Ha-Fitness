@@ -82,9 +82,9 @@ class Programs:
     """Lists, stores and changes programs; the library resolves and names the stations.
 
     Each write runs under the training days' lock. It reads the clock once, and reconciles the date of that instant
-    before it, so a write just after midnight acts on the new date; it stamps the program with the same instant
-    (#97); its hook runs in the write's session before the commit; and it reconciles the same date again after it
-    (step 4 spec §3.3), so the `today` and `stats` a write publishes are for one date (#79).
+    before it, so a write just after midnight acts on the new date; it stamps the program and its change-log entry
+    with the same instant (#97); its hook runs in the write's session before the commit; and it reconciles the same
+    date again after it (step 4 spec §3.3), so the `today` and `stats` a write publishes are for one date (#79).
     """
 
     def __init__(
@@ -242,6 +242,7 @@ class Programs:
                 db_session.flush()
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="program.created",
                     target=f"program:{row.id}",
@@ -303,6 +304,7 @@ class Programs:
                 # The log row and the update share the write's transaction, so a name clash at the flush rolls back both.
                 changes.record(
                     db_session,
+                    at=now,
                     client=client,
                     action="program.updated",
                     target=f"program:{program_id}",
@@ -355,6 +357,7 @@ class Programs:
             row.updated_at = now
             changes.record(
                 db_session,
+                at=now,
                 client=client,
                 action="program.activated" if active else "program.deactivated",
                 target=f"program:{program_id}",
@@ -366,11 +369,12 @@ class Programs:
     def delete(self, program_id: int, client: str) -> None:
         """Delete a program for good and log it; raise `NotFound`, or `Conflict` while a session of it is active."""
         with self._training_days.lock:
-            today = self._training_days.reconcile_now()
-            self._delete(program_id, client)
+            now = self._clock.now()
+            today = self._training_days.reconcile_at(now)
+            self._delete(program_id, now, client)
             self._training_days.reconcile(today)
 
-    def _delete(self, program_id: int, client: str) -> None:
+    def _delete(self, program_id: int, now: datetime, client: str) -> None:
         """Delete and log a program, in one transaction; its open days go first."""
         with session(self._engine) as db_session:
             row = self._row(db_session, program_id)
@@ -381,6 +385,7 @@ class Programs:
             db_session.delete(row)
             changes.record(
                 db_session,
+                at=now,
                 client=client,
                 action="program.deleted",
                 target=f"program:{program_id}",

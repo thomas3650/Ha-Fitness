@@ -3,6 +3,7 @@
 from sqlalchemy import Engine
 
 from . import changes
+from .clock import Clock
 from .db import session
 from .errors import Invalid
 from .library.service import Library
@@ -16,10 +17,11 @@ _ROW_ID = 1
 class SetupService:
     """Reads and writes the setup, one JSON document; the library says which equipment there is."""
 
-    def __init__(self, engine: Engine, library: Library) -> None:
-        """Use `engine` for the setup and `library` to check its equipment."""
+    def __init__(self, engine: Engine, library: Library, clock: Clock) -> None:
+        """Use `engine` for the setup, `library` to check its equipment and `clock` to stamp the change log."""
         self._engine = engine
         self._library = library
+        self._clock = clock
 
     def get(self) -> Setup:
         """Return the setup; the defaults while none is stored."""
@@ -43,6 +45,7 @@ class SetupService:
             db_session.merge(SetupRow(id=_ROW_ID, document=document))
             changes.record(
                 db_session,
+                at=self._clock.now(),
                 client=client,
                 action="setup.updated",
                 target="setup",

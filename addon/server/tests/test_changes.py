@@ -1,11 +1,14 @@
 """Tests for the change log (spec §6)."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import httpx
 import pytest
 
+from tests.conftest import FrozenClock, MakeApp, running
+
 CHANGES = "/api/v1/changes"
+FROZEN = datetime(2026, 10, 28, 9, 30, tzinfo=UTC)
 
 
 async def _add(client: httpx.AsyncClient, name: str, **headers: str) -> None:
@@ -66,3 +69,19 @@ async def test_change_log_limit_bounds(
     """The limit is 1 to 200."""
     response = await client.get(CHANGES, params={"limit": limit})
     assert response.status_code == status
+
+
+async def test_change_log_stamps_with_the_clock(make_app: MakeApp) -> None:
+    """A setup write and a custom exercise are logged at the clock's time, not the system's."""
+    async with running(make_app(clock=FrozenClock(FROZEN))) as client:
+        await _add(client, "Garden squat")
+        setup = {"equipment": ["body weight"], "favourite_playlists": []}
+        response = await client.put("/api/v1/setup", json=setup)
+        assert response.status_code == 200, response.text
+        logged = (await client.get(CHANGES)).json()
+    assert [
+        (entry["action"], datetime.fromisoformat(entry["at"])) for entry in logged
+    ] == [
+        ("setup.updated", FROZEN),
+        ("exercise.added", FROZEN),
+    ]
