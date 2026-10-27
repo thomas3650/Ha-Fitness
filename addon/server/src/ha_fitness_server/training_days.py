@@ -94,8 +94,10 @@ class TrainingDays:
     here (a skip and the dev routes) reconcile first, so they act on the date now, and publish `today` after.
 
     A request reads the clock's date once, in its reconcile, and carries that date into its own checks and into the
-    `today` and `stats` it publishes (#79). A change that doesn't reconcile (a session's finish, by a command or the
-    session loop) publishes them for the date reconciled last: a later date's days aren't made until a reconcile.
+    `today` and `stats` it publishes (#79). A program write and a session start read the clock once, take the date
+    from that instant (`reconcile_at`) and use the same instant for their stamps and their tick (#97). A change that
+    doesn't reconcile (a session's finish, by a command or the session loop) publishes them for the date reconciled
+    last: a later date's days aren't made until a reconcile.
     """
 
     def __init__(
@@ -137,8 +139,15 @@ class TrainingDays:
 
         A write that reconciles first publishes its own `today` for this date too: the clock may pass midnight between.
         """
+        return self.reconcile_at(self._clock.now())
+
+    def reconcile_at(self, now: datetime) -> date:
+        """Reconcile up to and including the local date of `now`; return that date.
+
+        For a write that reads the clock once and uses that instant for its stamps and its tick too.
+        """
         with self.lock:
-            today = self.local_today()
+            today = self.local_date(now)
             self.reconcile(today)
             return today
 

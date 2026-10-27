@@ -218,6 +218,9 @@ integration reads their codes. FastAPI's own validation 422 keeps its list; the 
 - The one exception is the finish of an uncounted early session (today-ahead spec §2.2.6). It settles the day on the
   finish's own clock date. So just after midnight its `due` can be for the new date, next to a `today` for the date
   reconciled last.
+- A program write and a session start read the clock once. Their reconcile handles the date of that instant. They use
+  the same instant for their stamps and their tick. So a session the start's tick ends is settled for the start's
+  date (#97).
 - Not every change is one batch. A write that reconciles first publishes two: the reconcile's, then its own. A
   finished session publishes its session messages, then `today` and `stats`. Right after a catch-up of more than 100
   events, such a second batch can still drop the client (#61).

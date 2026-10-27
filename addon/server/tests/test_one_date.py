@@ -10,21 +10,27 @@ Sunday 1 November 00:00:01. The stats show their date only as `month`, so the te
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ha_fitness_server.push import Hub, Message
+from ha_fitness_server.sessions import PAUSE_LIMIT
 import httpx
 
 from tests.conftest import FrozenClock, MakeApp, MidnightClock, running
 from tests.session_helpers import (
     AGENT,
+    DAYS,
+    PROGRAMS,
     SESSION,
+    SMALL_END,
     TODAY,
     WS,
     at,
     create_small,
+    days,
     make_session_app,
     ok,
     open_day,
@@ -45,11 +51,14 @@ type Drain = Callable[[], Awaitable[list[Message]]]
 
 @asynccontextmanager
 async def _app(
-    clock: FrozenClock, make_app: MakeApp
+    clock: FrozenClock, make_app: MakeApp, tick_max: float = 60
 ) -> AsyncIterator[tuple[httpx.AsyncClient, Drain]]:
-    """Run a session app where only requests read the clock; yield an HTTP client and `drain` (messages since last)."""
+    """Run a session app where only requests read the clock; yield an HTTP client and `drain` (messages since last).
+
+    A short `tick_max` lets the session loop tick (and read the clock) too; the scheduler still waits a minute.
+    """
     app: FastAPI = make_session_app(
-        clock, make_app, {"scheduler_interval": 60, "session_tick_max": 60}
+        clock, make_app, {"scheduler_interval": 60, "session_tick_max": tick_max}
     )
     async with running(app) as client:
         hub: Hub = app.state.hub
@@ -211,6 +220,117 @@ async def test_early_start_across_midnight_checks_the_reconciled_date(
         (view["training_day_id"], SUNDAY, "due")
     ]
     _moved_on_together(sunday, later)
+
+
+async def test_program_create_across_midnight_stamps_its_one_read(
+    make_app: MakeApp,
+) -> None:
+    """A program create whose one read is Saturday 23:59:59 is stamped with that instant, not a later one."""
+    clock = MidnightClock(SATURDAY_NIGHT)
+    async with _app(clock, make_app) as (client, drain):
+        await set_people(client, THOMAS)
+        await drain()
+        clock.arm(LAST_READ, FIRST_READ)
+        created = await create_small(client, "Lille", weekdays=["sat"])
+        messages = await drain()
+    assert datetime.fromisoformat(created["created_at"]) == LAST_READ
+    assert datetime.fromisoformat(created["updated_at"]) == LAST_READ
+    assert _todays(messages) == [(SATURDAY, [("Lille", SATURDAY, "due")])]
+
+
+async def test_program_update_across_midnight_stamps_and_publishes_one_date(
+    make_app: MakeApp,
+) -> None:
+    """An update whose one read is Saturday 23:59:59 is stamped with it and publishes Saturday's day and `today`."""
+    clock = MidnightClock(SATURDAY_NIGHT)
+    async with _app(clock, make_app) as (client, drain):
+        await set_people(client, THOMAS)
+        lille = await create_small(client, "Lille", weekdays=["sun"])
+        await drain()
+        clock.arm(LAST_READ, FIRST_READ)
+        document = {**lille["program"], "weekdays": ["sat"]}
+        response = await client.put(f"{PROGRAMS}/{lille['id']}", json=document)
+        messages = await drain()
+        sunday, later = await _then_sunday(client, drain)
+    assert response.status_code == 200, response.text
+    updated = response.json()
+    assert datetime.fromisoformat(updated["updated_at"]) == LAST_READ
+    assert updated["created_at"] == lille["created_at"]
+    assert _day_events(messages) == [("due", SATURDAY)]
+    assert _todays(messages) == [(SATURDAY, [("Lille", SATURDAY, "due")])]
+    _moved_on_together(sunday, later)
+
+
+async def test_start_across_midnight_settles_an_old_early_day_for_its_date(
+    make_app: MakeApp,
+) -> None:
+    """A start whose one read is Saturday ends an early Sunday session paused too long and removes its Sunday day.
+
+    The session was started early for Sunday and paused before a round, so it ends uncounted at the pause limit. Its
+    day is dated after the start's date, Saturday, so it goes, and no `due` for Sunday is sent.
+    """
+    evening = local(2026, 10, 31, 23, 0)
+    clock = MidnightClock(evening)
+    async with _app(clock, make_app) as (client, drain):
+        [thomas] = await set_people(client, THOMAS)
+        lille = await create_small(client, "Lille", weekdays=["sun"])
+        store = await create_small(client, "Store", weekdays=["sat"])
+        body = {"program_id": lille["id"], "participants": [thomas], "date": SUNDAY}
+        early = await client.post(SESSION, json=body, headers=AGENT)
+        assert early.status_code == 201, early.text
+        early_day = early.json()["training_day_id"]
+        await ok(client, "pause")
+        store_day = await open_day(client, store["id"])
+        await drain()
+        assert at(evening, 1) + PAUSE_LIMIT < LAST_READ
+        clock.arm(LAST_READ, FIRST_READ)
+        await start(client, store["id"], [thomas], store_day)
+        messages = await drain()
+        listed = await days(client, SATURDAY, SUNDAY)
+    events = [message.get("event") for message in messages]
+    assert "session_ended" in events
+    assert "session_started" in events
+    assert ("due", SUNDAY) not in _day_events(messages)
+    assert SUNDAY not in [today[0] for today in _todays(messages)]
+    assert early_day not in [day["id"] for day in listed]
+
+
+async def test_counting_from_set_after_midnight_leaves_the_old_dates_stats_alone(
+    make_app: MakeApp,
+) -> None:
+    """A first counted session finished by the loop just after midnight sets `counting_from` to Sunday.
+
+    No reconcile of Sunday has run, so its batch's stats are for Saturday's month. Saturday's skipped day is before
+    `counting_from`, so it doesn't count: the numbers are what they'd be with `counting_from` null.
+    """
+    clock = FrozenClock(SATURDAY_NIGHT)
+    async with _app(clock, make_app, tick_max=0.05) as (client, drain):
+        [thomas] = await set_people(client, THOMAS)
+        lille = await create_small(client, "Lille", weekdays=["sat"])
+        store = await create_small(client, "Store", weekdays=["sat"])
+        skipped = await client.post(
+            f"{DAYS}/{await open_day(client, store['id'])}/skip", headers=AGENT
+        )
+        assert skipped.status_code == 200, skipped.text
+        await start(client, lille["id"], [thomas], await open_day(client, lille["id"]))
+        await drain()
+        clock.set(at(SATURDAY_NIGHT, SMALL_END + 10))  # Sunday 00:00:30
+        messages: list[Message] = []
+        for _ in range(100):
+            messages += await drain()
+            if any(m.get("event") == "session_completed" for m in messages):
+                break
+    [stats] = [message["data"] for message in messages if message["type"] == "stats"]
+    assert (stats["month"], stats["counting_from"]) == ("2026-10", SUNDAY)
+    [person] = stats["people"]
+    assert person["streak"] == 1
+    for totals in (person["this_month"], person["all_time"]):
+        assert (
+            totals["done"],
+            totals["extra"],
+            totals["missed"],
+            totals["skipped"],
+        ) == (1, 0, 0, 0)
 
 
 def test_connect_across_midnight_sends_one_date(make_app: MakeApp) -> None:

@@ -139,7 +139,7 @@ def create_app(
             engine, the_clock, settings.timezone, publish, settings.late_days
         )
         people = People(engine, ha, training_days, the_clock)
-        programs = Programs(engine, library, training_days)
+        programs = Programs(engine, library, training_days, the_clock)
         sessions = Sessions(engine, the_clock, training_days, programs, people, publish)
         stats = StatsService(engine, training_days, sessions)
         holder.set(

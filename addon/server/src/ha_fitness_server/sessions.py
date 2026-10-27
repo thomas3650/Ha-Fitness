@@ -289,7 +289,10 @@ class Sessions:
         isn't `media_player.<name>`, an empty list, more than two, duplicates, or more people than stations.
         """
         with self._training_days.lock:
-            today = self._training_days.reconcile_now()
+            # One read of the clock: the date it reconciles and the instant of the tick and the new session, so an
+            # old session the tick ends is settled for that date (#97).
+            now = self._clock.now()
+            today = self._training_days.reconcile_at(now)
             if training_day_id is not None and date is not None:
                 raise SessionError(
                     422, "invalid", "Give a training day or a date, not both"
@@ -305,7 +308,6 @@ class Sessions:
                     "invalid",
                     f"{len(people)} participants, but {program.program.name} has {station_count} station(s)",
                 )
-            now = self._clock.now()
             self._tick_alone(now)
             messages: list[dict[str, Any]] = []
             with session(self._engine) as db_session:
