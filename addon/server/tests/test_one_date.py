@@ -2,9 +2,11 @@
 
 Through REST and the push channel, in Copenhagen time, on the program `SMALL` (its phases are in
 `tests/session_helpers.py`). The push messages are read from the hub every websocket relays, in the order the add-on
-publishes them. The scheduler and the session loop wait a minute, so only the requests read the clock. A
-`MidnightClock` gives a request's reconcile its own read of Saturday 31 October 23:59:59, and every read after it
-Sunday 1 November 00:00:01. The stats show their date only as `month`, so the tests cross the end of a month.
+publishes them. The scheduler and the session loop wait a minute, so only the requests read the clock (one test lets
+the loop tick). A `MidnightClock` gives a request's first read Saturday 31 October 23:59:59, and every read after it
+Sunday 1 November 00:00:01. A request's reconcile uses that first read; a program write and a session start use it
+for their stamps and their tick too (#97). The stats show their date only as `month`, so the tests cross the end of
+a month.
 """
 
 import asyncio
@@ -318,8 +320,10 @@ async def test_counting_from_set_after_midnight_leaves_the_old_dates_stats_alone
         messages: list[Message] = []
         for _ in range(100):
             messages += await drain()
-            if any(m.get("event") == "session_completed" for m in messages):
+            # The finish's `stats` come in a second batch, after its session messages.
+            if any(message["type"] == "stats" for message in messages):
                 break
+    assert "session_completed" in [message.get("event") for message in messages]
     [stats] = [message["data"] for message in messages if message["type"] == "stats"]
     assert (stats["month"], stats["counting_from"]) == ("2026-10", SUNDAY)
     [person] = stats["people"]
