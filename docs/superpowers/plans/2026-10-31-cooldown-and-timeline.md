@@ -122,7 +122,7 @@ until then.
     work phase, so this tells the rules apart.
   - `test_0007_downgrade_drops_the_keys`: downgrade to 0006 removes `timeline`, `stretches` and the two cool-down
     times.
-- [ ] **Step 2: Run** them. Expected: fail.
+- [ ] **Step 2: Run** them. Expected: the first and the last fail; the running-session test already passes.
 - [ ] **Step 3: Implement** with a frozen copy of today's `phases` rule inside the migration (a switch after every work
   but the last of the last round; a rest between rounds), all `part: "circuit"`.
 - [ ] **Step 4: Run** the add-on gates. Expected: all pass.
@@ -135,14 +135,15 @@ Model: opus · Review: yes
 **Files:**
 - Create: `addon/server/src/ha_fitness_server/timeline.py`
 - Modify: `sessions.py` (`Plan`, `build_plan`, `Phase`, `phases`, `_rounds_behind`, `_station`), `programs.py`
-  (`total_seconds`), `schemas.py` (`Part`)
+  (`total_seconds`), `schemas.py` (`Part`, `SessionPhase.part`, `NextPhase.part`)
 - Modify: `addon/server/tests/session_helpers.py` (`_walk_by_ticks` moves here as `walk_by_ticks`, from
   `test_session_plan_walk.py:36`)
 - Test: `addon/server/tests/test_timeline.py` (new) and the existing tests below
 
 **Interfaces:**
 - Consumes: Task 1's `ProgramDocument.cooldown`; Task 2's stored shape.
-- Produces: `type Part = Literal["circuit", "cooldown"]` in `schemas.py`;
+- Produces: `type Part = Literal["circuit", "cooldown"]` in `schemas.py`; `part` on the view's `phase` and
+  `next_phase`;
   `class TimelineEntry(BaseModel)`: `kind: PhaseKind`, `part: Part`, `round: int`, `interval: int`, `duration: int`,
   `work: int | None` (a circuit work's station offset, a cool-down work's stretch index from 0, else None);
   `build_timeline(document: ProgramDocument) -> list[TimelineEntry]` (spec §4.2's four rules);
@@ -197,13 +198,13 @@ Model: opus · Review: yes
 Model: opus · Review: yes
 
 **Files:**
-- Modify: `schemas.py` (`SessionPhase.part`, `NextPhase.part`, `StationRef.part`, `SessionTotals.stretches`),
+- Modify: `schemas.py` (`StationRef.part`, `SessionTotals.stretches`),
   `sessions.py` (`COMMANDS`, `command`, the view), `api/session.py` (docstring)
 - Test: `addon/server/tests/test_session_cooldown.py` (new), `test_session_push.py` (the `phase_changed` event)
 
 **Interfaces:**
 - Consumes: Task 3's `Phase.part`, `current_part`, `next_part`, `_station`.
-- Produces: `part` on `phase` and `next_phase`; `StationRef.part: Part = "circuit"` (so the cards can tell a stretch
+- Produces: `StationRef.part: Part = "circuit"` (so the cards can tell a stretch
   from a station in `current` and `next`); `totals.stretches`; command `skip_cooldown` (409 `conflict` outside the
   cool-down and the rest before it).
 
@@ -214,7 +215,7 @@ Model: opus · Review: yes
   - `test_view_on_rest_before_cooldown`: `part` circuit, `next_phase.part` cooldown, `stations.current` stretch 1
     (`part` cooldown) for both participants.
   - `test_view_in_cooldown`: on stretch 1 `part` cooldown, `round` 1, `interval` 1, both participants' `current` is
-    stretch 1 and `next` stretch 2; on stretch 2 `next` is null; `totals.stretches` 2; `planned` includes the
+    stretch 1 and `next` stretch 2, both with `part` cooldown; on stretch 2 `next` is null; `totals.stretches` 2; `planned` includes the
     cool-down.
   - `test_one_station_cooldown`: 1 station, 2 rounds, 1 stretch: the last circuit work's `next` is stretch 1.
   - `test_phase_changed_carries_part`: the push channel's `phase_changed` on entering stretch 1 has `part: cooldown`;
@@ -389,7 +390,8 @@ Model: sonnet · Review: no
 
 - [ ] **Step 1:** Make spec §7's changes: the domain terms (Interval, Rest between rounds, Phase — no longer "a
   stretch of the timer", Plan; new Cool-down, Stretch, Hold time, Change time, Timeline); the architecture's plan,
-  finishing, the `skip_cooldown` command in both command lists, `part`, and `cooldown` in `ha_fitness/programs`;
+  finishing, the `skip_cooldown` command in both command lists, `part` (on `phase`, `next_phase` and
+  `StationRef`), and `cooldown` in `ha_fitness/programs`;
   D70–D72 as spec §6 words them, and D41's status `active; total_seconds part superseded by D70`. Add
   `stretch_unknown` and `stretch_shared` to the refusal-code list in `docs/architecture.md` (around line 165).
 - [ ] **Step 2: Run** `uv run python scripts/check_links.py`. Expected: pass.
