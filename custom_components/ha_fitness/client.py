@@ -254,7 +254,7 @@ async def async_start_session(
 async def async_session_command(
     session: aiohttp.ClientSession, url: str, command: str, integration_version: str
 ) -> dict[str, Any]:
-    """Send pause, resume, next, previous or end (`POST /api/v1/session/{command}`); return the view."""
+    """Send pause, resume, next, previous, end or skip_cooldown (`POST /api/v1/session/{command}`); return the view."""
     return await _async_session_post(
         session, url, f"/api/v1/session/{command}", integration_version
     )

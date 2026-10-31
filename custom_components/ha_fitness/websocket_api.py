@@ -50,6 +50,7 @@ SESSION_COMMANDS = (
     "previous",
     "end",
     "feeling",
+    "skip_cooldown",
 )
 
 
@@ -341,8 +342,11 @@ def _program(stored: dict[str, Any], music_supported: bool) -> dict[str, Any]:
     """Return one stored program (step 3's ProgramOut) in the shape of the workout spec §4.
 
     `music` is the add-on's, or null while the add-on doesn't support music (the music spec §5.5 and §5.6).
+    `cooldown` pairs the stretches with `stretch_names` as the stations pair with `station_names`; it is null
+    with none, and with an older add-on that sends no `cooldown` (the cool-down spec §4.6).
     """
     program = stored["program"]
+    cooldown = program.get("cooldown")
     result: dict[str, Any] = {
         "id": stored["id"],
         "name": program["name"],
@@ -361,6 +365,18 @@ def _program(stored: dict[str, Any], music_supported: bool) -> dict[str, Any]:
             )
         ],
         "music": program.get("music") if music_supported else None,
+        "cooldown": None
+        if cooldown is None
+        else {
+            "stretches": [
+                {"exercise_id": stretch["exercise"], "name": name}
+                for stretch, name in zip(
+                    cooldown["stretches"], stored["stretch_names"], strict=True
+                )
+            ],
+            "hold_seconds": cooldown["hold_seconds"],
+            "change_seconds": cooldown["change_seconds"],
+        },
     }
     # An add-on from before equipment sends no list; the key stays out, so the cards hide "Du skal bruge".
     if "equipment" in stored:
@@ -380,7 +396,7 @@ async def ws_programs(
         return
     try:
         stored = await async_programs(coordinator.http_session, coordinator.url)
-        # A malformed item (a missing key, stations and names that don't pair) is unavailable too.
+        # A malformed item (a missing key, stations or stretches and names that don't pair) is unavailable too.
         programs = [
             _program(item, coordinator.music_supported)
             for item in stored
