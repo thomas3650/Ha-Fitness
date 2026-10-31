@@ -166,8 +166,8 @@ async def test_create_and_list_programs_via_mcp(make_app: MakeApp) -> None:
         )
         listed = await call(session, "list_programs")
     assert created["program"]["rounds"] == 5
-    # 5 stations x 5 rounds x (45 + 15) s + 4 x 60 s rest = 1740 s.
-    assert created["total_seconds"] == 1740
+    # 5 stations x 5 rounds x 45 s + 5 x 4 switches x 15 s + 4 x 60 s rest = 1665 s.
+    assert created["total_seconds"] == 1665
     assert listed == {
         "result": [
             {
@@ -177,7 +177,7 @@ async def test_create_and_list_programs_via_mcp(make_app: MakeApp) -> None:
                 "weekdays": ["wed"],
                 "station_count": 5,
                 "rounds": 5,
-                "total_minutes": 29,
+                "total_minutes": 28,
             }
         ]
     }
@@ -186,10 +186,10 @@ async def test_create_and_list_programs_via_mcp(make_app: MakeApp) -> None:
 @pytest.mark.parametrize(
     ("stations", "work_seconds", "switch_seconds", "minutes"),
     [
-        # 150 s is 2.5 min: half a minute rounds up, to 3.
-        (1, 120, 30, 3),
-        # 210 s is 3.5 min: up to 4.
-        (2, 90, 15, 4),
+        # 60 + 30 + 60 = 150 s is 2.5 min: half a minute rounds up, to 3.
+        (2, 60, 30, 3),
+        # 90 + 30 + 90 = 210 s is 3.5 min: up to 4.
+        (2, 90, 30, 4),
         # 100 s is 1.67 min.
         (1, 100, 0, 2),
     ],

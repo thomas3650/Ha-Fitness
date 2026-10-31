@@ -35,6 +35,7 @@ from .schemas import (
     Feeling,
     Music,
     NextPhase,
+    Part,
     PhaseKind,
     ProgramOut,
     SessionHistory,
@@ -45,6 +46,7 @@ from .schemas import (
     SessionView,
     StationRef,
 )
+from .timeline import TimelineEntry, build_timeline
 from .training_days import TrainingDays
 
 # Publishes one batch of push messages, in order (training_days.py).
@@ -71,7 +73,7 @@ _TODAY_EVENTS = frozenset(
 
 
 class PlanStation(BaseModel):
-    """A station of the plan: the exercise id and its name at the start."""
+    """A station or a stretch of the plan: the exercise id and its name at the start."""
 
     exercise_id: str
     name: str
@@ -85,7 +87,12 @@ class PlanParticipant(BaseModel):
 
 
 class Plan(BaseModel):
-    """The plan of a session, frozen at the start (step 5 spec §3.1) and stored as JSON."""
+    """The plan of a session, frozen at the start (step 5 spec §3.1) and stored as JSON.
+
+    `timeline` is every phase, built at the start (cool-down spec §2.4); the engine reads only it. The numbers stay for
+    the views and the history. A plan stored before 0007 got its timeline, no stretches and zero cool-down times from
+    that migration.
+    """
 
     program_id: int
     program_name: str
@@ -98,22 +105,32 @@ class Plan(BaseModel):
     participants: list[PlanParticipant]
     # The program's music with the start's speaker (music spec §4.2); a plan stored before step 7 reads as null.
     music: Music | None = None
+    timeline: list[TimelineEntry]
+    # The cool-down's stretches, frozen with their names like the stations; empty with no cool-down.
+    stretches: list[PlanStation] = []
+    cooldown_hold_seconds: int = 0
+    cooldown_change_seconds: int = 0
 
 
 @dataclass(frozen=True)
 class Phase:
     """One phase of a plan.
 
-    Participant `p` is at station `(p + current_offset) mod S` and goes to `(p + next_offset) mod S` next;
-    `next_offset` is None when no work phase follows the one `current_offset` names.
+    In the circuit participant `p` is at station `(p + current_offset) mod S` and goes to `(p + next_offset) mod S`
+    next; in the cool-down everyone is at the stretch of that index. `current_part` and `next_part` are the parts of
+    the work phases the offsets name. `next_offset` and `next_part` are None when no work phase follows the one
+    `current_offset` names.
     """
 
     kind: PhaseKind
+    part: Part
     round: int
     interval: int
     duration: int
     current_offset: int
+    current_part: Part
     next_offset: int | None
+    next_part: Part | None
 
 
 def build_plan(
@@ -129,6 +146,7 @@ def build_plan(
     music = document.music
     if music is not None and speaker is not None:
         music = music.model_copy(update={"speaker": speaker})
+    cooldown = document.cooldown
     return Plan(
         program_id=program.id,
         program_name=document.name,
@@ -147,48 +165,62 @@ def build_plan(
             PlanParticipant(id=person_id, name=name) for person_id, name in participants
         ],
         music=music,
+        timeline=build_timeline(document),
+        stretches=(
+            []
+            if cooldown is None
+            else [
+                PlanStation(exercise_id=stretch.exercise, name=name)
+                for stretch, name in zip(
+                    cooldown.stretches, program.stretch_names, strict=True
+                )
+            ]
+        ),
+        cooldown_hold_seconds=0 if cooldown is None else cooldown.hold_seconds,
+        cooldown_change_seconds=0 if cooldown is None else cooldown.change_seconds,
     )
 
 
 def phases(plan: Plan) -> list[Phase]:
-    """Return the phases of a plan (spec §3.1), each with the station offsets of its `current` and `next`.
+    """Return the phases of a plan from its timeline, each with the work of its `current` and `next`.
 
     Every phase names the first work phase at or after it: a work phase itself, a countdown, switch or rest the one
-    it leads to. Interval i (from 1) works at offset i - 1.
+    it leads to. Nothing here rebuilds the timeline from the plan's numbers (cool-down spec §2.4).
     """
-    station_count = len(plan.stations)
-    # (kind, round, interval, duration, the work offset of a work phase)
-    raw: list[tuple[PhaseKind, int, int, int, int | None]] = []
-    if plan.countdown_seconds:
-        raw.append(("countdown", 1, 1, plan.countdown_seconds, None))
-    for round_number in range(1, plan.rounds + 1):
-        last_round = round_number == plan.rounds
-        for interval in range(1, station_count + 1):
-            raw.append(
-                ("work", round_number, interval, plan.work_seconds, interval - 1)
-            )
-            last = last_round and interval == station_count
-            if plan.switch_seconds and not last:
-                raw.append(
-                    ("switch", round_number, interval, plan.switch_seconds, None)
-                )
-        if plan.round_rest_seconds and not last_round:
-            raw.append(
-                ("rest", round_number, station_count, plan.round_rest_seconds, None)
-            )
-    work = [index for index, entry in enumerate(raw) if entry[4] is not None]
+    timeline = plan.timeline
+    work = [index for index, entry in enumerate(timeline) if entry.work is not None]
     result: list[Phase] = []
-    for index, (kind, round_number, interval, duration, _offset) in enumerate(raw):
+    for index, entry in enumerate(timeline):
         named = next(position for position, at in enumerate(work) if at >= index)
-        current = raw[work[named]][4]
-        following = raw[work[named + 1]][4] if named + 1 < len(work) else None
-        assert current is not None
-        result.append(Phase(kind, round_number, interval, duration, current, following))
+        current = timeline[work[named]]
+        following = timeline[work[named + 1]] if named + 1 < len(work) else None
+        assert current.work is not None
+        result.append(
+            Phase(
+                kind=entry.kind,
+                part=entry.part,
+                round=entry.round,
+                interval=entry.interval,
+                duration=entry.duration,
+                current_offset=current.work,
+                current_part=current.part,
+                next_offset=None if following is None else following.work,
+                next_part=None if following is None else following.part,
+            )
+        )
     return result
 
 
-def _station(plan: Plan, participant: int, offset: int) -> StationRef:
-    """Return the station participant `participant` (from 0) is at for a work offset."""
+def _station(plan: Plan, participant: int, part: Part, offset: int) -> StationRef:
+    """Return where participant `participant` (from 0) is for a work offset.
+
+    In the cool-down that is the stretch of index `offset`, the same for everyone; in the circuit the station.
+    """
+    if part == "cooldown":
+        stretch = plan.stretches[offset]
+        return StationRef(
+            number=offset + 1, exercise_id=stretch.exercise_id, name=stretch.name
+        )
     number = (participant + offset) % len(plan.stations)
     station = plan.stations[number]
     return StationRef(
@@ -197,10 +229,10 @@ def _station(plan: Plan, participant: int, offset: int) -> StationRef:
 
 
 def _rounds_behind(plan_phases: list[Phase], index: int) -> int:
-    """Return the number of rounds whose last work phase is before phase `index`."""
+    """Return the number of circuit rounds whose last work phase is before phase `index`; the cool-down is no round."""
     last_work: dict[int, int] = {}
     for position, phase in enumerate(plan_phases):
-        if phase.kind == "work":
+        if phase.kind == "work" and phase.part == "circuit":
             last_work[phase.round] = position
     return sum(1 for position in last_work.values() if position < index)
 
@@ -937,6 +969,7 @@ class Sessions:
             phase=SessionPhase(
                 index=row.phase_index,
                 kind=phase.kind,
+                part=phase.part,
                 round=phase.round,
                 interval=phase.interval,
                 duration=phase.duration,
@@ -950,15 +983,23 @@ class Sessions:
             next_phase=(
                 None
                 if following is None
-                else NextPhase(kind=following.kind, duration=following.duration)
+                else NextPhase(
+                    kind=following.kind,
+                    part=following.part,
+                    duration=following.duration,
+                )
             ),
             stations=[
                 SessionStation(
-                    current=_station(plan, participant, phase.current_offset),
+                    current=_station(
+                        plan, participant, phase.current_part, phase.current_offset
+                    ),
                     next=(
                         None
-                        if phase.next_offset is None
-                        else _station(plan, participant, phase.next_offset)
+                        if phase.next_offset is None or phase.next_part is None
+                        else _station(
+                            plan, participant, phase.next_part, phase.next_offset
+                        )
                     ),
                 )
                 for participant in range(len(plan.participants))

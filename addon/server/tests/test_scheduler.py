@@ -107,7 +107,7 @@ async def test_midnight_creates_due_days(make_app: MakeApp) -> None:
                     "date": "2026-10-28",
                     "station_count": 5,
                     "rounds": 5,
-                    "total_minutes": 29,
+                    "total_minutes": 28,
                     "startable": True,
                 }
             ],
@@ -126,7 +126,7 @@ async def test_midnight_creates_due_days(make_app: MakeApp) -> None:
             "state": "due",
             "station_count": 5,
             "rounds": 5,
-            "total_minutes": 29,
+            "total_minutes": 28,
         }
         assert view["next"] == {"date": "2026-11-04", "programs": ["Onsdag"]}
 

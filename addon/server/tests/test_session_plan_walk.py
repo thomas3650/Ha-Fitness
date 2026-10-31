@@ -1,10 +1,9 @@
 """Tests for the phases of a plan and the tick (spec §3.1, §3.2), walked through REST and ws on a frozen clock."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
-import httpx
 import pytest
 
 from tests.conftest import FrozenClock, MakeApp
@@ -21,6 +20,7 @@ from tests.session_helpers import (
     set_people,
     start,
     started,
+    walk_by_ticks,
 )
 from tests.test_people import ELIN, THOMAS
 from tests.test_scheduler import FIVE, local
@@ -28,27 +28,10 @@ from tests.test_scheduler import FIVE, local
 WEDNESDAY_9 = local(2026, 10, 28, 9)
 
 
-def _ends(view: dict[str, Any]) -> datetime:
-    """Return a running view's `phase.ends_at` as an aware time."""
-    return datetime.fromisoformat(view["phase"]["ends_at"])
-
-
-async def _walk_by_ticks(
-    client: httpx.AsyncClient, clock: FrozenClock
-) -> list[dict[str, Any]]:
-    """Read every phase of the running session by moving the clock to each deadline; return the views, the last finished."""
-    views = [await current(client)]
-    while views[-1]["status"] == "running":
-        assert len(views) < 50, "the session never finishes"
-        clock.set(_ends(views[-1]))
-        views.append(await current(client))
-    return views
-
-
 @pytest.mark.parametrize(
     ("stations", "fields", "expected"),
     [
-        # Countdown, switches, rests: no switch after the last interval of the last round.
+        # Countdown, switches, rests: no switch after a round's last interval.
         (
             2,
             {},
@@ -57,14 +40,13 @@ async def _walk_by_ticks(
                 ("work", 1, 1, 10),
                 ("switch", 1, 1, 5),
                 ("work", 1, 2, 10),
-                ("switch", 1, 2, 5),
                 ("rest", 1, 2, 20),
                 ("work", 2, 1, 10),
                 ("switch", 2, 1, 5),
                 ("work", 2, 2, 10),
             ],
         ),
-        # Countdown 0 and rest 0.
+        # Countdown 0 and rest 0: the rounds join with no break.
         (
             2,
             {"countdown_seconds": 0, "round_rest_seconds": 0},
@@ -72,7 +54,6 @@ async def _walk_by_ticks(
                 ("work", 1, 1, 10),
                 ("switch", 1, 1, 5),
                 ("work", 1, 2, 10),
-                ("switch", 1, 2, 5),
                 ("work", 2, 1, 10),
                 ("switch", 2, 1, 5),
                 ("work", 2, 2, 10),
@@ -93,14 +74,13 @@ async def _walk_by_ticks(
         ),
         # One round of one station: the work phase alone.
         (1, {"rounds": 1, "countdown_seconds": 0}, [("work", 1, 1, 10)]),
-        # One station, two rounds: its switch and the rest after round 1.
+        # One station, two rounds: no switch, only the rest after round 1.
         (
             1,
             {},
             [
                 ("countdown", 1, 1, 5),
                 ("work", 1, 1, 10),
-                ("switch", 1, 1, 5),
                 ("rest", 1, 1, 20),
                 ("work", 2, 1, 10),
             ],
@@ -119,7 +99,7 @@ async def test_phase_sequence_edge_values(
         [thomas] = await set_people(client, THOMAS)
         program = await create_small(client, "Plan", stations=FIVE[:stations], **fields)
         await start(client, program["id"], [thomas])
-        views = await _walk_by_ticks(client, clock)
+        views = await walk_by_ticks(client, clock)
         await start(client, program["id"], [thomas])
         jumped = [await current(client)]
         while jumped[-1]["status"] == "running":
@@ -144,8 +124,7 @@ _THREE_STATIONS = [
     ("work", 1, 2),
     ("switch", 2, 0),
     ("work", 2, 0),
-    # The switch after the last interval of round 1 moves on past S: to station 1 again.
-    ("switch", 0, 1),
+    # The rest after round 1 leads to station 1 again; no switch comes before it.
     ("rest", 0, 1),
     ("work", 0, 1),
     ("switch", 1, 2),
@@ -158,7 +137,6 @@ _THREE_STATIONS = [
 _ONE_STATION = [
     ("countdown", 0, 0),
     ("work", 0, 0),
-    ("switch", 0, None),
     ("rest", 0, None),
     ("work", 0, None),
 ]
@@ -180,7 +158,7 @@ async def test_stations_current_and_next_per_phase_kind(
         ids = await set_people(client, THOMAS, ELIN)
         program = await create_small(client, "Tre", stations=FIVE[:stations])
         await start(client, program["id"], ids[:people])
-        *views, _done = await _walk_by_ticks(client, clock)
+        *views, _done = await walk_by_ticks(client, clock)
     assert [view["phase"]["kind"] for view in views] == [kind for kind, *_ in table]
     for view, (kind, now, then) in zip(views, table, strict=True):
         expected = [

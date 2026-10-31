@@ -66,11 +66,11 @@ async def test_create_fills_defaults_and_returns_names(
     assert isinstance(body["id"], int)
 
 
-@pytest.mark.parametrize(("rounds", "total"), [(5, 1740), (1, 300)])
+@pytest.mark.parametrize(("rounds", "total"), [(5, 1665), (1, 285)])
 async def test_total_seconds(
     client: httpx.AsyncClient, rounds: int, total: int
 ) -> None:
-    """S * R * (W + switch) + (R - 1) * round rest; one round has no round rest."""
+    """S * R * W + R * (S - 1) * switch + (R - 1) * round rest: no switch after a round's last station (cool-down spec §2.2)."""
     body = await _create(
         client, stations=[{"exercise": ref} for ref in FIVE], rounds=rounds
     )

@@ -457,6 +457,8 @@ UtcMillis = Annotated[
 ]
 
 PhaseKind = Literal["countdown", "work", "switch", "rest"]
+# The part of the session a phase is in (cool-down spec §4.2); the rest before the cool-down is `circuit`.
+type Part = Literal["circuit", "cooldown"]
 
 
 class NewSession(BaseModel):
@@ -486,6 +488,7 @@ class SessionPhase(BaseModel):
 
     index: int
     kind: PhaseKind
+    part: Part
     round: int
     interval: int
     duration: int
@@ -497,6 +500,7 @@ class NextPhase(BaseModel):
     """The phase after the current one."""
 
     kind: PhaseKind
+    part: Part
     duration: int
 
 

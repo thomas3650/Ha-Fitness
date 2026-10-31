@@ -163,7 +163,7 @@ async def test_feeling_refused_for_ended_sessions(make_app: MakeApp) -> None:
         clock.advance(timedelta(minutes=1))
         begin = clock.now()
         await start(client, program["id"], [thomas])
-        clock.set(at(begin, SMALL_STARTS[6] + 1))
+        clock.set(at(begin, SMALL_STARTS[5] + 1))
         counted = await ok(client, "end")
         counted_refused = await _feel(client, "too_easy")
         history = (await client.get(SESSIONS)).json()

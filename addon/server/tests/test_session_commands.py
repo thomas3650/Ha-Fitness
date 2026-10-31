@@ -83,8 +83,8 @@ _MOVES = [
     (0, 2, "next", 1),
     (1, 4, "next", 3),
     (2, 1, "next", 3),
-    (4, 1, "next", 6),
-    (5, 3, "next", 6),
+    (4, 1, "next", 5),
+    (6, 1, "next", 7),
     # previous: the countdown and the first work phase restart.
     (0, 3, "previous", 0),
     (1, 2, "previous", 1),
@@ -92,12 +92,12 @@ _MOVES = [
     # previous on a work phase: under 3 s back to the previous one, from 3 s the start of this one.
     (3, 2, "previous", 1),
     (3, 3, "previous", 3),
-    (6, 9, "previous", 6),
-    (6, 1, "previous", 3),
+    (5, 9, "previous", 5),
+    (5, 1, "previous", 3),
     # previous in a switch or rest: the work phase before it.
     (2, 1, "previous", 1),
-    (5, 10, "previous", 3),
-    (7, 4, "previous", 6),
+    (4, 10, "previous", 3),
+    (6, 4, "previous", 5),
 ]
 
 
@@ -159,12 +159,12 @@ async def test_command_after_deadline_acts_on_new_phase(make_app: MakeApp) -> No
         clock.set(at(WEDNESDAY_9, 16))
         paused = await ok(client, "pause")
         await ok(client, "resume")
-        # The switch ends at 20 s; at 21 s `next` goes from work phase 3 to 6.
+        # The switch ends at 20 s; at 21 s `next` goes from work phase 3 to 5, past the rest.
         clock.set(at(WEDNESDAY_9, 21))
         moved = await ok(client, "next")
     assert paused["phase"]["index"] == 2
     assert paused["phase"]["remaining"] == 4
-    assert moved["phase"]["index"] == 6
+    assert moved["phase"]["index"] == 5
 
 
 @pytest.mark.parametrize("paused", [False, True], ids=["running", "paused"])

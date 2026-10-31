@@ -16,6 +16,7 @@ from .errors import Conflict, Invalid, NotFound
 from .library.service import Library
 from .models import ACTIVE_SESSION_STATUSES, Program as ProgramRow, WorkoutSession
 from .schemas import CreatedBy, ProgramDocument, ProgramOut, ProgramSummary, StationIn
+from .timeline import build_timeline
 
 if TYPE_CHECKING:
     from .training_days import TrainingDays
@@ -26,11 +27,12 @@ _NAMED_ONLY = frozenset({"stations", "music", "weekdays", "cooldown"})
 
 
 def total_seconds(document: ProgramDocument) -> int:
-    """Return the length of a program: S * R * (W + switch) + (R - 1) * round rest (design §3.1)."""
-    stations = len(document.stations)
-    rounds = document.rounds
-    per_station = document.work_seconds + document.switch_seconds
-    return stations * rounds * per_station + (rounds - 1) * document.round_rest_seconds
+    """Return the length of a program: its timeline less the countdown (cool-down spec §4.2), so it can't drift."""
+    return sum(
+        entry.duration
+        for entry in build_timeline(document)
+        if entry.kind != "countdown"
+    )
 
 
 def total_minutes(document: ProgramDocument) -> int:
