@@ -52,7 +52,10 @@ def session_feeling(
 def session_command(
     services: ServicesDep, client: ClientDep, command: str
 ) -> SessionView:
-    """Run `pause`, `resume`, `next`, `previous` or `end`: 404 `not_found` for another, 409 `conflict` if not allowed."""
+    """Run `pause`, `resume`, `next`, `previous`, `end` or `skip_cooldown`: 404 `not_found` for another, 409 if not allowed.
+
+    `skip_cooldown` completes the session now; it is allowed in the cool-down and on the rest right before it.
+    """
     return services.sessions.command(command, client)
 
 

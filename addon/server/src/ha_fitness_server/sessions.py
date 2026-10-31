@@ -52,7 +52,7 @@ from .training_days import TrainingDays
 # Publishes one batch of push messages, in order (training_days.py).
 type Publish = Callable[[list[dict[str, Any]]], None]
 
-COMMANDS = ("pause", "resume", "next", "previous", "end")
+COMMANDS = ("pause", "resume", "next", "previous", "end", "skip_cooldown")
 # How a completed session can feel (UI refresh spec §3.3), from the `Feeling` type so the two match.
 FEELINGS: tuple[str, ...] = get_args(Feeling.__value__)
 # `GET /session` keeps a finished view this long (spec §3.5).
@@ -219,7 +219,10 @@ def _station(plan: Plan, participant: int, part: Part, offset: int) -> StationRe
     if part == "cooldown":
         stretch = plan.stretches[offset]
         return StationRef(
-            number=offset + 1, exercise_id=stretch.exercise_id, name=stretch.name
+            number=offset + 1,
+            exercise_id=stretch.exercise_id,
+            name=stretch.name,
+            part="cooldown",
         )
     number = (participant + offset) % len(plan.stations)
     station = plan.stations[number]
@@ -245,6 +248,7 @@ def _totals(plan: Plan, plan_phases: list[Phase]) -> SessionTotals:
         ),
         rounds=plan.rounds,
         stations=len(plan.stations),
+        stretches=len(plan.stretches),
     )
 
 
@@ -504,7 +508,7 @@ class Sessions:
                 )
 
     def command(self, name: str, client: str) -> SessionView:
-        """Tick, then run `pause`, `resume`, `next`, `previous` or `end` (spec §3.3) and return the view.
+        """Tick, then run `pause`, `resume`, `next`, `previous`, `end` (spec §3.3) or `skip_cooldown`; return the view.
 
         Raise `SessionError`: 404 `not_found` for another name, 409 `conflict` when the command isn't allowed now.
         """
@@ -526,6 +530,8 @@ class Sessions:
                     messages += self._next(db_session, row, now, client)
                 elif name == "previous":
                     messages += self._previous(row, now)
+                elif name == "skip_cooldown":
+                    messages += self._skip_cooldown(db_session, row, now, client)
                 else:
                     messages += self._finish(
                         db_session, row, now, now, SessionStatus.ENDED, client
@@ -693,6 +699,19 @@ class Sessions:
             )
         self._enter(row, plan_phases, following[0], row.paused_at or now)
         return self._changed(row, now, phase_changed=True)
+
+    def _skip_cooldown(
+        self, db_session: Session, row: WorkoutSession, now: datetime, client: str
+    ) -> list[dict[str, Any]]:
+        """Complete the session now, as `next` on the last work phase does (cool-down spec §4.5); paused or not.
+
+        It is allowed in the cool-down and on the rest right before it: the phases whose work is a stretch. Elsewhere
+        it is a 409 `conflict`.
+        """
+        phase = phases(Plan.model_validate(row.plan))[row.phase_index]
+        if phase.current_part != "cooldown":
+            raise SessionError(409, "conflict", "The session isn't in the cool-down")
+        return self._finish(db_session, row, now, now, SessionStatus.COMPLETED, client)
 
     def _previous(self, row: WorkoutSession, now: datetime) -> list[dict[str, Any]]:
         """Go to the start of this work phase, or of the one before (spec §3.3's 3 s rule); restart the first."""

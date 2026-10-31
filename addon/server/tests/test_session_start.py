@@ -95,6 +95,7 @@ def _station(program: dict[str, Any], index: int) -> dict[str, Any]:
         "number": index + 1,
         "exercise_id": program["program"]["stations"][index]["exercise"],
         "name": program["station_names"][index],
+        "part": "circuit",
     }
 
 
@@ -144,7 +145,7 @@ async def test_start_returns_view_at_phase_0(make_app: MakeApp) -> None:
             {"current": _station(program, 0), "next": _station(program, 1)},
             {"current": _station(program, 1), "next": _station(program, 2)},
         ],
-        "totals": {"planned": 1665, "rounds": 5, "stations": 5},
+        "totals": {"planned": 1665, "rounds": 5, "stations": 5, "stretches": 0},
         "started_at": None,
         "ended_at": None,
         "music": None,
@@ -247,6 +248,7 @@ async def test_planned_total_excludes_countdown_and_round_end_switches(
         "planned": planned,
         "rounds": program["program"]["rounds"],
         "stations": len(stations),
+        "stretches": 0,
     }
 
 
@@ -375,6 +377,7 @@ async def test_start_with_missing_exercise_names_it_by_id(
         "number": 2,
         "exercise_id": added.json()["id"],
         "name": added.json()["id"],
+        "part": "circuit",
     }
 
 

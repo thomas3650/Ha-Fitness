@@ -505,11 +505,15 @@ class NextPhase(BaseModel):
 
 
 class StationRef(BaseModel):
-    """A station of the plan: its number from 1, and its exercise."""
+    """A station or a stretch of the plan: its number from 1, its exercise, and the part it is in (cool-down spec §4.4).
+
+    `part` tells a stretch (`cooldown`) from a station (`circuit`).
+    """
 
     number: int
     exercise_id: str
     name: str
+    part: Part = "circuit"
 
 
 class SessionStation(BaseModel):
@@ -520,11 +524,15 @@ class SessionStation(BaseModel):
 
 
 class SessionTotals(BaseModel):
-    """`planned` is the seconds of every work, switch and rest phase; the countdown is left out."""
+    """`planned` is the seconds of every work, switch and rest phase, the cool-down's too; the countdown is left out.
+
+    `stretches` is the cool-down's number of stretches, 0 with no cool-down.
+    """
 
     planned: int
     rounds: int
     stations: int
+    stretches: int
 
 
 # How a completed session felt (UI refresh spec §3.3); `sessions.FEELINGS` lists the same values.
