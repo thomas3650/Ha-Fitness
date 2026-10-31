@@ -117,7 +117,8 @@ cooldown:                    # null or missing: no cool-down
 - The ranges and defaults are *Claude's calls*. `GET /api/v1/programs/defaults` adds `cooldown_hold_seconds` and
   `cooldown_change_seconds`.
 - **No stretches means no cool-down,** and that is written as `cooldown: null`. `cooldown` with an empty `stretches`
-  list is refused (422 `invalid`, field `cooldown.stretches`).
+  list is refused: a 422 with the code `invalid` at the field `cooldown.stretches`, raised as a
+  `PydanticCustomError("invalid", …)` the way `weekday_needed` is, so it isn't FastAPI's `too_short`.
 - A stretch is any exercise of the library. The library has stretches (for example "overhead triceps stretch"), but
   nothing stops another exercise. A stretch that can't be resolved is refused like a station, with its own codes and
   field (D65): `stretch_unknown` or `stretch_shared`, at `cooldown.stretches.<index from 0>`.
@@ -165,7 +166,7 @@ An Alembic migration writes the timeline into every stored plan, built with **to
 the rest). The migration carries its own frozen copy of that rule; it doesn't import the builder or `phases`, which
 would apply the new rule and move stored phase indexes. So a session that was running or stored before the update
 keeps its phases, and its phase index still points at the same phase. After the migration every plan has a timeline,
-and the code has one path. `downgrade` drops the `timeline` and `stretches` keys. The migration is tested on a plan
+and the code has one path. `downgrade` drops the keys this change adds to the plan. The migration is tested on a plan
 stored before it.
 
 ### 4.4 The session view and events
@@ -229,7 +230,7 @@ The chosen mockup (dark boxes are the GIF; the real screen follows the built scr
 │ │ (1) Thomas   │            ╭────────╮            │ (2) Elin     │ │
 │ │ ┌──────────┐ │            │STRETCH │            │ ┌──────────┐ │ │
 │ │ │   GIF    │ │            │   24   │            │ │   GIF    │ │ │
-│ │ └──────────┘ │            │secs left│           │ └──────────┘ │ │
+│ │ └──────────┘ │            │sec. left│           │ └──────────┘ │ │
 │ │ Seated lower │            ╰────────╯            │ Seated lower │ │
 │ │ back stretch │                                  │ back stretch │ │
 │ │ Next: …      │                                  │ Next: …      │ │
