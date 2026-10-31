@@ -1,12 +1,14 @@
 """Tests for the database, its migrations and the backup snapshot."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 import json
 import os
 from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+from typing import Any
 
 from alembic import command
 from alembic.config import Config
@@ -16,7 +18,7 @@ import httpx
 import pytest
 from sqlalchemy import create_engine
 
-from tests.conftest import MakeApp, running
+from tests.conftest import FrozenClock, MakeApp, running
 
 
 def _set_revision(database: Path, revision: str) -> None:
@@ -262,3 +264,163 @@ def test_migration_0005_downgrade_keeps_participants(tmp_path: Path) -> None:
     assert [tuple(row) for row in participants] == [(1, "Thomas")]
     assert "feeling" not in columns
     assert "revision" in columns
+
+
+# A plan as 0006 stored it: 3 stations, 2 rounds, work 10, switch 5, rest 20, countdown 5.
+PLAN_0006 = {
+    "program_id": 1,
+    "program_name": "Onsdag",
+    "stations": [
+        {"exercise_id": "0001", "name": "One"},
+        {"exercise_id": "0002", "name": "Two"},
+        {"exercise_id": "0003", "name": "Three"},
+    ],
+    "rounds": 2,
+    "work_seconds": 10,
+    "switch_seconds": 5,
+    "round_rest_seconds": 20,
+    "countdown_seconds": 5,
+    "participants": [{"id": 1, "name": "Thomas"}],
+    "music": None,
+}
+# The last tick of the running session at 0006; its rest (phase 7) started 5 s before it.
+LAST_TICK = datetime(2026, 10, 28, 8, 0, 10, tzinfo=UTC)
+TIMELINE_KEYS = (
+    "timeline",
+    "stretches",
+    "cooldown_hold_seconds",
+    "cooldown_change_seconds",
+)
+
+
+def _database_at_0006_with_a_running_session(data_dir: Path) -> None:
+    """Build a database at 0006 holding a session running at phase 7, the rest under the rule before 0007."""
+    engine = create_engine(f"sqlite:///{data_dir / 'ha_fitness.db'}")
+    try:
+        db.migrate(engine, "0006_setup_and_created_by")
+    finally:
+        engine.dispose()
+    # Raw-database setup: a session as the add-on before 0007 stored it.
+    with sqlite3.connect(data_dir / "ha_fitness.db") as connection:
+        connection.execute(
+            "INSERT INTO people (id, name, person_entity_id, position, added_at) "
+            "VALUES (1, 'Thomas', 'person.thomas', 0, NULL)"
+        )
+        connection.execute(
+            "INSERT INTO sessions (id, plan, training_day_id, status, counted, phase_index, phase_started_at, "
+            "paused_at, paused_seconds, last_tick_at, started_at, ended_at, rounds_completed, revision) "
+            "VALUES (1, ?, NULL, 'running', 0, 7, '2026-10-28 08:00:05', NULL, 0, '2026-10-28 08:00:10', "
+            "'2026-10-28 07:59:40', NULL, 1, 8)",
+            (json.dumps(PLAN_0006),),
+        )
+        connection.execute(
+            "INSERT INTO session_participants (session_id, position, person_id, name) "
+            "VALUES (1, 0, 1, 'Thomas')"
+        )
+    connection.close()
+
+
+def _stored_plan(database: Path) -> dict[str, Any]:
+    """Return the stored plan of session 1, read with `sqlite3`."""
+    with sqlite3.connect(database) as connection:
+        (plan,) = connection.execute(
+            "SELECT plan FROM sessions WHERE id = 1"
+        ).fetchone()
+    connection.close()
+    result: dict[str, Any] = json.loads(plan)
+    return result
+
+
+def test_0007_writes_old_rule_timeline(tmp_path: Path) -> None:
+    """Migration 0007 gives a stored plan the timeline of the rule before it, no stretches and no cool-down times.
+
+    A switch follows every work but the last of the last round; a rest sits between rounds.
+    """
+    _database_at_0006_with_a_running_session(tmp_path)
+    db.open_database(tmp_path).dispose()
+    # Raw-database check: no public interface shows the stored timeline until it drives the session.
+    plan = _stored_plan(tmp_path / "ha_fitness.db")
+    timeline = plan["timeline"]
+    assert len(timeline) == 13
+    assert timeline[0] == {
+        "kind": "countdown",
+        "part": "circuit",
+        "round": 1,
+        "interval": 1,
+        "duration": 5,
+        "work": None,
+    }
+    assert timeline[5] == {
+        "kind": "work",
+        "part": "circuit",
+        "round": 1,
+        "interval": 3,
+        "duration": 10,
+        "work": 2,
+    }
+    assert timeline[6] == {
+        "kind": "switch",
+        "part": "circuit",
+        "round": 1,
+        "interval": 3,
+        "duration": 5,
+        "work": None,
+    }
+    assert timeline[7] == {
+        "kind": "rest",
+        "part": "circuit",
+        "round": 1,
+        "interval": 3,
+        "duration": 20,
+        "work": None,
+    }
+    assert [entry["kind"] for entry in timeline[8:]] == [
+        "work",
+        "switch",
+        "work",
+        "switch",
+        "work",
+    ]
+    assert timeline[12]["round"] == 2
+    assert timeline[12]["work"] == 2
+    assert plan["stretches"] == []
+    assert plan["cooldown_hold_seconds"] == 0
+    assert plan["cooldown_change_seconds"] == 0
+    assert {key: plan[key] for key in PLAN_0006} == PLAN_0006
+
+
+async def test_0007_running_session_keeps_its_phase(
+    make_app: MakeApp, tmp_path: Path
+) -> None:
+    """A session running at 0006 is at the same phase after 0007: phase 7 stays the rest after round 1."""
+    _database_at_0006_with_a_running_session(tmp_path)
+    clock = FrozenClock(LAST_TICK + timedelta(minutes=5))
+    async with running(make_app(clock=clock)) as client:
+        response = await client.get("/api/v1/session")
+    assert response.status_code == 200
+    phase = response.json()["phase"]
+    assert (phase["index"], phase["kind"], phase["round"], phase["interval"]) == (
+        7,
+        "rest",
+        1,
+        3,
+    )
+
+
+def test_0007_downgrade_drops_the_keys(tmp_path: Path) -> None:
+    """Downgrading 0007 removes the timeline, the stretches and both cool-down times, and keeps the rest of the plan."""
+    _database_at_0006_with_a_running_session(tmp_path)
+    engine = db.open_database(tmp_path)
+    try:
+        # Raw-database check: a downgrade has no public interface.
+        assert "timeline" in _stored_plan(tmp_path / "ha_fitness.db")
+        config = Config()
+        config.set_main_option("script_location", "ha_fitness_server:migrations")
+        with engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.downgrade(config, "0006_setup_and_created_by")
+    finally:
+        engine.dispose()
+    plan = _stored_plan(tmp_path / "ha_fitness.db")
+    assert not set(TIMELINE_KEYS) & set(plan)
+    assert plan == PLAN_0006
