@@ -9,7 +9,7 @@ import difflib
 from importlib import resources
 import json
 import re
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Engine, func, select
 from sqlalchemy.exc import IntegrityError
@@ -37,6 +37,11 @@ CLOSE_MATCH_CUTOFF = 0.5
 _CUSTOM_ID = re.compile(rf"{CUSTOM_PREFIX}([1-9][0-9]*)", re.ASCII)
 _NAME_KEY_CLASH = "UNIQUE constraint failed: custom_exercises.name_key"
 _SUMMARY_FIELDS = set(ExerciseSummary.model_fields)
+# Where `resolve` places a refusal: the detail key and code prefix, and the field path before the index.
+_RESOLVE_PLACES = {
+    "stations": ("station", "stations"),
+    "stretches": ("stretch", "cooldown.stretches"),
+}
 
 
 def _load_records() -> list[dict[str, Any]]:
@@ -196,11 +201,18 @@ class Library:
             row = db_session.get(CustomExercise, int(match[1]))
             return None if row is None else _custom_exercise(row)
 
-    def resolve(self, ref: str, station: int) -> Exercise:
-        """Return the exercise a station names by id or by a name only one exercise has.
+    def resolve(
+        self,
+        ref: str,
+        position: int,
+        field: Literal["stations", "stretches"] = "stations",
+    ) -> Exercise:
+        """Return the exercise a station or a stretch names by id or by a name only one exercise has.
 
-        Otherwise raise `Invalid` with the 1-based `station` and the close matches (spec §3.5); its code is
-        `station_shared` or `station_unknown` and its field `stations.<index from 0>` (D65).
+        Otherwise raise `Invalid` with the 1-based `position` and the close matches (spec §3.5). For a station its
+        code is `station_shared` or `station_unknown`, its field `stations.<index from 0>` (D65) and its detail key
+        `station`; for a stretch `stretch_shared` or `stretch_unknown`, `cooldown.stretches.<index from 0>` and
+        `stretch` (cool-down spec §4.1).
         """
         by_id = self._by_id.get(ref) or self._get_custom(ref)
         if by_id is not None:
@@ -227,17 +239,18 @@ class Library:
                 for exercise in exercises
                 if exercise.name.casefold() == name
             ]
+        kind, path = _RESOLVE_PLACES[field]
         raise Invalid(
             {
                 "message": message,
-                "station": station,
+                kind: position,
                 "close_matches": [
                     {"id": exercise.id, "name": exercise.name}
                     for exercise in matches[:MAX_CLOSE_MATCHES]
                 ],
             },
-            code="station_shared" if named else "station_unknown",
-            field=f"stations.{station - 1}",
+            code=f"{kind}_shared" if named else f"{kind}_unknown",
+            field=f"{path}.{position - 1}",
         )
 
     def add_custom(self, new: NewCustomExercise, client: str) -> Exercise:

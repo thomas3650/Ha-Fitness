@@ -60,6 +60,7 @@ async def test_create_fills_defaults_and_returns_names(
         "round_rest_seconds": 60,
         "countdown_seconds": 5,
         "music": None,
+        "cooldown": None,
     }
     assert body["station_names"] == ["3/4 sit-up"]
     assert isinstance(body["id"], int)
@@ -617,3 +618,148 @@ async def test_update_with_missing_exercise_is_422(
     detail = response.json()["detail"]
     assert detail["station"] == 2
     assert "custom-1" in detail["message"]
+
+
+# Two stretches by name: one of body weight (0690), one with a rope (1378).
+STRETCHES = [
+    {"exercise": "seated lower back stretch"},
+    {"exercise": "calf stretch with rope"},
+]
+
+
+async def test_cooldown_round_trip(client: httpx.AsyncClient) -> None:
+    """A cool-down's stretches are stored as ids, named in `stretch_names`, and add their equipment."""
+    created = await _create(
+        client, stations=[{"exercise": "0285"}], cooldown={"stretches": STRETCHES}
+    )
+    fetched = await client.get(f"{PROGRAMS}/{created['id']}")
+    assert fetched.status_code == 200, fetched.text
+    body = fetched.json()
+    assert body["program"]["cooldown"] == {
+        "stretches": [{"exercise": "0690"}, {"exercise": "1378"}],
+        "hold_seconds": 30,
+        "change_seconds": 10,
+    }
+    assert body["stretch_names"] == [
+        "seated lower back stretch",
+        "calf stretch with rope",
+    ]
+    assert body["station_names"] == created["station_names"]
+    assert len(body["station_names"]) == 1
+    assert body["equipment"] == ["dumbbell", "rope"]
+
+
+async def test_cooldown_defaults(client: httpx.AsyncClient) -> None:
+    """A cool-down without times gets a 30-second hold and a 10-second change, as the defaults say."""
+    body = await _create(client, cooldown={"stretches": STRETCHES[:1]})
+    assert body["program"]["cooldown"]["hold_seconds"] == 30
+    assert body["program"]["cooldown"]["change_seconds"] == 10
+    defaults = (await client.get(f"{PROGRAMS}/defaults")).json()
+    assert defaults["cooldown_hold_seconds"] == 30
+    assert defaults["cooldown_change_seconds"] == 10
+
+
+@pytest.mark.parametrize(
+    ("fields", "status"),
+    [
+        ({"hold_seconds": 9}, 422),
+        ({"hold_seconds": 121}, 422),
+        ({"change_seconds": -1}, 422),
+        ({"change_seconds": 61}, 422),
+        ({"stretches": [{"exercise": "0690"}] * 11}, 422),
+        ({"change_seconds": 0}, 201),
+        ({"change_seconds": 60}, 201),
+        ({"hold_seconds": 10}, 201),
+        ({"hold_seconds": 120}, 201),
+        ({"stretches": [{"exercise": "0690"}] * 10}, 201),
+    ],
+)
+async def test_cooldown_ranges(
+    client: httpx.AsyncClient, fields: dict[str, Any], status: int
+) -> None:
+    """Every range edge of the cool-down (spec §4.1)."""
+    cooldown = {"stretches": [{"exercise": "0690"}], **fields}
+    response = await client.post(PROGRAMS, json=_program(cooldown=cooldown))
+    assert response.status_code == status, response.text
+    if status == 201:
+        stored = response.json()["program"]["cooldown"]
+        for field, value in fields.items():
+            assert stored[field] == value
+
+
+async def test_cooldown_unknown_stretch(client: httpx.AsyncClient) -> None:
+    """An unknown or shared stretch name is refused at its stretch, with the stretch's own codes."""
+    unknown = await client.post(
+        PROGRAMS,
+        json=_program(
+            cooldown={"stretches": [{"exercise": "0690"}, {"exercise": "no such"}]}
+        ),
+    )
+    assert unknown.status_code == 422, unknown.text
+    body = unknown.json()
+    assert body["code"] == "stretch_unknown"
+    assert body["field"] == "cooldown.stretches.1"
+    assert body["detail"]["stretch"] == 2
+    assert "station" not in body["detail"]
+    assert isinstance(body["detail"]["close_matches"], list)
+
+    shared = await client.post(
+        PROGRAMS,
+        json=_program(cooldown={"stretches": [{"exercise": "lever chest press"}]}),
+    )
+    assert shared.status_code == 422, shared.text
+    body = shared.json()
+    assert body["code"] == "stretch_shared"
+    assert body["field"] == "cooldown.stretches.0"
+    assert body["detail"]["stretch"] == 1
+    assert (await client.get(PROGRAMS)).json() == []
+
+
+@pytest.mark.parametrize("fields", [{"cooldown": None}, {}])
+async def test_cooldown_null_and_missing(
+    client: httpx.AsyncClient, fields: dict[str, Any]
+) -> None:
+    """A program with `cooldown: null` or none at all has no cool-down and no stretch names."""
+    created = await _create(client, **fields)
+    body = (await client.get(f"{PROGRAMS}/{created['id']}")).json()
+    assert body["program"]["cooldown"] is None
+    assert body["stretch_names"] == []
+
+
+async def test_cooldown_change_log_names_it(client: httpx.AsyncClient) -> None:
+    """An update that changes the cool-down names `cooldown` in its summary, without its value."""
+    created = await _create(client)
+    response = await client.put(
+        f"{PROGRAMS}/{created['id']}",
+        json=_program(cooldown={"stretches": STRETCHES}),
+    )
+    assert response.status_code == 200, response.text
+    summary = (await _changes(client))[-1]["summary"]
+    assert "cooldown" in summary
+    assert "{" not in summary
+
+
+async def test_lost_stretch_named_by_id(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    """A stretch whose exercise left the library is named by its id and adds no equipment, as a station is.
+
+    Deleting the custom exercise's row is setup only: no public interface removes a custom exercise yet.
+    """
+    added = await client.post(
+        "/api/v1/exercises",
+        json={"name": "Garden stretch", "steps": ["Reach."], "equipment": "sandbag"},
+    )
+    assert added.status_code == 201, added.text
+    stretch_id = added.json()["id"]
+    created = await _create(
+        client,
+        cooldown={"stretches": [{"exercise": "1378"}, {"exercise": stretch_id}]},
+    )
+    assert created["equipment"] == ["rope", "sandbag"]
+    with sqlite3.connect(tmp_path / "ha_fitness.db") as connection:
+        connection.execute("DELETE FROM custom_exercises")
+    connection.close()
+    body = (await client.get(f"{PROGRAMS}/{created['id']}")).json()
+    assert body["stretch_names"] == ["calf stretch with rope", stretch_id]
+    assert body["equipment"] == ["rope"]
