@@ -11,8 +11,8 @@ http://localhost:8765)
   exists, and finds their entity ids through the entity registry.
 - Sets them as the people on the server (`PUT /api/v1/people`) unless the server has exactly those people already.
 - Creates the program "Sample" (Wednesday, 5 body-weight stations, a cool-down of 3 stretches, music on the fake
-  Music Assistant's living-room player) unless a program of that name exists. A Sample without music gets Sample's music, with the rest of its
-  document kept.
+  Music Assistant's living-room player) unless a program of that name exists. A Sample without music gets Sample's
+  music, with the rest of its document kept.
 
 A second run changes nothing.
 

@@ -47,11 +47,11 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
 5. Check: `curl -s http://localhost:8765/api/v1/health` gives the health JSON,
    `http://localhost:8123/ha_fitness_frontend/ha-fitness-cards.js` answers 200, and
    `curl -s http://localhost:8765/api/v1/people` has a list in `ha_persons`, not `null`.
-6. For dev data: `scripts/seed`. It creates the HA persons "Thomas" and "Elin", sets them as the people, and creates
-   the program "Sample" (Wednesday, 5 body-weight stations, a cool-down of 3 stretches). A second run changes
-   nothing. It refuses any host but `localhost` or `127.0.0.1`, so it never touches a real HA or add-on. Use the wrapper: run directly,
-   `scripts/seed.py` fails on its import. Three flags make a training day on purpose, through the dev routes; "today"
-   is the date in Europe/Copenhagen. Each refuses, before any change, when the server has no dev routes.
+6. For dev data: `scripts/seed`. It creates the HA persons "Thomas" and "Elin", sets them as the people, and creates the
+   program "Sample" (Wednesday, 5 body-weight stations, a cool-down of 3 stretches). A second run changes nothing. It
+   refuses any host but `localhost` or `127.0.0.1`, so it never touches a real HA or add-on. Use the wrapper: run
+   directly, `scripts/seed.py` fails on its import. Three flags make a training day on purpose, through the dev routes;
+   "today" is the date in Europe/Copenhagen. Each refuses, before any change, when the server has no dev routes.
    - `scripts/seed --today` makes Sample due today: it adds today's weekday to Sample, switches Sample on when it is
      off, and opens (or reopens, after a skip) its day for today.
    - `scripts/seed --late` makes Sample late, with yesterday's day open. It removes every training day of today, other
@@ -252,9 +252,10 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
    the session row ("I gang · runde …" and Fortsæt) while the session runs. `dev_onboard.py` saves the dashboard only
    while it has none, so a dev HA onboarded before the Workout view existed lacks it: delete the `ha-fitness-dev`
    dashboard (Settings → Dashboards) and run `dev_onboard.py` again.
-10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the beeps at
-    5, 4, 3, 2 and 1 s line up with the numbers, that a long (1 s) beep sounds at every exercise start, also right
-    after the countdown, and that the change tones and the chime at the end come.
+10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the 5
+    beeps before each end, at 5, 4, 3, 2 and 1 s, line up with the numbers. A long beep of 1.5 s sounds at the start
+    of every work, also right after the countdown, and at its end. There is no low change tone. The last work ends
+    with the beeps and then the chime.
 11. **Music, with the fake Music Assistant** (music spec §8). `scripts/seed` gives Sample the playlist "Workout Mix" on
     the living-room speaker. Start Sample as in step 1.
     - **Details:** the row "Musik" with "Workout Mix", and the "Højttaler" dropdown with the fake's three speakers,

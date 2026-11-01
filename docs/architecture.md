@@ -148,8 +148,9 @@ page showed.
 
 - **Programs:** list, create, edit and delete a program. `GET /api/v1/programs/defaults` gives what a field gets when
   left out. A program may carry a `cooldown` (1–10 stretches, `hold_seconds`, `change_seconds`; `null` for none). The
-  program's output has `stretch_names` next to `station_names`, which stays the stations only. `PUT /api/v1/programs/{id}?if_updated_at=<URL-encoded time>` is opt-in: with it, a program changed since
-  that `updated_at` is refused with `changed_elsewhere`; without it, the write goes through as before.
+  program's output has `stretch_names` next to `station_names`, which stays the stations only.
+  `PUT /api/v1/programs/{id}?if_updated_at=<URL-encoded time>` is opt-in: with it, a program changed since that
+  `updated_at` is refused with `changed_elsewhere`; without it, the write goes through as before.
   `ProgramOut.created_by` is `claude` for a program made over MCP, `you` for any other client, and null for a program
   from before the field. It is also in MCP's program outputs.
 - **Library:** `GET /api/v1/exercises/all` gives a summary of every exercise, library and custom, in one call, so the
@@ -164,10 +165,11 @@ page showed.
 
 A REST refusal is `{detail, code, field}` (D65), for not found (404), conflict (409), invalid (422) and unavailable
 (503). `field` is null when no field is meant. The codes: `name_taken`, `session_running`, `weekday_needed`,
-`station_unknown`, `station_shared`, `stretch_unknown`, `stretch_shared`, `too_many_people`, `person_twice`, `person_unknown`, `ha_unavailable`,
-`changed_elsewhere` and `equipment_unknown`. The session routes keep `{detail: {code, message}}`, because the
-integration reads their codes. FastAPI's own validation 422 keeps its list; the weekday rule's item has `loc`
-`body.weekdays` and `type` `weekday_needed`.
+`station_unknown`, `station_shared`, `stretch_unknown`, `stretch_shared`, `too_many_people`, `person_twice`,
+`person_unknown`, `ha_unavailable`, `changed_elsewhere` and `equipment_unknown`. The session routes keep
+`{detail: {code, message}}`, because the integration reads their codes. FastAPI's own validation 422 keeps its list;
+the weekday rule's item has `loc` `body.weekdays` and `type` `weekday_needed`. An empty cool-down's item has `loc`
+`body.cooldown.stretches` and `type` `invalid`.
 
 ### Routing in the add-on server
 
@@ -283,18 +285,18 @@ The integration relays it.
 - **The websocket commands.** None needs an admin, because the tablet's user isn't one.
   - `ha_fitness/session/subscribe` sends `{available, session, music}` at once and after each change. The relay is
     described below; `music` is [described below](#music-in-the-integration).
-  - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end`,
-    `skip_cooldown` or `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id`, an optional `date`
-    and an optional `speaker` (checked with the add-on's pattern; dropped while the add-on has no music). For
-    `feeling` it takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's
-    view. Its error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
-    `invalid` before any relay, and so is a `date` while the add-on's last today data has no `upcoming` (key
-    `session_early_unsupported`; the service raises a validation error with that key). A field of the wrong type fails
-    HA's own schema, as `invalid_format`.
+  - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end`, `skip_cooldown`
+    or `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id`, an optional `date`
+    and an optional `speaker` (checked with the add-on's pattern; dropped while the add-on has no music). For `feeling`
+    it takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's view. Its error
+    codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is `invalid` before
+    any relay, and so is a `date` while the add-on's last today data has no `upcoming` (key `session_early_unsupported`;
+    the service raises a validation error with that key). A field of the wrong type fails HA's own schema, as
+    `invalid_format`.
   - `ha_fitness/programs` gives the active programs, in the add-on's order, in the shape of workout spec §4. It is
     built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up. It also relays `total_seconds`,
-    `cooldown` (null without one, and for an older add-on: the stretches with their ids and names, `hold_seconds` and
-    `change_seconds`), `equipment` (left out when an older add-on doesn't send it) and `music` (null for an
+    `cooldown` (`{stretches: [{exercise_id, name}], hold_seconds, change_seconds}`, or null without one and for an
+    older add-on), `equipment` (left out when an older add-on doesn't send it) and `music` (null for an
     [older add-on](#music-in-the-integration)).
   - `ha_fitness/people` gives `[{id, name}]` from `GET /api/v1/people`.
   - `ha_fitness/speakers` gives `{speakers: [{entity_id, name, available}]}`, sorted by name. It reads HA only, so it
@@ -460,13 +462,13 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
   A restart never skips phases or completes a workout nobody did.
 - **The pause limit.** A session paused for 30 minutes is ended, at `paused_at + 30 min`, with the client `addon`.
   After a crash that was down longer than that, it is ended at the start. The usual counting rules apply.
-- **Finishing.** The tick passing the last work phase, or `next` on it, completes the session. So does
-  `skip_cooldown`, now: it is allowed (running or paused) in the cool-down and in the rest right before it, else 409
-  `conflict`, and the skipped stretches add no time. A session counts by its circuit rounds; the cool-down adds the
-  time spent in it. `end` or the pause
-  limit ends it early; it counts when at least one full round is behind it. A counted session with a training day
-  closes the day as done (done late when the day's date is before the local date of `started_at`). The first counted
-  session sets `counting_from`. Each finished session keeps one row per participant, with the name and no foreign key.
+- **Finishing.** The tick passing the last work phase, or `next` on it, completes the session. So does `skip_cooldown`,
+  now: it is allowed (running or paused) in the cool-down and in the rest right before it, else 409 `conflict`, and the
+  skipped stretches add no time. A session counts by its circuit rounds; the cool-down adds the time spent in it. `end`
+  or the pause limit ends it early; it counts when at least one full round is behind it. A counted session with a
+  training day closes the day as done (done late when the day's date is before the local date of `started_at`). The
+  first counted session sets `counting_from`. Each finished session keeps one row per participant, with the name and no
+  foreign key.
 - **The day under a session** (D42). Reconcile leaves an open day alone while a session for it is running or paused.
   Skipping that day gives a 409. Switching off or deleting the program of a running or paused session gives a 409 with
   "A session for this program is running"; this holds for extra sessions too.
@@ -496,10 +498,10 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
   parse (a missing field, an extra key, a participant that isn't a number) gets FastAPI's own 422 list. So does a
   feeling body that isn't `{"feeling": <text>}`.
 - **The view** (`SessionView` in `schemas.py`) has the phase with `ends_at` (UTC with milliseconds, null while paused)
-  or `remaining` (while paused), the next phase, each participant's current and next station, `totals`
-  (`planned`, `rounds`, `stations`, `stretches`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
-  `server_time`. `phase`, `next_phase` and `StationRef` carry `part` (`circuit` or `cooldown`, D72); in the cool-down the
-  stations are the stretches. A finished view has no phase, next phase or stations. `music` is the plan's
+  or `remaining` (while paused), the next phase, each participant's current and next station, `totals` (`planned`,
+  `rounds`, `stations`, `stretches`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
+  `server_time`. `phase`, `next_phase` and `StationRef` carry `part` (`circuit` or `cooldown`, D72); in the cool-down
+  the stations are the stretches. A finished view has no phase, next phase or stations. `music` is the plan's
   `{playlist, playlist_name, speaker, volume, shuffle}`, frozen at the start, or null for a program without music;
   history keeps it.
 - **The feeling** is stored on the session (a nullable column) and shown in the view, in `GET /api/v1/sessions` and in
