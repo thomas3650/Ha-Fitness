@@ -2,7 +2,7 @@ import { type TemplateResult, css, html, nothing } from "lit";
 
 import type { Vars } from "../i18n";
 import type { ImageKind } from "../images";
-import type { PhaseKind } from "../overlay";
+import type { Part, PhaseKind } from "../overlay";
 
 /** The ring's colours: orange for work, blue for the rest (design §3.4). Never used for text. */
 export const RING_COLORS: Record<PhaseKind, string> = {
@@ -49,6 +49,8 @@ export interface SoundButton {
 export interface Countdown {
   /** The phase kind whose word shows: the next one at local zero. */
   kind: PhaseKind;
+  /** The part of the phase shown: in the cool-down a work is a hold and a switch a change. */
+  part: Part;
   /** The length of the phase shown, in seconds. */
   duration: number;
   /** The seconds left, rounded up. */

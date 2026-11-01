@@ -602,7 +602,7 @@ test("last work phase ends with the chime", async () => {
   // The circuit's last work, with no cool-down after it: five beeps and no long beep.
   const flow = await mount(
     fakeHass(),
-    view({ phase: { ...phase({ index: 9, round: 5, interval: 3 }), part: "circuit" } as SessionPhase, next_phase: null }),
+    view({ phase: phase({ index: 9, round: 5, interval: 3, part: "circuit" }), next_phase: null }),
   );
   expect(live()).toEqual(beeps(40, 41, 42, 43, 44));
   await wait(flow, 45_000);
@@ -619,7 +619,7 @@ test("last work phase ends with the chime", async () => {
     fakeHass(),
     view({
       id: 8,
-      phase: { ...phase({ index: 20, round: 1, interval: 4, duration: 30, ends_at: at(30) }), part: "cooldown" } as SessionPhase,
+      phase: phase({ index: 20, round: 1, interval: 4, duration: 30, ends_at: at(30), part: "cooldown" }),
       next_phase: null,
     }),
   );
@@ -635,8 +635,8 @@ test("cool-down stretches: the long beep at both ends of each hold", async () =>
   await mount(
     fakeHass(),
     view({
-      phase: { ...phase({ index: 20, round: 1, interval: 2, duration: 30, ends_at: at(30) }), part: "cooldown" } as SessionPhase,
-      next_phase: { kind: "switch", duration: 5, part: "cooldown" } as SessionView["next_phase"],
+      phase: phase({ index: 20, round: 1, interval: 2, duration: 30, ends_at: at(30), part: "cooldown" }),
+      next_phase: { kind: "switch", duration: 5, part: "cooldown" },
     }),
   );
   expect(live()).toEqual([...beeps(25, 26, 27, 28, 29), { kind: "work", start: 30 }]);

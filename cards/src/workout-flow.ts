@@ -21,7 +21,7 @@ import {
 import { type DoneContext, type Streak, doneStyles, renderDone } from "./flow/done";
 import { type ReadyContext, readyStyles, renderReady } from "./flow/ready";
 import { type Countdown, type ImageOf, type ReachNote, type SoundButton, renderBack, sharedStyles } from "./flow/shared";
-import { type TimerContext, renderTimer, timerStyles } from "./flow/timer";
+import { type TimerContext, canSkipCooldown, renderTimer, timerStyles } from "./flow/timer";
 import { type Vars, localize } from "./i18n";
 import { type ImageHass, type ImageKind, imageUrl } from "./images";
 import { type LanguageHass, cardLanguage } from "./language";
@@ -44,7 +44,7 @@ interface Hass extends LanguageHass, ImageHass {
   connection?: Connection;
 }
 
-type Command = "pause" | "resume" | "next" | "previous" | "end";
+type Command = "pause" | "resume" | "next" | "previous" | "end" | "skip_cooldown";
 type MusicAction = "pause" | "play" | "next";
 type Step = "details" | "ready" | "timer" | "done";
 
@@ -59,9 +59,9 @@ const IDLE_MS = 60_000;
 const TICK_MS = 250;
 /** Luk shows after this long unreachable, so a touch-only kiosk is never trapped (spec §5.3). */
 const UNREACHABLE_MS = 10_000;
-/** Slut's Ja ignores taps until it has shown this long, so a wake tap can't end a workout. */
+/** A question's Ja ignores taps until it has shown this long, so a wake tap can't end a workout. */
 const ARM_MS = 500;
-/** An unanswered "Afslut træningen?" goes after this long. */
+/** An unanswered "Afslut træningen?" or "Spring udstrækningen over?" goes after this long. */
 const CONFIRM_MS = 10_000;
 /** The done step closes by itself after this long. */
 const DONE_MS = 60_000;
@@ -76,8 +76,9 @@ const QUIET_MS = 300;
 /** No beep falls this soon after a phase that starts with the long beep: the 1.5 s beep plus a margin. */
 const LONG_BEEP_QUIET_MS = 1600;
 
-/** Slut's question. */
-interface EndQuestion {
+/** Slut's question, or Skip cool-down's; one at a time. */
+interface Question {
+  kind: "end" | "skip";
   armed: boolean;
   timers: ReturnType<typeof setTimeout>[];
 }
@@ -176,7 +177,7 @@ export class WorkoutFlow extends LitElement {
   /** When the flow last heard the add-on was unreachable (`Date.now()`), while it still is. */
   private unreachableSince?: number;
   private unreachableTimer?: ReturnType<typeof setTimeout>;
-  private endQuestion?: EndQuestion;
+  private question?: Question;
   /** The session whose done step the 60 s close is armed for. */
   private doneFor?: number;
   private doneTimer?: ReturnType<typeof setTimeout>;
@@ -265,7 +266,8 @@ export class WorkoutFlow extends LitElement {
     if (counting && this.newest?.status === "running") this.startTick();
     else this.stopTick();
     this.plan(counting);
-    if (step !== "timer") this.endAsk(false);
+    // A question goes with the timer; Skip cool-down's also once the session is out of its reach.
+    if (step !== "timer" || (this.question?.kind === "skip" && !canSkipCooldown(this.newest))) this.endAsk(false);
     if (this.hass && (step === "ready" || step === "timer")) this.loadStationImages(this.hass, this.newest!);
     // Get ready's cards show the start stations' thumbnails.
     if (this.hass && step === "ready") {
@@ -398,6 +400,7 @@ export class WorkoutFlow extends LitElement {
         const max = Math.min(2, program?.stations.length ?? 0);
         this.selected = new Set(people.slice(0, max).map((person) => person.id));
         for (const station of program?.stations ?? []) this.loadThumbnail(hass, station.exercise_id);
+        for (const stretch of program?.cooldown?.stretches ?? []) this.loadThumbnail(hass, stretch.exercise_id);
       },
       () => {
         if (this.mode !== mode) return;
@@ -687,18 +690,26 @@ export class WorkoutFlow extends LitElement {
    */
   private countdown(view: SessionView): Countdown {
     const phase = view.phase;
-    if (!phase) return { kind: "work", duration: 0, seconds: 0, fraction: 0, ahead: false };
+    if (!phase) return { kind: "work", part: "circuit", duration: 0, seconds: 0, fraction: 0, ahead: false };
     const leftMs =
       phase.ends_at === null
         ? (phase.remaining ?? phase.duration) * 1000
         : Date.parse(phase.ends_at) - this.now();
     const next = view.next_phase;
     if (leftMs <= 0 && view.status === "running" && next && this.reachable()) {
-      return { kind: next.kind, duration: next.duration, seconds: next.duration, fraction: 1, ahead: true };
+      return {
+        kind: next.kind,
+        part: next.part ?? "circuit",
+        duration: next.duration,
+        seconds: next.duration,
+        fraction: 1,
+        ahead: true,
+      };
     }
     const left = Math.max(0, leftMs);
     return {
       kind: phase.kind,
+      part: phase.part ?? "circuit",
       duration: phase.duration,
       seconds: Math.ceil(left / 1000),
       fraction: phase.duration > 0 ? left / (phase.duration * 1000) : 0,
@@ -812,33 +823,38 @@ export class WorkoutFlow extends LitElement {
     return { shown: audioSupported() && audioLocked(), onTap: () => this.tapForSound() };
   }
 
-  /** Slut's first tap asks; Ja counts only after 0.5 s, and the question goes after 10 s. */
-  private askEnd(): void {
+  /**
+   * Slut's or Skip cool-down's first tap asks; Ja counts only after 0.5 s, and the question goes
+   * after 10 s. Asking one drops the other.
+   */
+  private ask(kind: Question["kind"]): void {
     this.endAsk(false);
-    const question: EndQuestion = { armed: false, timers: [] };
+    const question: Question = { kind, armed: false, timers: [] };
     question.timers.push(
       setTimeout(() => {
         question.armed = true;
       }, ARM_MS),
       setTimeout(() => this.endAsk(), CONFIRM_MS),
     );
-    this.endQuestion = question;
+    this.question = question;
     this.requestUpdate();
   }
 
-  /** Drop Slut's question; `redraw` false when called from an update. */
+  /** Drop the open question; `redraw` false when called from an update. */
   private endAsk(redraw = true): void {
-    const question = this.endQuestion;
+    const question = this.question;
     if (!question) return;
     question.timers.forEach(clearTimeout);
-    this.endQuestion = undefined;
+    this.question = undefined;
     if (redraw) this.requestUpdate();
   }
 
-  private confirmEnd(): void {
-    if (!this.endQuestion?.armed) return;
+  /** The question's Ja, once armed: Slut's ends the workout, Skip cool-down's finishes it now. */
+  private confirm(): void {
+    const question = this.question;
+    if (!question?.armed) return;
     this.endAsk();
-    void this.command("end");
+    void this.command(question.kind === "end" ? "end" : "skip_cooldown");
   }
 
   /** The unreachable note, and Luk once it has lasted 10 s. */
@@ -905,7 +921,7 @@ export class WorkoutFlow extends LitElement {
       sound: this.sound(),
       error: this.error,
       music: this.state?.music ?? null,
-      asking: this.endQuestion !== undefined,
+      asking: this.question?.kind,
       // The ring is a pointer shortcut: a tap pauses while running and resumes while paused.
       onRingTap: () => {
         const status = this.newest?.status;
@@ -916,8 +932,9 @@ export class WorkoutFlow extends LitElement {
       onPause: () => void this.command("pause"),
       onResume: () => void this.command("resume"),
       onNext: () => void this.command("next"),
-      onAskEnd: () => this.askEnd(),
-      onConfirmEnd: () => this.confirmEnd(),
+      onAskEnd: () => this.ask("end"),
+      onAskSkip: () => this.ask("skip"),
+      onConfirm: () => this.confirm(),
       onKeepGoing: () => this.endAsk(),
       onMusicToggle: () => void this.music(this.state?.music?.state === "playing" ? "pause" : "play"),
       onMusicNext: () => void this.music("next"),

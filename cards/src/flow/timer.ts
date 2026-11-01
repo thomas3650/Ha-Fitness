@@ -1,7 +1,7 @@
 import { type TemplateResult, css, html, nothing, unsafeCSS } from "lit";
 
 import { iconButton } from "../icon-button";
-import type { MusicState, SessionStation, SessionView } from "../overlay";
+import type { MusicState, Part, PhaseKind, SessionStation, SessionView } from "../overlay";
 import { personTextColor } from "../people";
 import { ring } from "../ring";
 import {
@@ -37,8 +37,8 @@ export interface TimerContext {
   error: string | undefined;
   /** The session's music; null without, and then no player shows. */
   music: MusicState | null;
-  /** Slut's question shows. */
-  asking: boolean;
+  /** The question that shows: Slut's, Skip cool-down's, or none. */
+  asking: "end" | "skip" | undefined;
   onRingTap: () => void;
   onPrevious: () => void;
   onPause: () => void;
@@ -46,8 +46,10 @@ export interface TimerContext {
   onNext: () => void;
   /** Slut's first tap. */
   onAskEnd: () => void;
+  /** Skip cool-down's first tap. */
+  onAskSkip: () => void;
   /** The question's Ja. */
-  onConfirmEnd: () => void;
+  onConfirm: () => void;
   /** The question's Nej. */
   onKeepGoing: () => void;
   /** The player's Pause music or Play music. */
@@ -56,13 +58,46 @@ export interface TimerContext {
   onMusicNext: () => void;
 }
 
+/** Whether a part is the cool-down; a missing part (an older add-on) is the circuit. */
+function inCooldown(part: Part | undefined): boolean {
+  return part === "cooldown";
+}
+
+/**
+ * Skip cool-down applies in the cool-down and in the rest right before it (cool-down spec §4.5):
+ * that rest is the one whose next phase is in the cool-down.
+ */
+export function canSkipCooldown(view: SessionView | undefined): boolean {
+  const phase = view?.phase;
+  if (!view || !phase || (view.status !== "running" && view.status !== "paused")) return false;
+  return inCooldown(phase.part) || (phase.kind === "rest" && inCooldown(view.next_phase?.part));
+}
+
+/** The ring's word key: in the cool-down a work phase is a hold (STRETCH) and a switch a change (CHANGE). */
+function phaseWord(kind: PhaseKind, part: Part): string {
+  if (inCooldown(part) && kind === "work") return "flow.phase.stretch";
+  if (inCooldown(part) && kind === "switch") return "flow.phase.change";
+  return `flow.phase.${kind}`;
+}
+
+/**
+ * The line above a moving person's exercise, or undefined during work and a hold: "COOL-DOWN NEXT"
+ * in the rest before the cool-down, "NEXT STRETCH" in a change, else "GO TO THE NEXT STATION".
+ */
+function moveText(view: SessionView, current: SessionStation): string | undefined {
+  const phase = view.phase!;
+  if (phase.kind === "work") return undefined;
+  if (!inCooldown(current.part)) return "flow.go_to_next";
+  return inCooldown(phase.part) ? "flow.next_stretch" : "flow.cooldown_next";
+}
+
 export function renderTimer(ctx: TimerContext): TemplateResult {
   const { t, view, countdown } = ctx;
   const phase = view.phase!;
   const paused = view.status === "paused";
   // Paused, the ring keeps the phase word; the pill and the caption say it is paused, and the
   // colours turn blue (rest), so a paused work phase no longer looks like work.
-  const word = t(`flow.phase.${countdown.kind}`);
+  const word = t(phaseWord(countdown.kind, countdown.part));
   const tint = paused ? "rest" : countdown.kind;
   const theRing = ring({
     label: word,
@@ -77,7 +112,9 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
   });
   const stations = view.stations ?? [];
   const one = stations.length === 1;
-  const centre = renderCentre(ctx, theRing, phase.round, phase.interval, one);
+  const centre = inCooldown(phase.part)
+    ? renderCooldownCentre(ctx, theRing, phase.interval)
+    : renderCentre(ctx, theRing, phase.round, phase.interval, one);
   return html`
     ${renderHeader(ctx)}
     ${renderReach(t, ctx.reach)} ${renderSound(t, ctx.sound)}
@@ -142,6 +179,14 @@ function renderCentre(ctx: TimerContext, theRing: TemplateResult, round: number,
   `;
 }
 
+/** The ring's column in the cool-down: the "Cool-down n / N" pill above the ring, nothing below. */
+function renderCooldownCentre(ctx: TimerContext, theRing: TemplateResult, stretch: number) {
+  const { t, view } = ctx;
+  return html`
+    <div class="timer-centre">${renderPill(t("flow.cooldown_label"), stretch, view.totals.stretches)} ${theRing}</div>
+  `;
+}
+
 /**
  * The top row: the music player on the left, PAUSET while paused, and on the right the elapsed
  * time against the planned, and Slut with its question.
@@ -155,25 +200,31 @@ function renderHeader(ctx: TimerContext) {
       <span class="elapsed"
         ><strong>${clock(ctx.elapsed)}</strong> <span class="planned">/ ${clock(view.totals.planned)}</span></span
       >
-      <span class="end">
-        ${
-          ctx.asking
-            ? html`
-                <span class="question">${t("flow.end_confirm")}</span>
-                <button @click=${() => ctx.onConfirmEnd()}>
-                  ${t("flow.yes")}
-                </button>
-                <button class="slot" @click=${() => ctx.onKeepGoing()}>
-                  ${t("flow.no")}
-                </button>
-              `
-            : html`<button class="slot soft" @click=${() => ctx.onAskEnd()}>
-                ${t("flow.end")}
-              </button>`
-        }
-      </span>
+      ${
+        canSkipCooldown(view)
+          ? html`<span class="end">
+              ${renderAsk(ctx, ctx.asking === "skip", "flow.skip_cooldown_confirm", "flow.skip_cooldown", ctx.onAskSkip)}
+            </span>`
+          : nothing
+      }
+      <span class="end">${renderAsk(ctx, ctx.asking === "end", "flow.end_confirm", "flow.end", ctx.onAskEnd)}</span>
     </header>
   `;
+}
+
+/**
+ * A button that asks first (Slut, Skip cool-down): the button, or while its question shows the
+ * question with Ja and Nej. The other button keeps showing, so a tap on it swaps the question.
+ */
+function renderAsk(ctx: TimerContext, asking: boolean, question: string, label: string, onAsk: () => void) {
+  const { t } = ctx;
+  return asking
+    ? html`
+        <span class="question">${t(question)}</span>
+        <button @click=${() => ctx.onConfirm()}>${t("flow.yes")}</button>
+        <button class="slot" @click=${() => ctx.onKeepGoing()}>${t("flow.no")}</button>
+      `
+    : html`<button class="slot soft" @click=${() => onAsk()}>${t(label)}</button>`;
 }
 
 /**
@@ -234,36 +285,42 @@ function renderSolo(ctx: TimerContext, centre: TemplateResult) {
   const station = view.stations![0];
   const person = view.participants[0];
   const moving = view.phase!.kind !== "work";
+  const move = moveText(view, station.current);
   return html`
     <div class="timer-solo">
       <section class="timer-now" aria-label=${person?.name ?? ""}>
         <span
           class="timer-move"
-          style=${moving ? "" : "visibility: hidden"}
-          aria-hidden=${moving ? "false" : "true"}
-          >${moving ? t("flow.go_to_next") : "\u00a0"}</span
+          style=${move ? "" : "visibility: hidden"}
+          aria-hidden=${move ? "false" : "true"}
+          >${move ? t(move) : "\u00a0"}</span
         >
         ${renderImage(ctx.imageOf, station.current, "gif", "gif")}
         <span class="exercise">${station.current.name}</span>
       </section>
       ${centre}
-      ${station.next ? renderNext(ctx, station.next, moving) : nothing}
+      ${station.next ? renderNext(ctx, station.current, station.next, moving) : nothing}
     </div>
   `;
 }
 
-/** The NÆSTE (or DEREFTER) card: the next station's picture, its name, and what comes before it. */
-function renderNext(ctx: TimerContext, next: SessionStation, moving: boolean) {
+/**
+ * The NÆSTE (or DEREFTER) card: the next station's picture, its name, and what comes before it.
+ * During the circuit's last work it shows the first stretch, titled UDSTRÆKNING.
+ */
+function renderNext(ctx: TimerContext, current: SessionStation, next: SessionStation, moving: boolean) {
   const { t, view } = ctx;
-  const label = t(moving ? "flow.then_card" : "flow.next_card");
+  const toCooldown = !moving && inCooldown(next.part) && !inCooldown(current.part);
+  const label = t(moving ? "flow.then_card" : toCooldown ? "flow.cooldown_card" : "flow.next_card");
   const after = view.next_phase;
   // During work a 0 s switch makes the next phase work: "derefter". During a switch or a rest the
-  // next phase is the coming work, so its length shows.
+  // next phase is the coming work, so its length shows. In the cool-down a work is a hold and a
+  // switch a change.
   const subtitle = !after
     ? undefined
     : !moving && after.kind === "work"
       ? t("flow.after.none")
-      : t(`flow.after.${after.kind}`, { seconds: after.duration });
+      : t(`flow.after.${phaseAfter(after.kind, after.part ?? "circuit")}`, { seconds: after.duration });
   return html`
     <section class="timer-next card" aria-label=${label}>
       <span class="label">${label}</span>
@@ -272,6 +329,19 @@ function renderNext(ctx: TimerContext, next: SessionStation, moving: boolean) {
       ${subtitle ? html`<span class="after">${subtitle}</span>` : nothing}
     </section>
   `;
+}
+
+/** The subtitle's key under `flow.after`: the phase kind, or in the cool-down `stretch` and `change`. */
+function phaseAfter(kind: PhaseKind, part: Part): string {
+  if (inCooldown(part) && kind === "work") return "stretch";
+  if (inCooldown(part) && kind === "switch") return "change";
+  return kind;
+}
+
+/** A two-person card's next line: the next station, the cool-down's first stretch, or the next stretch. */
+function nextLine(t: Translate, current: SessionStation, next: SessionStation): string {
+  if (!inCooldown(next.part)) return t("flow.next_station", { number: next.number, exercise: next.name });
+  return t(inCooldown(current.part) ? "flow.next_stretch_line" : "flow.next_cooldown", { exercise: next.name });
 }
 
 /**
@@ -284,6 +354,9 @@ function renderCard(ctx: TimerContext, index: number) {
   const person = view.participants[index];
   const station = view.stations?.[index];
   if (!person || !station) return nothing;
+  const stretch = inCooldown(station.current.part);
+  // The circuit's cards show no move line; the cool-down's say what comes (cool-down spec §4.7).
+  const move = stretch ? moveText(view, station.current) : undefined;
   return html`
     <section
       class="duo-card card"
@@ -293,19 +366,18 @@ function renderCard(ctx: TimerContext, index: number) {
       <div class="duo-who">
         <span class="duo-number">${index + 1}</span>
         <span class="duo-name">${person.name}</span>
-        <span class="duo-station"
-          >${t("flow.station_label")} <strong>${station.current.number}</strong></span
-        >
+        ${
+          stretch
+            ? nothing
+            : html`<span class="duo-station"
+                >${t("flow.station_label")} <strong>${station.current.number}</strong></span
+              >`
+        }
       </div>
+      ${move ? html`<span class="timer-move">${t(move)}</span>` : nothing}
       ${renderImage(ctx.imageOf, station.current, "gif", "gif")}
       <span class="duo-exercise">${station.current.name}</span>
-      ${
-        station.next
-          ? html`<span class="duo-next">
-              ${t("flow.next_station", { number: station.next.number, exercise: station.next.name })}
-            </span>`
-          : nothing
-      }
+      ${station.next ? html`<span class="duo-next">${nextLine(t, station.current, station.next)}</span>` : nothing}
     </section>
   `;
 }

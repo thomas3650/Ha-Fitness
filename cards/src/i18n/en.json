@@ -126,7 +126,9 @@
       "countdown": "GET READY",
       "work": "WORK",
       "switch": "SWITCH",
-      "rest": "REST"
+      "rest": "REST",
+      "stretch": "STRETCH",
+      "change": "CHANGE"
     },
     "done": {
       "complete": "Workout complete",
@@ -176,7 +178,9 @@
       "work": "after {seconds} s work",
       "switch": "after {seconds} s switch",
       "rest": "after {seconds} s rest",
-      "none": "next up"
+      "none": "next up",
+      "stretch": "after {seconds} s stretch",
+      "change": "after {seconds} s change"
     },
     "error": {
       "already_running": "A workout is already running.",
@@ -192,7 +196,16 @@
     "music_unavailable": "Music unavailable",
     "music_pause": "Pause music",
     "music_play": "Play music",
-    "music_next": "Next track"
+    "music_next": "Next track",
+    "cooldown_label": "Cool-down",
+    "cooldown_line": "Cool-down · {hold} s stretch / {change} s change",
+    "cooldown_next": "COOL-DOWN NEXT",
+    "next_stretch": "NEXT STRETCH",
+    "cooldown_card": "COOL-DOWN",
+    "next_cooldown": "Next: cool-down · {exercise}",
+    "next_stretch_line": "Next: {exercise}",
+    "skip_cooldown": "Skip cool-down",
+    "skip_cooldown_confirm": "Skip the cool-down?"
   },
   "equipment": {
     "dumbbell": "dumbbell",

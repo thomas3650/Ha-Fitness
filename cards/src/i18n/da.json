@@ -126,7 +126,9 @@
       "countdown": "GØR KLAR",
       "work": "ARBEJD",
       "switch": "SKIFT",
-      "rest": "PAUSE"
+      "rest": "PAUSE",
+      "stretch": "STRÆK",
+      "change": "BYT"
     },
     "done": {
       "complete": "Træning gennemført",
@@ -176,7 +178,9 @@
       "work": "efter {seconds} s arbejde",
       "switch": "efter {seconds} s skift",
       "rest": "efter {seconds} s pause",
-      "none": "derefter"
+      "none": "derefter",
+      "stretch": "efter {seconds} s stræk",
+      "change": "efter {seconds} s skift"
     },
     "error": {
       "already_running": "En træning er allerede i gang.",
@@ -192,7 +196,16 @@
     "music_unavailable": "Musik utilgængelig",
     "music_pause": "Pause musik",
     "music_play": "Afspil musik",
-    "music_next": "Næste nummer"
+    "music_next": "Næste nummer",
+    "cooldown_label": "Udstrækning",
+    "cooldown_line": "Udstrækning · {hold} s stræk / {change} s skift",
+    "cooldown_next": "NU KOMMER UDSTRÆKNING",
+    "next_stretch": "NÆSTE STRÆK",
+    "cooldown_card": "UDSTRÆKNING",
+    "next_cooldown": "Næste: udstrækning · {exercise}",
+    "next_stretch_line": "Næste: {exercise}",
+    "skip_cooldown": "Spring udstrækning over",
+    "skip_cooldown_confirm": "Spring udstrækningen over?"
   },
   "equipment": {
     "dumbbell": "håndvægt",
