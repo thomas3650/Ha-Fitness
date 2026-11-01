@@ -147,7 +147,8 @@ icons and theme values are its own. Today it is for administrators only. Its pag
 page showed.
 
 - **Programs:** list, create, edit and delete a program. `GET /api/v1/programs/defaults` gives what a field gets when
-  left out. `PUT /api/v1/programs/{id}?if_updated_at=<URL-encoded time>` is opt-in: with it, a program changed since
+  left out. A program may carry a `cooldown` (1–10 stretches, `hold_seconds`, `change_seconds`; `null` for none). The
+  program's output has `stretch_names` next to `station_names`, which stays the stations only. `PUT /api/v1/programs/{id}?if_updated_at=<URL-encoded time>` is opt-in: with it, a program changed since
   that `updated_at` is refused with `changed_elsewhere`; without it, the write goes through as before.
   `ProgramOut.created_by` is `claude` for a program made over MCP, `you` for any other client, and null for a program
   from before the field. It is also in MCP's program outputs.
@@ -163,7 +164,7 @@ page showed.
 
 A REST refusal is `{detail, code, field}` (D65), for not found (404), conflict (409), invalid (422) and unavailable
 (503). `field` is null when no field is meant. The codes: `name_taken`, `session_running`, `weekday_needed`,
-`station_unknown`, `station_shared`, `too_many_people`, `person_twice`, `person_unknown`, `ha_unavailable`,
+`station_unknown`, `station_shared`, `stretch_unknown`, `stretch_shared`, `too_many_people`, `person_twice`, `person_unknown`, `ha_unavailable`,
 `changed_elsewhere` and `equipment_unknown`. The session routes keep `{detail: {code, message}}`, because the
 integration reads their codes. FastAPI's own validation 422 keeps its list; the weekday rule's item has `loc`
 `body.weekdays` and `type` `weekday_needed`.
@@ -282,8 +283,8 @@ The integration relays it.
 - **The websocket commands.** None needs an admin, because the tablet's user isn't one.
   - `ha_fitness/session/subscribe` sends `{available, session, music}` at once and after each change. The relay is
     described below; `music` is [described below](#music-in-the-integration).
-  - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end` or
-    `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id`, an optional `date`
+  - `ha_fitness/session/command` takes `command` (`start`, `pause`, `resume`, `next`, `previous`, `end`,
+    `skip_cooldown` or `feeling`), and for `start` also `program_id`, `participants`, an optional `training_day_id`, an optional `date`
     and an optional `speaker` (checked with the add-on's pattern; dropped while the add-on has no music). For
     `feeling` it takes a `feeling` field, which the integration passes on to the add-on. It returns the add-on's
     view. Its error codes are `not_found`, `conflict`, `invalid` and `unavailable`. A `start` without its arguments is
@@ -292,7 +293,8 @@ The integration relays it.
     HA's own schema, as `invalid_format`.
   - `ha_fitness/programs` gives the active programs, in the add-on's order, in the shape of workout spec §4. It is
     built from `GET /api/v1/programs`. `total_minutes` rounds a half minute up. It also relays `total_seconds`,
-    `equipment` (left out when an older add-on doesn't send it) and `music` (null for an
+    `cooldown` (null without one, and for an older add-on: the stretches with their ids and names, `hold_seconds` and
+    `change_seconds`), `equipment` (left out when an older add-on doesn't send it) and `music` (null for an
     [older add-on](#music-in-the-integration)).
   - `ha_fitness/people` gives `[{id, name}]` from `GET /api/v1/people`.
   - `ha_fitness/speakers` gives `{speakers: [{entity_id, name, available}]}`, sorted by name. It reads HA only, so it
@@ -438,9 +440,14 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 
 - **The plan.** A start freezes the plan: the program's name and timing, its stations with their names, the
   participants with their names, and the music with the start's speaker. A later program edit or a removed person
-  changes no running session and no history. The phases follow from the plan: countdown, then per round work and
-  switch per station, then rest. There is no switch after the last interval of the last round (D41), so the session
-  ends with the last work phase.
+  changes no running session and no history. The plan also holds the **timeline** (D71): every phase, built once at the
+  start by `timeline.py` and stored with the plan. The engine, the views, the totals and `rounds_completed` read it;
+  nothing rebuilds it from the plan's numbers. The builder walks the program: countdown, then per round work and a
+  switch between stations, a rest between rounds, and, with a cool-down, a rest after the last round and then the
+  stretches (a work phase each, a switch of the change time between them). There is no switch before a rest or after
+  the last interval (D70), so the session ends with the last work phase. Each phase has a `part`, `circuit` or
+  `cooldown`, and the plan keeps the stretches with their names. A migration gave the plans stored before the
+  timeline theirs, built with the old rule.
 - **Deadlines, not counters.** A session stores its phase and the time that phase started. Each next phase starts at
   the previous one's deadline, so no time drifts, and several phases can pass in one tick.
 - **One at a time.** Only one session can be running or paused. Another start gives a 409.
@@ -453,7 +460,10 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
   A restart never skips phases or completes a workout nobody did.
 - **The pause limit.** A session paused for 30 minutes is ended, at `paused_at + 30 min`, with the client `addon`.
   After a crash that was down longer than that, it is ended at the start. The usual counting rules apply.
-- **Finishing.** The tick passing the last work phase, or `next` on it, completes the session. `end` or the pause
+- **Finishing.** The tick passing the last work phase, or `next` on it, completes the session. So does
+  `skip_cooldown`, now: it is allowed (running or paused) in the cool-down and in the rest right before it, else 409
+  `conflict`, and the skipped stretches add no time. A session counts by its circuit rounds; the cool-down adds the
+  time spent in it. `end` or the pause
   limit ends it early; it counts when at least one full round is behind it. A counted session with a training day
   closes the day as done (done late when the day's date is before the local date of `started_at`). The first counted
   session sets `counting_from`. Each finished session keeps one row per participant, with the name and no foreign key.
@@ -476,7 +486,7 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
 | --- | --- |
 | `GET /api/v1/session` | The running or paused session; else the last finished one for 5 minutes after it finished; else `null`. |
 | `POST /api/v1/session` | Start: `{"program_id", "participants": [person ids], "training_day_id"?, "date"?, "speaker"?}` → the session view (201). `date` starts the program's upcoming training early (D61): the add-on accepts only the program's current `upcoming` entry with `startable` true, else 409 `conflict`. With both `training_day_id` and `date`, 422 `invalid`. `speaker` (`media_player.<name>`) replaces the program's speaker for this session; a program without music ignores it. A speaker that doesn't match `^media_player\.[a-z0-9_]+$` gives 422 `invalid`. |
-| `POST /api/v1/session/{command}` | `pause`, `resume`, `next`, `previous` or `end` → the session view. |
+| `POST /api/v1/session/{command}` | `pause`, `resume`, `next`, `previous`, `end` or `skip_cooldown` → the session view. |
 | `POST /api/v1/session/feeling` | `{"feeling": "too_easy" \| "just_right" \| "too_hard"}` on a completed session within its 5-minute finished view → the session view. It is declared before `{command}`. A later call changes the rating. Any other current view gives 409 `conflict`; an unknown value gives 422 `invalid`. |
 | `GET /api/v1/sessions?limit=` | `{"counting_from", "sessions": [finished views, newest first]}`; `limit` 1–100, default 20. |
 
@@ -487,8 +497,9 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
   feeling body that isn't `{"feeling": <text>}`.
 - **The view** (`SessionView` in `schemas.py`) has the phase with `ends_at` (UTC with milliseconds, null while paused)
   or `remaining` (while paused), the next phase, each participant's current and next station, `totals`
-  (`planned`, `rounds`, `stations`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
-  `server_time`. A finished view has no phase, next phase or stations. `music` is the plan's
+  (`planned`, `rounds`, `stations`, `stretches`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
+  `server_time`. `phase`, `next_phase` and `StationRef` carry `part` (`circuit` or `cooldown`, D72); in the cool-down the
+  stations are the stretches. A finished view has no phase, next phase or stations. `music` is the plan's
   `{playlist, playlist_name, speaker, volume, shuffle}`, frozen at the start, or null for a program without music;
   history keeps it.
 - **The feeling** is stored on the session (a nullable column) and shown in the view, in `GET /api/v1/sessions` and in

@@ -10,8 +10,8 @@ http://localhost:8765)
 - Creates the HA persons "Thomas" and "Elin" over the websocket (`person/create`) unless a person of that name
   exists, and finds their entity ids through the entity registry.
 - Sets them as the people on the server (`PUT /api/v1/people`) unless the server has exactly those people already.
-- Creates the program "Sample" (Wednesday, 5 body-weight stations, music on the fake Music Assistant's living-room
-  player) unless a program of that name exists. A Sample without music gets Sample's music, with the rest of its
+- Creates the program "Sample" (Wednesday, 5 body-weight stations, a cool-down of 3 stretches, music on the fake
+  Music Assistant's living-room player) unless a program of that name exists. A Sample without music gets Sample's music, with the rest of its
   document kept.
 
 A second run changes nothing.
@@ -49,7 +49,7 @@ USER_AGENT = "ha-fitness-seed"
 PERSONS = ("Thomas", "Elin")
 WAIT_SECONDS = 10.0
 # Body-weight exercises from the built-in library, by id: push-up, jump squat, mountain climber, walking lunge,
-# burpee.
+# burpee. The cool-down's stretches: overhead triceps stretch, seated lower back stretch, standing lateral stretch.
 SAMPLE_NAME = "Sample"
 SAMPLE: dict[str, Any] = {
     "name": SAMPLE_NAME,
@@ -57,6 +57,11 @@ SAMPLE: dict[str, Any] = {
     "stations": [
         {"exercise": exercise} for exercise in ("0662", "0514", "0630", "1460", "1160")
     ],
+    "cooldown": {
+        "stretches": [{"exercise": exercise} for exercise in ("0643", "0690", "0794")],
+        "hold_seconds": 30,
+        "change_seconds": 10,
+    },
     # A playlist and a player of the fake Music Assistant (`scripts/dev/fake_music_assistant/`).
     "music": {
         "playlist": "library://playlist/1",

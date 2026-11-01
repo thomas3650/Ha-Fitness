@@ -48,8 +48,8 @@ Every PR. A dev Home Assistant with the integration and cards, and the add-on se
    `http://localhost:8123/ha_fitness_frontend/ha-fitness-cards.js` answers 200, and
    `curl -s http://localhost:8765/api/v1/people` has a list in `ha_persons`, not `null`.
 6. For dev data: `scripts/seed`. It creates the HA persons "Thomas" and "Elin", sets them as the people, and creates
-   the program "Sample" (Wednesday, 5 body-weight stations). A second run changes nothing. It refuses any host but
-   `localhost` or `127.0.0.1`, so it never touches a real HA or add-on. Use the wrapper: run directly,
+   the program "Sample" (Wednesday, 5 body-weight stations, a cool-down of 3 stretches). A second run changes
+   nothing. It refuses any host but `localhost` or `127.0.0.1`, so it never touches a real HA or add-on. Use the wrapper: run directly,
    `scripts/seed.py` fails on its import. Three flags make a training day on purpose, through the dev routes; "today"
    is the date in Europe/Copenhagen. Each refuses, before any change, when the server has no dev routes.
    - `scripts/seed --today` makes Sample due today: it adds today's weekday to Sample, switches Sample on when it is
