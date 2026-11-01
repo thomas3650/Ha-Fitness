@@ -128,7 +128,7 @@
       "switch": "SKIFT",
       "rest": "PAUSE",
       "stretch": "STRÆK",
-      "change": "BYT"
+      "change": "SKIFT"
     },
     "done": {
       "complete": "Træning gennemført",

@@ -1286,7 +1286,7 @@ test("cool-down: a hold shows STRETCH, the cool-down pill and the next stretch",
 
 test("cool-down: a change shows CHANGE and NEXT STRETCH", async () => {
   const two = await mount(fakeHass("da"), change());
-  expect(ringState(two.flow)).toMatchObject({ name: "BYT", text: "BYT 10 sekunder tilbage" });
+  expect(ringState(two.flow)).toMatchObject({ name: "SKIFT", text: "SKIFT 10 sekunder tilbage" });
   expect(hasPill(two.flow, "Udstrækning 3 / 4")).toBe(true);
   expect(cards(two.flow)).toEqual([
     "1 Thomas NÆSTE STRÆK Hamstring stretch Næste: Calf stretch",
@@ -1302,7 +1302,7 @@ test("cool-down: a change shows CHANGE and NEXT STRETCH", async () => {
 test("cool-down: at local zero the ring shows the next phase's cool-down word", async () => {
   const { flow } = await mount(fakeHass("da"), hold());
   await wait(flow, 30_000);
-  expect(ringState(flow)).toMatchObject({ name: "BYT", now: "10" });
+  expect(ringState(flow)).toMatchObject({ name: "SKIFT", now: "10" });
   document.body.replaceChildren();
 
   // With no rest before it, the circuit's last work goes straight into the first hold.
