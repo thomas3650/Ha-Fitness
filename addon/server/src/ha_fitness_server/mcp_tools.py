@@ -70,8 +70,8 @@ The program document:
   each stretch is held. change_seconds: 0-60, default 10, the change between two stretches. The rest between rounds
   also comes before the cool-down. No cool-down: leave cooldown out or send null; an empty stretches list is refused.
   When making a program you may suggest a cool-down.
-- When creating: keep these defaults (work 45 s, the break between stations 15 s, the rest between rounds 60 s, the countdown 5 s)
-  unless the user asks for another value. "The break" means switch_seconds. Never make up timings. When updating,
+- When creating: keep these defaults (work 45 s, the break between stations 15 s, the rest between rounds 60 s, the
+  countdown 5 s, the cool-down's hold 30 s and change 10 s) unless the user asks for another value. "The break" means switch_seconds. Never make up timings. When updating,
   leave the timing fields and the cool-down the user didn't mention as they are in get_program: send the cooldown
   back unchanged, because a cooldown left out is deleted.
 - music: optional {"playlist", "playlist_name", "speaker": "media_player.<name>", "volume": 0-100, "shuffle": false}.

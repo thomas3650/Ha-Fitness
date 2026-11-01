@@ -169,6 +169,13 @@ async def test_program_descriptions_describe_the_cooldown(
     # The summary before the yes shows the cool-down.
     summary = description[description.index("Before the yes") :]
     assert "cool-down" in summary
+    # When creating, the cool-down's defaults are kept too.
+    creating = next(
+        sentence for sentence in sentences if "When creating: keep" in sentence
+    )
+    assert "cool-down" in creating
+    assert "hold 30 s" in creating
+    assert "change 10 s" in creating
 
 
 async def test_argument_schema_is_the_apis(make_app: MakeApp) -> None:
