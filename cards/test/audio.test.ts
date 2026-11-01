@@ -139,15 +139,15 @@ test("a tone whose time has passed plays at once", () => {
   expect(fake.tones()[0].start).toBe(4);
 });
 
-test("work is higher than switch and rest, and the chime is three rising tones", () => {
+test("the long beep is higher than the short beep, and the chime is three rising tones", () => {
   const fake = installFakeAudio();
   audio.unlockAudio();
   const now = 1_761_300_000_000;
 
   audio.scheduleTone("work", now + 1_000, now);
-  audio.scheduleTone("rest", now + 1_000, now);
-  const [work, rest] = fake.tones();
-  expect(work.frequency).toBeGreaterThan(rest.frequency);
+  audio.scheduleTone("beep", now + 1_000, now);
+  const [work, beep] = fake.tones();
+  expect(work.frequency).toBeGreaterThan(beep.frequency);
 
   const cancelChime = audio.scheduleTone("chime", now + 3_000, now);
   const chime = fake.tones().slice(2);
@@ -163,7 +163,7 @@ test("work is higher than switch and rest, and the chime is three rising tones",
   expect(work.cancelled).toBe(false);
 });
 
-test("work is one long beep of about a second; the short beep stays short", () => {
+test("work is one long beep of 1.5 s; the short beep stays short", () => {
   const fake = installFakeAudio();
   audio.unlockAudio();
   const now = 1_761_300_000_000;
@@ -172,7 +172,7 @@ test("work is one long beep of about a second; the short beep stays short", () =
   audio.scheduleTone("beep", now + 1_000, now);
   const [work, beep] = fake.tones();
   expect(fake.tones()).toHaveLength(2);
-  // Each oscillator is planned to stop at its end: the work tone lasts at least 0.9 s.
-  expect(work.stops[0]! - work.start!).toBeGreaterThanOrEqual(0.9);
+  // Each oscillator is planned to stop at its end: the work tone lasts 1.5 s.
+  expect(work.stops[0]! - work.start!).toBeCloseTo(1.5, 6);
   expect(beep.stops[0]! - beep.start!).toBeCloseTo(0.12, 6);
 });

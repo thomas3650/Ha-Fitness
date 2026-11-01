@@ -28,7 +28,6 @@ import { type LanguageHass, cardLanguage } from "./language";
 import {
   type Feeling,
   type OverlayMode,
-  type PhaseKind,
   type SessionState,
   type SessionView,
   isActive,
@@ -72,10 +71,10 @@ const BEEP_SECONDS = 5;
 const RESTART_MS = 500;
 /** How long a started tone is remembered, so a new plan doesn't play it again (seconds). */
 const STARTED_S = 2;
-/** No beep falls this soon after a switch or rest starts, where it would clash with the change tone. */
+/** No beep falls this soon after the countdown starts; it has no start tone. */
 const QUIET_MS = 300;
-/** No beep falls this soon after a work phase starts, where it would clash with the long beep. */
-const WORK_QUIET_MS = 1100;
+/** No beep falls this soon after a phase that starts with the long beep: the 1.5 s beep plus a margin. */
+const LONG_BEEP_QUIET_MS = 1600;
 
 /** Slut's question. */
 interface EndQuestion {
@@ -93,10 +92,12 @@ function errorCode(error: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-/** The tone that starts a phase of `kind`: the long beep for work, the low tone for switch and rest. */
-function changeTone(kind: PhaseKind): ToneKind {
-  return kind === "work" ? "work" : "rest";
-}
+/**
+ * The change tone, at every phase change: the long beep. Every change goes into or out of a work
+ * phase (the countdown, a switch, a rest and a cool-down change each sit next to work), so the
+ * new phase alone decides that it is the long beep.
+ */
+const CHANGE_TONE: ToneKind = "work";
 
 /**
  * When `view`'s running phase started (the add-on's epoch ms), for its start tone. A countdown
@@ -638,7 +639,7 @@ export class WorkoutFlow extends LitElement {
   }
 
   /**
-   * Næste and Forrige start a phase before the old one ran out: its change tone plays now. That
+   * Næste and Forrige start a phase before the old one ran out: the long beep plays now. That
    * includes Forrige restarting the running phase, which keeps its index, ends later and has its
    * whole length left. A phase that started because the old one ran out had its tone at local
    * zero, so it gets none here.
@@ -662,13 +663,13 @@ export class WorkoutFlow extends LitElement {
   }
 
   /**
-   * Play the change tone of `view`'s phase now, and remember it as that phase's start tone, so a
+   * Play the long beep that starts `view`'s phase now, and remember it as that phase's start tone, so a
    * plan made right after doesn't play it again.
    */
   private playStartTone(view: SessionView): void {
     const start = phaseStart(view);
     if (audioLocked() || !view.phase || start === undefined) return;
-    const kind = changeTone(view.phase.kind);
+    const kind = CHANGE_TONE;
     const now = this.now();
     const cancel = scheduleTone(kind, now, now);
     this.tones.push({ kind, at: start, when: cancel.when, cancel });
@@ -750,7 +751,7 @@ export class WorkoutFlow extends LitElement {
     // that has started isn't played again, and none is added that wasn't planned.
     const start = phaseStart(view);
     if (start !== undefined && view.phase) {
-      const kind = changeTone(view.phase.kind);
+      const kind = CHANGE_TONE;
       const same = (tone: { kind: ToneKind; at: number }) => tone.kind === kind && tone.at === start;
       if (!started.some(same) && pending.some(same)) {
         const cancel = scheduleTone(kind, start, now);
@@ -768,23 +769,24 @@ export class WorkoutFlow extends LitElement {
   }
 
   /**
-   * The current phase's tones (spec §5.4): a beep at 5 to 1 s left, none in a switch or rest's
-   * first 0.3 s or in a work phase's long beep, and the next phase's change tone at local zero.
-   * While unreachable the ring holds at zero, so no change tone.
+   * The current phase's tones (spec §5.4): a beep at 5 to 1 s left, none in the countdown's first
+   * 0.3 s or in the long beep that starts any other phase, and the long beep at local zero when a
+   * next phase follows. The last phase ends with the chime instead, on completion. While
+   * unreachable the ring holds at zero, so no change tone.
    */
   private tonesOf(view: SessionView): [ToneKind, number][] {
     const phase = view.phase;
     if (!phase?.ends_at) return [];
     const end = Date.parse(phase.ends_at);
     const start = end - phase.duration * 1000;
-    const quiet = phase.kind === "work" ? WORK_QUIET_MS : QUIET_MS;
+    const quiet = phase.kind === "countdown" ? QUIET_MS : LONG_BEEP_QUIET_MS;
     const tones: [ToneKind, number][] = [];
     for (let left = BEEP_SECONDS; left >= 1; left--) {
       const at = end - left * 1000;
       if (at >= start + quiet) tones.push(["beep", at]);
     }
     const next = view.next_phase;
-    if (next && this.reachable()) tones.push([changeTone(next.kind), end]);
+    if (next && this.reachable()) tones.push([CHANGE_TONE, end]);
     return tones;
   }
 

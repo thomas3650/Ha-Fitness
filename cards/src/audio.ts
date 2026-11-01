@@ -1,5 +1,5 @@
 /** The workout's sounds (spec §5.4): short sine tones from the Web Audio API, no sound files. */
-export type ToneKind = "beep" | "work" | "rest" | "chime";
+export type ToneKind = "beep" | "work" | "chime";
 
 /** One note: its frequency in Hz, its offset from the tone's start and its length, in seconds. */
 interface Note {
@@ -11,10 +11,8 @@ interface Note {
 const TONES: Record<ToneKind, Note[]> = {
   // A short beep for the last 5 seconds of a phase.
   beep: [{ frequency: 880, offset: 0, length: 0.12 }],
-  // One long, higher beep of about a second when work starts.
-  work: [{ frequency: 1320, offset: 0, length: 1.0 }],
-  // A lower tone when a switch or rest starts.
-  rest: [{ frequency: 523, offset: 0, length: 0.45 }],
+  // The long beep: one higher beep of 1.5 s at every change into or out of work.
+  work: [{ frequency: 1320, offset: 0, length: 1.5 }],
   // Three rising tones when the session completes.
   chime: [
     { frequency: 659, offset: 0, length: 0.2 },
