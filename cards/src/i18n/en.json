@@ -41,6 +41,7 @@
     "state_running": "Running",
     "state_paused": "Paused",
     "state_round": "{state} · round {round} of {rounds}",
+    "state_cooldown": "{state} · cool-down",
     "people_two": "{first} and {second}",
     "people_minutes": "{people} · {minutes}"
   },

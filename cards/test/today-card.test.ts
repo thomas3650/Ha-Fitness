@@ -979,6 +979,23 @@ test("a session without a phase reads I gang alone", async () => {
   expect(await sessionRow({ ...sessionView("running"), phase: null })).toBe("Onsdag I gang Thomas · 29 min Fortsæt");
 });
 
+test("in the cool-down the row reads the cool-down, not a round", async () => {
+  // In the cool-down the add-on sends round 1 and the stretch number as the interval.
+  const inPart = (status: "running" | "paused", part: "circuit" | "cooldown") => {
+    const view = sessionView(status);
+    const phase = { ...view.phase!, part, round: 1, interval: 2 };
+    return { ...view, phase };
+  };
+  expect(await sessionRow(inPart("running", "cooldown"))).toBe("Onsdag I gang · udstrækning Thomas · 29 min Fortsæt");
+  expect(await sessionRow(inPart("paused", "cooldown"))).toBe("Onsdag Pauset · udstrækning Thomas · 29 min Fortsæt");
+  expect(await sessionRow(inPart("running", "cooldown"), "en")).toBe(
+    "Onsdag Running · cool-down Thomas · 29 min Continue",
+  );
+  // The circuit part, and a phase without a part from an older add-on, keep the round.
+  expect(await sessionRow(inPart("running", "circuit"))).toBe("Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt");
+  expect(await sessionRow(sessionView("running"))).toBe("Onsdag I gang · runde 1 af 5 Thomas · 29 min Fortsæt");
+});
+
 test("the running row in English", async () => {
   expect(await sessionRow(sessionView("running"), "en")).toBe("Onsdag Running · round 1 of 5 Thomas · 29 min Continue");
 });

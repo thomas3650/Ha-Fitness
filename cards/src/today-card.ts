@@ -675,10 +675,14 @@ export class TodayCard extends LitElement {
     `;
   }
 
-  /** "I gang · runde 2 af 5", "Pauset · runde 2 af 5", or the state word alone without a phase. */
+  /**
+   * "I gang · runde 2 af 5", "Pauset · runde 2 af 5", "I gang · udstrækning" in the cool-down, or the state word alone
+   * without a phase.
+   */
   private sessionStateLine(session: SessionView): string {
     const state = this.t(session.status === "paused" ? "session.state_paused" : "session.state_running");
     if (!session.phase) return state;
+    if (session.phase.part === "cooldown") return this.t("session.state_cooldown", { state });
     return this.t("session.state_round", { state, round: session.phase.round, rounds: session.totals.rounds });
   }
 

@@ -41,6 +41,7 @@
     "state_running": "I gang",
     "state_paused": "Pauset",
     "state_round": "{state} · runde {round} af {rounds}",
+    "state_cooldown": "{state} · udstrækning",
     "people_two": "{first} og {second}",
     "people_minutes": "{people} · {minutes}"
   },

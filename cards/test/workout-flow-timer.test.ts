@@ -1177,7 +1177,7 @@ function change(overrides: Partial<SessionView> = {}): SessionView {
       index: 20,
       kind: "switch",
       round: 1,
-      interval: 3,
+      interval: 2,
       duration: 10,
       ends_at: "2026-10-24T08:00:10.000Z",
       part: "cooldown",
@@ -1287,7 +1287,7 @@ test("cool-down: a hold shows STRETCH, the cool-down pill and the next stretch",
 test("cool-down: a change shows CHANGE and NEXT STRETCH", async () => {
   const two = await mount(fakeHass("da"), change());
   expect(ringState(two.flow)).toMatchObject({ name: "SKIFT", text: "SKIFT 10 sekunder tilbage" });
-  expect(hasPill(two.flow, "Udstrækning 3 / 4")).toBe(true);
+  expect(hasPill(two.flow, "Udstrækning 2 / 4")).toBe(true);
   expect(cards(two.flow)).toEqual([
     "1 Thomas NÆSTE STRÆK Hamstring stretch Næste: Calf stretch",
     "2 Maria NÆSTE STRÆK Hamstring stretch Næste: Calf stretch",
@@ -1321,6 +1321,29 @@ test("cool-down with no rest before it: the last work points at it, with no Skip
     "2 Maria Station 1 Push-up Næste: udstrækning · Seated lower back stretch",
   ]);
   expect(hasButton(flow, "Spring udstrækning over")).toBe(false);
+});
+
+test("in a program with a cool-down, a rest between rounds and a circuit switch offer no Skip", async () => {
+  const rest = view({
+    phase: phase({ index: 6, kind: "rest", round: 2, interval: 3, duration: 60, part: "circuit" }),
+    next_phase: { kind: "work", duration: 45, part: "circuit" },
+    totals: COOLDOWN_TOTALS,
+  });
+  const restFlow = await mount(fakeHass("da"), rest);
+  expect(ringState(restFlow.flow).name).toBe("PAUSE");
+  expect(hasButton(restFlow.flow, "Spring udstrækning over")).toBe(false);
+  expect(hasButton(restFlow.flow, "Slut")).toBe(true);
+  document.body.replaceChildren();
+
+  const circuitSwitch = view({
+    phase: phase({ index: 2, kind: "switch", round: 1, interval: 1, duration: 15, part: "circuit" }),
+    next_phase: { kind: "work", duration: 45, part: "circuit" },
+    totals: COOLDOWN_TOTALS,
+  });
+  const switchFlow = await mount(fakeHass("da"), circuitSwitch);
+  expect(ringState(switchFlow.flow).name).toBe("SKIFT");
+  expect(hasButton(switchFlow.flow, "Spring udstrækning over")).toBe(false);
+  expect(hasButton(switchFlow.flow, "Slut")).toBe(true);
 });
 
 test("Skip cool-down asks, with the wake-tap guard", async () => {
