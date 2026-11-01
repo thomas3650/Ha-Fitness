@@ -59,12 +59,14 @@ export function program(id: number, document: Partial<ProgramDocument> = {}, ext
     round_rest_seconds: 60,
     countdown_seconds: 5,
     music: null,
+    cooldown: null,
     ...document,
   };
   return {
     id,
     program: doc,
     station_names: doc.stations.map((station) => station.exercise),
+    stretch_names: (doc.cooldown?.stretches ?? []).map((stretch) => stretch.exercise),
     equipment: [],
     total_seconds: 600,
     created_at: NOW,
@@ -80,7 +82,15 @@ export function defaultState(): FakeState {
     library: { exercises: { library: 1324, custom: 2 }, media: { state: "done", present: 1324, total: 1324 } },
     people: { people: [], ha_persons: [], ha_error: null },
     programs: [],
-    defaults: { rounds: 5, work_seconds: 45, switch_seconds: 15, round_rest_seconds: 60, countdown_seconds: 5 },
+    defaults: {
+      rounds: 5,
+      work_seconds: 45,
+      switch_seconds: 15,
+      round_rest_seconds: 60,
+      countdown_seconds: 5,
+      cooldown_hold_seconds: 30,
+      cooldown_change_seconds: 10,
+    },
     setup: { equipment: ["body weight"], favourite_playlists: [], default_speaker: null },
     exercises: [],
     speakers: [],
@@ -104,10 +114,13 @@ export function fakeApi(initial: Partial<FakeState> = {}) {
     return state.programs.find((candidate) => candidate.id === id);
   }
 
-  function withNames(doc: ProgramDocument): string[] {
-    return doc.stations.map(
-      (station) => state.exercises.find((exercise) => exercise.id === station.exercise)?.name ?? station.exercise,
-    );
+  function namesOf(refs: { exercise: string }[]): string[] {
+    return refs.map((ref) => state.exercises.find((exercise) => exercise.id === ref.exercise)?.name ?? ref.exercise);
+  }
+
+  /** The names a stored program answers with: the stations' and the stretches'. */
+  function withNames(doc: ProgramDocument): Pick<ProgramOut, "station_names" | "stretch_names"> {
+    return { station_names: namesOf(doc.stations), stretch_names: namesOf(doc.cooldown?.stretches ?? []) };
   }
 
   const notFound = { status: 404, body: { detail: "Not Found" } };
@@ -135,7 +148,7 @@ export function fakeApi(initial: Partial<FakeState> = {}) {
         return { status: 200, body: state.programs };
       case "POST api/v1/programs": {
         const doc = body as ProgramDocument;
-        const created = program(nextId++, doc, { station_names: withNames(doc), created_by: "you" });
+        const created = program(nextId++, doc, { ...withNames(doc), created_by: "you" });
         state.programs.push(created);
         return { status: 201, body: created };
       }
@@ -178,7 +191,7 @@ export function fakeApi(initial: Partial<FakeState> = {}) {
       if (method === "GET") return { status: 200, body: current };
       if (method === "PUT") {
         const doc = body as ProgramDocument;
-        const changed = { ...current, program: doc, station_names: withNames(doc), updated_at: updatedAt };
+        const changed = { ...current, program: doc, ...withNames(doc), updated_at: updatedAt };
         state.programs[index] = changed;
         return { status: 200, body: changed };
       }

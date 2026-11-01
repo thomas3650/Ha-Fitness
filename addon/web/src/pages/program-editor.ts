@@ -19,6 +19,7 @@ import {
   mdiPencil,
   mdiPlus,
   mdiTimerOutline,
+  mdiYoga,
 } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 
@@ -56,10 +57,21 @@ export type EditorMode = { kind: "new" } | { kind: "copy"; id: number } | { kind
 const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const COUNTDOWNS = [0, 5, 10];
 
-type NumberField = "rounds" | "work_seconds" | "switch_seconds" | "round_rest_seconds";
+type TimingField = "rounds" | "work_seconds" | "switch_seconds" | "round_rest_seconds";
+type CooldownField = "hold_seconds" | "change_seconds";
+type NumberField = TimingField | CooldownField;
 
-/** The timing's number fields: the label, the step of − and +, and the buttons' names. */
-const NUMBER_FIELDS: { field: NumberField; label: string; step: number; less: string; more: string }[] = [
+/** A number field: the label, the step of − and +, and the buttons' names. */
+interface NumberEntry<F extends NumberField> {
+  field: F;
+  label: string;
+  step: number;
+  less: string;
+  more: string;
+}
+
+/** The timing's number fields. */
+const NUMBER_FIELDS: NumberEntry<TimingField>[] = [
   { field: "rounds", label: "editor.rounds", step: 1, less: "editor.fewer_rounds", more: "editor.more_rounds" },
   { field: "work_seconds", label: "editor.work", step: 5, less: "editor.less_work", more: "editor.more_work" },
   {
@@ -77,6 +89,31 @@ const NUMBER_FIELDS: { field: NumberField; label: string; step: number; less: st
     more: "editor.longer_rest",
   },
 ];
+
+/** The cool-down's number fields. */
+const COOLDOWN_FIELDS: NumberEntry<CooldownField>[] = [
+  { field: "hold_seconds", label: "editor.hold", step: 5, less: "editor.shorter_hold", more: "editor.longer_hold" },
+  {
+    field: "change_seconds",
+    label: "editor.change",
+    step: 5,
+    less: "editor.shorter_change",
+    more: "editor.longer_change",
+  },
+];
+
+/** The add-on's default for each number field, where − and + start on an empty field. */
+const DEFAULT_OF: Record<NumberField, keyof ProgramDefaults> = {
+  rounds: "rounds",
+  work_seconds: "work_seconds",
+  switch_seconds: "switch_seconds",
+  round_rest_seconds: "round_rest_seconds",
+  hold_seconds: "cooldown_hold_seconds",
+  change_seconds: "cooldown_change_seconds",
+};
+
+/** The editor's two lists of exercises: the circuit's stations and the cool-down's stretches. */
+type ListKind = "stations" | "stretches";
 
 /** The places on the form a refusal can be shown at; any other field shows above the form. */
 const PLACES = new Set([
@@ -100,6 +137,10 @@ interface Form {
   switch_seconds: number | null;
   round_rest_seconds: number | null;
   countdown_seconds: number;
+  /** The cool-down's stretches; none means no cool-down. */
+  stretches: { exercise: string }[];
+  hold_seconds: number | null;
+  change_seconds: number | null;
   playlist: { uri: string; name: string | null } | null;
   speaker: string;
   /** The music's fields the editor doesn't show (`volume`, `shuffle`); a save sends them back unchanged. */
@@ -120,7 +161,11 @@ interface Deleting {
 
 let nextId = 0;
 
-function formOf(document: ProgramDocument, defaultSpeaker: string | null): Form {
+/**
+ * The form for a document. Without a cool-down the hold and change start from the add-on's defaults (empty if they
+ * couldn't be read), so a first stretch brings them.
+ */
+function formOf(document: ProgramDocument, defaultSpeaker: string | null, defaults: ProgramDefaults | null): Form {
   // Every music field the editor doesn't show is kept as it is, including any the add-on adds later.
   const { playlist, playlist_name, speaker, ...rest } = document.music ?? {};
   return {
@@ -133,6 +178,9 @@ function formOf(document: ProgramDocument, defaultSpeaker: string | null): Form 
     switch_seconds: document.switch_seconds ?? null,
     round_rest_seconds: document.round_rest_seconds ?? null,
     countdown_seconds: document.countdown_seconds ?? 5,
+    stretches: (document.cooldown?.stretches ?? []).map((stretch) => ({ ...stretch })),
+    hold_seconds: document.cooldown?.hold_seconds ?? defaults?.cooldown_hold_seconds ?? null,
+    change_seconds: document.cooldown?.change_seconds ?? defaults?.cooldown_change_seconds ?? null,
     playlist: playlist ? { uri: playlist, name: playlist_name ?? null } : null,
     speaker: speaker ?? defaultSpeaker ?? "",
     musicRest: rest,
@@ -141,7 +189,8 @@ function formOf(document: ProgramDocument, defaultSpeaker: string | null): Form 
 
 /**
  * The whole document a save sends (a save replaces the whole program). The music goes only once a playlist is
- * picked, since the add-on needs one; empty number fields go as they are, for the add-on to refuse.
+ * picked, since the add-on needs one; the cool-down only with a stretch, else `null` (cool-down spec §4.1). Empty
+ * number fields go as they are, for the add-on to refuse.
  */
 function documentOf(form: Form): ProgramDocument {
   const music: Music | null = form.playlist
@@ -158,17 +207,57 @@ function documentOf(form: Form): ProgramDocument {
     round_rest_seconds: form.round_rest_seconds,
     countdown_seconds: form.countdown_seconds,
     music,
+    cooldown: form.stretches.length
+      ? { stretches: form.stretches, hold_seconds: form.hold_seconds, change_seconds: form.change_seconds }
+      : null,
   } as ProgramDocument;
 }
 
-/** Where on the form a refusal's field shows: a station by its index, a known field, or null for above the form. */
-function placeOf(field: string | null, stations: number): string | null {
+/** Whether a field's part is the index of one of `count` entries. */
+function isIndex(part: string | undefined, count: number): part is string {
+  return part !== undefined && /^\d+$/.test(part) && Number(part) < count;
+}
+
+/**
+ * Where on the form a refusal's field shows: a station or a stretch by its index, a known field, the cool-down's
+ * section for any other cool-down field, or null for above the form.
+ */
+function placeOf(field: string | null, counts: Record<ListKind, number>): string | null {
   if (!field) return null;
-  const [head, index] = field.split(".");
-  if (head === "stations" && index !== undefined && /^\d+$/.test(index) && Number(index) < stations) {
-    return `stations.${index}`;
+  const [head, index, at] = field.split(".");
+  if (head === "stations" && isIndex(index, counts.stations)) return `stations.${index}`;
+  if (head === "cooldown") {
+    if (index === "stretches" && isIndex(at, counts.stretches)) return `cooldown.stretches.${at}`;
+    if (index === "stretches" || index === "hold_seconds" || index === "change_seconds") return `cooldown.${index}`;
+    return "cooldown";
   }
   return PLACES.has(head) ? head : null;
+}
+
+/** The place on the form of a list's entry, as `placeOf` names it. */
+function entryPlace(kind: ListKind, index: number): string {
+  return kind === "stations" ? `stations.${index}` : `cooldown.stretches.${index}`;
+}
+
+/**
+ * The total time, as the add-on's timeline counts it (`build_timeline`, cool-down spec §4.2), without the countdown:
+ * per round per station a work, and a switch after it unless it is the round's last station; a rest between rounds;
+ * with a cool-down, the rest after the last round, then per stretch a hold and a change between stretches. An empty
+ * field counts as 0.
+ */
+function totalSeconds(form: Form): number {
+  const stations = form.stations.length;
+  const rounds = Math.max(0, form.rounds ?? 0);
+  const rest = form.round_rest_seconds ?? 0;
+  let seconds =
+    rounds * stations * (form.work_seconds ?? 0) +
+    rounds * Math.max(0, stations - 1) * (form.switch_seconds ?? 0) +
+    Math.max(0, rounds - 1) * rest;
+  const stretches = form.stretches.length;
+  if (stretches) {
+    seconds += rest + stretches * (form.hold_seconds ?? 0) + (stretches - 1) * (form.change_seconds ?? 0);
+  }
+  return Math.max(0, seconds);
 }
 
 /**
@@ -203,6 +292,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     details: { state: true },
     missing: { state: true },
     defaults: { state: true },
+    target: { state: true },
   };
 
   declare api: Api;
@@ -233,6 +323,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   declare missing: ReadonlySet<string>;
   /** The add-on's defaults, where − and + start on an empty field; null if they couldn't be read (then 0). */
   declare defaults: ProgramDefaults | null;
+  /** The list the library's + and the details' "Add to program" add to. */
+  declare target: ListKind;
 
   private updatedAt: string | undefined;
   /**
@@ -242,7 +334,8 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private storedId: number | null = null;
   /** Station names from the stored program, for exercises the summaries don't have. */
   private storedNames = new Map<string, string>();
-  private dragIndex: number | null = null;
+  /** The entry being dragged; a drop moves it within its own list only. */
+  private dragFrom: { kind: ListKind; index: number } | null = null;
   /** Set when a new program or a copy has loaded: the next render puts the focus in the name field, once. */
   private focusName = false;
   private readonly ids = `hf-editor-${++nextId}`;
@@ -277,6 +370,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     this.details = null;
     this.missing = new Set();
     this.defaults = null;
+    this.target = "stations";
   }
 
   protected override createRenderRoot(): HTMLElement {
@@ -353,6 +447,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         formOf(
           { name: "", active: true, weekdays: [], stations: [], music: null, ...defaults },
           this.setup.default_speaker,
+          this.defaults,
         ),
       );
       this.focusName = true;
@@ -361,7 +456,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     const stored = main.value as ProgramOut;
     this.remember(stored);
     if (mode.kind === "copy") {
-      const form = formOf(stored.program, this.setup.default_speaker);
+      const form = formOf(stored.program, this.setup.default_speaker, this.defaults);
       this.start({ ...form, name: t("editor.copy_name", { name: stored.program.name }), active: false });
       this.focusName = true;
     } else {
@@ -373,6 +468,10 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     stored.program.stations.forEach((station, index) => {
       const name = stored.station_names[index];
       if (name) this.storedNames.set(station.exercise, name);
+    });
+    (stored.program.cooldown?.stretches ?? []).forEach((stretch, index) => {
+      const name = stored.stretch_names?.[index];
+      if (name) this.storedNames.set(stretch.exercise, name);
     });
   }
 
@@ -386,7 +485,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     this.updatedAt = stored.updated_at;
     this.createdBy = stored.created_by;
     this.storedName = stored.program.name;
-    this.start(formOf(stored.program, this.setup.default_speaker));
+    this.start(formOf(stored.program, this.setup.default_speaker, this.defaults));
   }
 
   private change(patch: Partial<Form>): void {
@@ -402,16 +501,27 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     return this.summaryOf(id)?.name ?? this.storedNames.get(id) ?? id;
   }
 
-  // The stations.
+  // The stations and the stretches.
 
-  private addStation(id: string): void {
+  /** Add an exercise from the library to the list it adds to now. */
+  private addExercise(id: string): void {
     if (!this.form) return;
-    this.change({ stations: [...this.form.stations, { exercise: id }] });
+    const kind = this.target;
+    this.change({ [kind]: [...this.form[kind], { exercise: id }] });
   }
 
-  private removeStation(index: number): void {
+  private removeEntry(kind: ListKind, index: number): void {
     if (!this.form) return;
-    this.change({ stations: this.form.stations.filter((_, at) => at !== index) });
+    this.change({ [kind]: this.form[kind].filter((_, at) => at !== index) });
+  }
+
+  private moveEntry(kind: ListKind, from: number, to: number): void {
+    if (!this.form) return;
+    const list = [...this.form[kind]];
+    if (to < 0 || to >= list.length || from === to) return;
+    const [moved] = list.splice(from, 1);
+    list.splice(to, 0, moved);
+    this.change({ [kind]: list });
   }
 
   // The timing.
@@ -423,15 +533,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
   private stepField(field: NumberField, step: number): void {
     if (!this.form) return;
     const value = this.form[field];
-    this.change({ [field]: value === null ? (this.defaults?.[field] ?? 0) : Math.max(0, value + step) });
-  }
-
-  private moveStation(from: number, to: number): void {
-    if (!this.form || to < 0 || to >= this.form.stations.length || from === to) return;
-    const stations = [...this.form.stations];
-    const [moved] = stations.splice(from, 1);
-    stations.splice(to, 0, moved);
-    this.change({ stations });
+    this.change({ [field]: value === null ? (this.defaults?.[DEFAULT_OF[field]] ?? 0) : Math.max(0, value + step) });
   }
 
   // The music.
@@ -474,7 +576,10 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     const fields = new Map<string, string[]>();
     const above: string[] = [];
     for (const item of error.items as ErrorItem[]) {
-      const place = placeOf(item.field, this.form?.stations.length ?? 0);
+      const place = placeOf(item.field, {
+        stations: this.form?.stations.length ?? 0,
+        stretches: this.form?.stretches.length ?? 0,
+      });
       if (place) fields.set(place, [...(fields.get(place) ?? []), item.message]);
       else above.push(item.message);
     }
@@ -617,15 +722,15 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
         <div class="editor-main" role="group" aria-label=${t("editor.form")}>
           ${this.renderHead(form)} ${this.renderAbove()}
           <div class="editor-pair">${this.renderWhen(form)} ${this.renderMusic(form)}</div>
-          ${this.renderTiming(form)} ${this.renderStations(form)}
+          ${this.renderTiming(form)} ${this.renderStations(form)} ${this.renderCooldown(form)}
         </div>
         <hf-exercise-picker
           .exercises=${this.exercises}
           .error=${this.exercisesError}
           .setup=${this.setupError ? null : this.setup}
           .setupError=${this.setupError}
-          .inProgram=${new Set(form.stations.map((station) => station.exercise))}
-          @pick=${(event: CustomEvent<string>) => this.addStation(event.detail)}
+          .inProgram=${new Set(form[this.target].map((entry) => entry.exercise))}
+          @pick=${(event: CustomEvent<string>) => this.addExercise(event.detail)}
           @details=${(event: CustomEvent<ExerciseSummary>) =>
             (this.details = { exercise: event.detail, canAdd: true })}
         ></hf-exercise-picker>
@@ -824,63 +929,53 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     </section>`;
   }
 
-  /** The total time, as the add-on counts it: S·R·(W + switch) + (R − 1)·round rest, as a duration. */
+  /** The total time, as the add-on's timeline counts it (`totalSeconds`), as a duration. */
   private renderTotal(form: Form) {
     const stations = form.stations.length;
     const rounds = form.rounds ?? 0;
-    const seconds =
-      stations * rounds * ((form.work_seconds ?? 0) + (form.switch_seconds ?? 0)) +
-      Math.max(0, rounds - 1) * (form.round_rest_seconds ?? 0);
     return html`<span class="secondary card-end"
       >${t("editor.total", {
-        duration: duration(Math.max(0, seconds)),
+        duration: duration(totalSeconds(form)),
         rounds: t("editor.round_count", { count: rounds }),
         exercises: t("editor.exercises", { count: stations }),
       })}</span
     >`;
   }
 
+  /** A number field with − and +; `place` is where its refusal shows. */
+  private renderNumber(form: Form, { field, label, step, less, more }: NumberEntry<NumberField>, place: string) {
+    const id = `${this.ids}-${field}`;
+    return html`<div class="timing-field">
+      <label for=${id}>${t(label)}</label>
+      <div class="stepper">
+        <button type="button" class="icon-button" aria-label=${t(less)} @click=${() => this.stepField(field, -step)}>
+          ${icon(mdiMinus)}
+        </button>
+        <input
+          id=${id}
+          type="number"
+          min="0"
+          .value=${form[field] === null ? "" : String(form[field])}
+          aria-invalid=${this.fieldErrors.has(place) ? "true" : "false"}
+          aria-describedby=${this.describedBy(place)}
+          @input=${(event: Event) => {
+            const text = (event.target as HTMLInputElement).value;
+            this.change({ [field]: text === "" ? null : Number(text) });
+          }}
+        />
+        <button type="button" class="icon-button" aria-label=${t(more)} @click=${() => this.stepField(field, step)}>
+          ${icon(mdiPlus)}
+        </button>
+      </div>
+      ${this.renderFieldError(place)}
+    </div>`;
+  }
+
   private renderTiming(form: Form) {
     return html`<section class="card editor-card">
       ${this.renderCardTitle(mdiTimerOutline, t("editor.timing"), this.renderTotal(form))}
       <div class="timing">
-        ${NUMBER_FIELDS.map(({ field, label, step, less, more }) => {
-          const id = `${this.ids}-${field}`;
-          return html`<div class="timing-field">
-            <label for=${id}>${t(label)}</label>
-            <div class="stepper">
-              <button
-                type="button"
-                class="icon-button"
-                aria-label=${t(less)}
-                @click=${() => this.stepField(field, -step)}
-              >
-                ${icon(mdiMinus)}
-              </button>
-              <input
-                id=${id}
-                type="number"
-                min="0"
-                .value=${form[field] === null ? "" : String(form[field])}
-                aria-invalid=${this.fieldErrors.has(field) ? "true" : "false"}
-                aria-describedby=${this.describedBy(field)}
-                @input=${(event: Event) => {
-                  const text = (event.target as HTMLInputElement).value;
-                  this.change({ [field]: text === "" ? null : Number(text) });
-                }}
-              />
-              <button
-                type="button"
-                class="icon-button"
-                aria-label=${t(more)}
-                @click=${() => this.stepField(field, step)}
-              >
-                ${icon(mdiPlus)}
-              </button>
-            </div>
-            ${this.renderFieldError(field)}
-          </div>`;
-        })}
+        ${NUMBER_FIELDS.map((entry) => this.renderNumber(form, entry, entry.field))}
         <div class="timing-field">
           <label for=${`${this.ids}-countdown`}>${t("editor.countdown")}</label>
           <select
@@ -927,18 +1022,60 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       )}
       ${this.renderFieldError("stations")}
       <ol aria-label=${t("editor.stations")} aria-describedby=${this.describedBy("stations")}>
-        ${form.stations.map((station, index) => this.renderStation(station.exercise, index, form.stations.length))}
+        ${form.stations.map((station, index) =>
+          this.renderEntry("stations", station.exercise, index, form.stations.length),
+        )}
       </ol>
       ${form.stations.length ? nothing : html`<p class="secondary">${t("editor.no_stations")}</p>`}
     </section>`;
   }
 
-  private renderStation(id: string, index: number, count: number) {
+  /**
+   * The Cool-down section below the stations (cool-down spec §4.8): its stretches, added with the same library once
+   * "Add stretches from the library" is pressed, and the hold and change times while there is a stretch.
+   */
+  private renderCooldown(form: Form) {
+    const count = form.stretches.length;
+    const adding = this.target === "stretches";
+    return html`<section class="card editor-card stations cooldown">
+      ${this.renderCardTitle(
+        mdiYoga,
+        t("editor.cooldown"),
+        html`<span class="secondary">${t("editor.optional")}</span>
+          ${count ? html`<span class="secondary">${t("editor.stretch_count", { count })}</span>` : nothing}
+          <button
+            type="button"
+            class="chip card-end"
+            aria-pressed=${adding ? "true" : "false"}
+            @click=${() => (this.target = adding ? "stations" : "stretches")}
+          >
+            ${icon(mdiPlus)}<span>${t("editor.add_stretches")}</span>
+          </button>`,
+      )}
+      ${adding ? html`<p class="secondary">${t("editor.adding_stretches")}</p>` : nothing}
+      ${this.renderFieldError("cooldown")} ${this.renderFieldError("cooldown.stretches")}
+      <ol aria-label=${t("editor.stretches")} aria-describedby=${this.describedBy("cooldown.stretches")}>
+        ${form.stretches.map((stretch, index) => this.renderEntry("stretches", stretch.exercise, index, count))}
+      </ol>
+      ${count
+        ? html`<div class="timing cooldown-timing">
+            ${COOLDOWN_FIELDS.map((entry) => this.renderNumber(form, entry, `cooldown.${entry.field}`))}
+          </div>`
+        : html`<p class="secondary">${t("editor.no_stretches")}</p>`}
+    </section>`;
+  }
+
+  /** A station or a stretch: its picture and name (its details), the move buttons and Remove. */
+  private renderEntry(kind: ListKind, id: string, index: number, count: number) {
     const name = this.nameOf(id);
     const summary = this.summaryOf(id);
     const meta = summary ? [summary.equipment, summary.body_part].filter(Boolean).join(t("meta_separator")) : "";
-    const place = `stations.${index}`;
-    const metaId = `${this.ids}-meta-${index}`;
+    const place = entryPlace(kind, index);
+    const metaId = `${this.ids}-meta-${kind}-${index}`;
+    const labels =
+      kind === "stations"
+        ? { up: "editor.move_up", down: "editor.move_down", remove: "editor.remove" }
+        : { up: "editor.stretch_move_up", down: "editor.stretch_move_down", remove: "editor.stretch_remove" };
     const picture = this.missing.has(id)
       ? html`<span class="thumb placeholder" aria-hidden="true">${icon(mdiDumbbell)}</span>`
       : html`<img
@@ -955,13 +1092,13 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
     return html`<li
       draggable="true"
       aria-describedby=${this.describedBy(place)}
-      @dragstart=${() => (this.dragIndex = index)}
-      @dragend=${() => (this.dragIndex = null)}
+      @dragstart=${() => (this.dragFrom = { kind, index })}
+      @dragend=${() => (this.dragFrom = null)}
       @dragover=${(event: DragEvent) => event.preventDefault()}
       @drop=${(event: DragEvent) => {
         event.preventDefault();
-        if (this.dragIndex !== null) this.moveStation(this.dragIndex, index);
-        this.dragIndex = null;
+        if (this.dragFrom?.kind === kind) this.moveEntry(kind, this.dragFrom.index, index);
+        this.dragFrom = null;
       }}
     >
       <span class="drag" aria-hidden="true">${icon(mdiDragVertical)}</span>
@@ -985,26 +1122,26 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
       <button
         type="button"
         class="icon-button"
-        aria-label=${t("editor.move_up", { name })}
+        aria-label=${t(labels.up, { name })}
         ?disabled=${index === 0}
-        @click=${() => this.moveStation(index, index - 1)}
+        @click=${() => this.moveEntry(kind, index, index - 1)}
       >
         ${icon(mdiArrowUp)}
       </button>
       <button
         type="button"
         class="icon-button"
-        aria-label=${t("editor.move_down", { name })}
+        aria-label=${t(labels.down, { name })}
         ?disabled=${index === count - 1}
-        @click=${() => this.moveStation(index, index + 1)}
+        @click=${() => this.moveEntry(kind, index, index + 1)}
       >
         ${icon(mdiArrowDown)}
       </button>
       <button
         type="button"
         class="icon-button"
-        aria-label=${t("editor.remove", { name })}
-        @click=${() => this.removeStation(index)}
+        aria-label=${t(labels.remove, { name })}
+        @click=${() => this.removeEntry(kind, index)}
       >
         ${icon(mdiClose)}
       </button>
@@ -1020,7 +1157,7 @@ export class ProgramEditor extends LitElement implements LeaveGuard {
             .canAdd=${this.details.canAdd}
             @close=${() => (this.details = null)}
             @add=${() => {
-              if (this.details) this.addStation(this.details.exercise.id);
+              if (this.details) this.addExercise(this.details.exercise.id);
               this.details = null;
             }}
           ></hf-exercise-details>`
@@ -1418,6 +1555,22 @@ export const programEditorStyles = css`
   }
   .editor-main .stations > p {
     margin: 4px 0;
+  }
+  .editor-main .cooldown .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+  }
+  .editor-main .cooldown .chip .icon {
+    width: 16px;
+    height: 16px;
+    color: inherit;
+  }
+  /* The hold and the change: two fields of the timing's width. */
+  .editor-main .cooldown-timing {
+    grid-template-columns: repeat(2, minmax(0, 180px));
+    margin-top: 12px;
   }
 `;
 

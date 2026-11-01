@@ -194,7 +194,15 @@ test("the new-program page offers to start empty, with the add-on's defaults, or
 
 test("an empty program starts active, with no weekdays or music, and the add-on's defaults", async () => {
   const fake = newFake({
-    defaults: { rounds: 6, work_seconds: 40, switch_seconds: 20, round_rest_seconds: 90, countdown_seconds: 10 },
+    defaults: {
+      rounds: 6,
+      work_seconds: 40,
+      switch_seconds: 20,
+      round_rest_seconds: 90,
+      countdown_seconds: 10,
+      cooldown_hold_seconds: 30,
+      cooldown_change_seconds: 10,
+    },
   });
   const root = await openEditor(fake, "#/programs/new/empty");
 
@@ -282,6 +290,7 @@ test("picking a playlist in a new program sends the music with the default speak
     round_rest_seconds: 60,
     countdown_seconds: 5,
     music: { playlist: "library://playlist/2", playlist_name: "Morning Run", speaker: KITCHEN },
+    cooldown: null,
   });
   await findByRole(root, "heading", { level: 1, name: en.programs.title });
   expect(location.hash).toBe("#/programs");
@@ -700,7 +709,7 @@ test("the summary says the number of exercises, the add-on's total time and the 
   const root = await openEditor(fake, "#/programs/1");
 
   expect(await within(root).findByText("5 exercises")).toBeTruthy();
-  expect(within(root).getByText("23 min in all · 4 rounds × 5 exercises")).toBeTruthy();
+  expect(within(root).getByText("22 min in all · 4 rounds × 5 exercises")).toBeTruthy();
   expect(within(root).getByText("Equipment: dumbbell, cable")).toBeTruthy();
 });
 
@@ -1112,7 +1121,7 @@ test("the timing's title row shows the total, and Countdown is still a choice of
   });
   const root = await openEditor(fake, "#/programs/1");
 
-  expect(await within(root).findByText("29 min in all · 5 rounds × 5 exercises")).toBeTruthy();
+  expect(await within(root).findByText("28 min in all · 5 rounds × 5 exercises")).toBeTruthy();
   fireEvent.click(stepper(root, "Fewer rounds"));
   fireEvent.click(stepper(root, "Fewer rounds"));
   fireEvent.click(stepper(root, "Fewer rounds"));
@@ -1150,7 +1159,15 @@ test("a program under half a minute shows “< 1 min” on the new-program page 
   unmount();
 
   // An empty program of one round lasts 0 s, and shows 0 min as before.
-  const oneRound = { rounds: 1, work_seconds: 45, switch_seconds: 15, round_rest_seconds: 60, countdown_seconds: 5 };
+  const oneRound = {
+    rounds: 1,
+    work_seconds: 45,
+    switch_seconds: 15,
+    round_rest_seconds: 60,
+    countdown_seconds: 5,
+    cooldown_hold_seconds: 30,
+    cooldown_change_seconds: 10,
+  };
   root = await openEditor(newFake({ defaults: oneRound }), "#/programs/new/empty");
   expect(within(root).getByText("0 min in all · 1 round × 0 exercises")).toBeTruthy();
 });
@@ -1403,4 +1420,227 @@ test("a save that lands while the leave dialog is open, with nothing typed since
   expect(queryByRole(root, "dialog")).toBeNull();
   expect(within(root).queryByText("Saved Renamed")).toBeNull();
   expect(lastWrite(fake).body).toMatchObject({ name: "Renamed" });
+});
+
+// The cool-down (cool-down spec §4.8).
+
+const STRETCH_EXERCISES: ExerciseSummary[] = [
+  summary("0690", "seated lower back stretch", "body weight", "back", "spine"),
+  summary("1378", "overhead triceps stretch", "body weight", "upper arms", "triceps"),
+];
+
+function stretchFake(extra: Parameters<typeof fakeApi>[0] = {}): FakeApi {
+  return newFake({ exercises: [...EXERCISES, ...STRETCH_EXERCISES], ...extra });
+}
+
+const TWO_STRETCHES = {
+  stretches: [{ exercise: "0690" }, { exercise: "1378" }],
+  hold_seconds: 30,
+  change_seconds: 10,
+};
+
+function withCooldown(cooldown: ProgramDocument["cooldown"] = TWO_STRETCHES) {
+  const stored = fullBody({ cooldown });
+  return { ...stored, stretch_names: ["seated lower back stretch", "overhead triceps stretch"] };
+}
+
+function stretchList(root: HTMLElement): HTMLElement {
+  return getByRole(root, "list", { name: en.editor.stretches });
+}
+
+function stretchNames(root: HTMLElement): string[] {
+  return within(stretchList(root))
+    .getAllByRole("listitem")
+    .map((item) => computeAccessibleName(within(item).getByRole("button", { name: / from the cool-down$/ })))
+    .map((label) => label.replace(/^Remove /, "").replace(/ from the cool-down$/, ""));
+}
+
+test("the Cool-down section adds stretches from the library, with their hold and change; Save sends them", async () => {
+  const fake = stretchFake({ programs: [fullBody()] });
+  const root = await openEditor(fake, "#/programs/1");
+  expect(getByRole(root, "heading", { level: 2, name: en.editor.cooldown })).toBeTruthy();
+  expect(within(stretchList(root)).queryAllByRole("listitem")).toEqual([]);
+
+  const adding = getByRole(root, "button", { name: en.editor.add_stretches });
+  expect(adding.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(adding);
+  await vi.waitFor(() => expect(adding.getAttribute("aria-pressed")).toBe("true"));
+  fireEvent.click(await within(panel(root)).findByRole("button", { name: "Add seated lower back stretch" }));
+  fireEvent.click(within(panel(root)).getByRole("button", { name: "Add overhead triceps stretch" }));
+  await vi.waitFor(() =>
+    expect(stretchNames(root)).toEqual(["seated lower back stretch", "overhead triceps stretch"]),
+  );
+  // The library's ticks follow the list it adds to; the stations are unchanged.
+  expect(within(panel(root)).getByRole("button", { name: "Add overhead triceps stretch again (in the program)" }));
+  expect(within(panel(root)).getByRole("button", { name: "Add push-up" })).toBeTruthy();
+  expect(stationNames(root)).toEqual(["push-up", "squat", "plank"]);
+  fireEvent.click(getByRole(root, "button", { name: "Move overhead triceps stretch up in the cool-down" }));
+  await vi.waitFor(() =>
+    expect(stretchNames(root)).toEqual(["overhead triceps stretch", "seated lower back stretch"]),
+  );
+
+  fireEvent.input(field(root, "spinbutton", en.editor.hold), { target: { value: "40" } });
+  fireEvent.input(field(root, "spinbutton", en.editor.change), { target: { value: "5" } });
+  await save(root, fake);
+
+  const sent = lastWrite(fake).body as ProgramDocument;
+  expect(sent.cooldown).toEqual({
+    stretches: [{ exercise: "1378" }, { exercise: "0690" }],
+    hold_seconds: 40,
+    change_seconds: 5,
+  });
+  expect(sent.stations).toEqual([{ exercise: "0001" }, { exercise: "0002" }, { exercise: "0006" }]);
+});
+
+test("a new program's cool-down starts from the add-on's hold and change", async () => {
+  const fake = stretchFake({
+    defaults: {
+      rounds: 5,
+      work_seconds: 45,
+      switch_seconds: 15,
+      round_rest_seconds: 60,
+      countdown_seconds: 5,
+      cooldown_hold_seconds: 25,
+      cooldown_change_seconds: 15,
+    },
+  });
+  const root = await openEditor(fake, "#/programs/new/empty");
+  fireEvent.click(getByRole(root, "button", { name: en.editor.add_stretches }));
+  fireEvent.click(await within(panel(root)).findByRole("button", { name: "Add seated lower back stretch" }));
+
+  await shows(root, en.editor.hold, "25");
+  await shows(root, en.editor.change, "15");
+  expect(within(stationList(root)).queryAllByRole("listitem")).toEqual([]);
+});
+
+test("removing the last stretch removes the cool-down: Save sends cooldown null", async () => {
+  const one = { ...TWO_STRETCHES, stretches: [{ exercise: "0690" }] };
+  const fake = stretchFake({ programs: [{ ...withCooldown(one), stretch_names: ["seated lower back stretch"] }] });
+  const root = await openEditor(fake, "#/programs/1");
+  await vi.waitFor(() => expect(stretchNames(root)).toEqual(["seated lower back stretch"]));
+
+  fireEvent.click(getByRole(root, "button", { name: "Remove seated lower back stretch from the cool-down" }));
+  await vi.waitFor(() => expect(within(stretchList(root)).queryAllByRole("listitem")).toEqual([]));
+  await save(root, fake);
+
+  expect((lastWrite(fake).body as ProgramDocument).cooldown).toBeNull();
+});
+
+test("a program with a cool-down opens with its stretches and times", async () => {
+  const fake = stretchFake({ programs: [withCooldown({ ...TWO_STRETCHES, hold_seconds: 45, change_seconds: 0 })] });
+  const root = await openEditor(fake, "#/programs/1");
+
+  await vi.waitFor(() =>
+    expect(stretchNames(root)).toEqual(["seated lower back stretch", "overhead triceps stretch"]),
+  );
+  expect(field(root, "spinbutton", en.editor.hold).value).toBe("45");
+  expect(field(root, "spinbutton", en.editor.change).value).toBe("0");
+  expect(within(root).getByText("2 stretches")).toBeTruthy();
+  expect(stationNames(root)).toEqual(["push-up", "squat", "plank"]);
+});
+
+test("a stretch the library doesn't have shows its stored name", async () => {
+  const stored = {
+    ...fullBody({ cooldown: { ...TWO_STRETCHES, stretches: [{ exercise: "gone-2" }] } }),
+    stretch_names: ["old stretch"],
+  };
+  const root = await openEditor(stretchFake({ programs: [stored] }), "#/programs/1");
+
+  await vi.waitFor(() => expect(stretchNames(root)).toEqual(["old stretch"]));
+});
+
+test("a refused stretch shows the add-on's message at that stretch", async () => {
+  const fake = stretchFake({ programs: [withCooldown()] });
+  const message = "Stretch 2: no exercise 'overhead triceps stretch'";
+  fake.answer("PUT", "api/v1/programs/1", 422, {
+    detail: { message, stretch: 2, close_matches: [] },
+    code: "stretch_unknown",
+    field: "cooldown.stretches.1",
+  });
+  const root = await openEditor(fake, "#/programs/1");
+
+  await save(root, fake);
+
+  const item = await within(stretchList(root)).findByRole("listitem", { description: message });
+  expect(within(item).getByRole("button", { name: "Remove overhead triceps stretch from the cool-down" })).toBeTruthy();
+  expect(within(root).queryByRole("alert")).toBeNull();
+});
+
+test("a refused hold time shows at its field, and a refused list at the stretches", async () => {
+  const fake = stretchFake({ programs: [withCooldown()] });
+  const hold = "Input should be less than or equal to 120";
+  const list = "List should have at most 10 items after validation, not 11";
+  fake.answer("PUT", "api/v1/programs/1", 422, {
+    detail: [
+      { loc: ["body", "cooldown", "hold_seconds"], msg: hold, type: "less_than_equal" },
+      { loc: ["body", "cooldown", "stretches"], msg: list, type: "too_long" },
+    ],
+  });
+  const root = await openEditor(fake, "#/programs/1");
+
+  await save(root, fake);
+
+  expect(await findByRole(root, "spinbutton", { name: en.editor.hold, description: hold })).toBeTruthy();
+  expect(getByRole(root, "list", { name: en.editor.stretches, description: list })).toBeTruthy();
+});
+
+test("a cool-down change counts as unsaved: the leave guard asks", async () => {
+  const fake = stretchFake({ programs: [withCooldown()] });
+  const root = await openEditor(fake, "#/programs/1");
+  expect(within(root).queryByText(en.common.not_saved)).toBeNull();
+
+  fireEvent.click(stepper(root, en.editor.longer_hold));
+  await shows(root, en.editor.hold, "35");
+  expect(await within(root).findByText(en.common.not_saved)).toBeTruthy();
+
+  location.hash = "#/library";
+  expect(await findByRole(root, "dialog", { name: en.common.leave_title })).toBeTruthy();
+  expect(location.hash).toBe("#/programs/1");
+});
+
+/** The total the editor shows for a stored program with these fields. */
+async function totalOf(document: Partial<ProgramDocument>): Promise<string> {
+  const names = (document.stations ?? []).map((station) => station.exercise);
+  const stored = program(1, { name: "Timed", countdown_seconds: 5, ...document }, { station_names: names });
+  const root = await openEditor(stretchFake({ programs: [stored] }), "#/programs/1");
+  const total = await within(root).findByText(/ in all · /);
+  const shown = text(total);
+  unmount();
+  return shown;
+}
+
+const stations = (count: number) => ["0001", "0002", "0003", "0005", "0006"].slice(0, count).map((exercise) => ({ exercise }));
+
+test("the total follows the add-on's timeline: no switch after a round's last station, the countdown not counted", async () => {
+  // The add-on's cases (test_timeline.py): the default program is 1665 s, 3 stations and 2 rounds of 10/5/20 are 100 s.
+  const timing = { work_seconds: 45, switch_seconds: 15, round_rest_seconds: 60 };
+  expect(await totalOf({ stations: stations(5), rounds: 5, ...timing })).toBe("28 min in all · 5 rounds × 5 exercises");
+  const small = { work_seconds: 10, switch_seconds: 5, round_rest_seconds: 20 };
+  expect(await totalOf({ stations: stations(3), rounds: 2, ...small })).toBe("2 min in all · 2 rounds × 3 exercises");
+  // Scaled so that a switch after the last station would show: 6 works and 4 switches of 60 s, no rest, are 10 min.
+  const minute = { work_seconds: 60, switch_seconds: 60, round_rest_seconds: 0 };
+  expect(await totalOf({ stations: stations(3), rounds: 2, ...minute })).toBe("10 min in all · 2 rounds × 3 exercises");
+  // One station has no switch at all: 3 works and 2 rests of 60 s are 5 min.
+  const one = { work_seconds: 60, switch_seconds: 60, round_rest_seconds: 60 };
+  expect(await totalOf({ stations: stations(1), rounds: 3, ...one })).toBe("5 min in all · 3 rounds × 1 exercise");
+});
+
+test("the total includes the cool-down: the rest before it, the holds and the changes between them", async () => {
+  // The add-on's case: 100 s, then a rest of 20 s, 2 holds of 30 s and 1 change of 10 s: 190 s.
+  const small = { work_seconds: 10, switch_seconds: 5, round_rest_seconds: 20 };
+  expect(await totalOf({ stations: stations(3), rounds: 2, ...small, cooldown: TWO_STRETCHES })).toBe(
+    "3 min in all · 2 rounds × 3 exercises",
+  );
+  // Scaled so that each part shows: a work of 60 s, a rest of 120 s, 2 holds of 60 s and a change of 60 s: 6 min.
+  const scaled = { stations: stations(1), rounds: 1, work_seconds: 60, switch_seconds: 0, round_rest_seconds: 120 };
+  const holds = { ...TWO_STRETCHES, hold_seconds: 60, change_seconds: 60 };
+  expect(await totalOf({ ...scaled, cooldown: holds })).toBe("6 min in all · 1 round × 1 exercise");
+  // No rest and no change: a work and 2 holds of 60 s are 3 min.
+  const bare = { ...scaled, round_rest_seconds: 0, cooldown: { ...holds, change_seconds: 0 } };
+  expect(await totalOf(bare)).toBe("3 min in all · 1 round × 1 exercise");
+  // One stretch has no change: 2 works, a rest between rounds, the rest before it (60 s each) and a hold of 120 s.
+  const single = { ...holds, stretches: [{ exercise: "0690" }], hold_seconds: 120 };
+  expect(
+    await totalOf({ ...scaled, rounds: 2, round_rest_seconds: 60, cooldown: single }),
+  ).toBe("6 min in all · 2 rounds × 1 exercise");
 });
