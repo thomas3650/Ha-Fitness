@@ -1471,7 +1471,9 @@ test("the Cool-down section adds stretches from the library, with their hold and
     expect(stretchNames(root)).toEqual(["seated lower back stretch", "overhead triceps stretch"]),
   );
   // The library's ticks follow the list it adds to; the stations are unchanged.
-  expect(within(panel(root)).getByRole("button", { name: "Add overhead triceps stretch again (in the program)" }));
+  expect(
+    within(panel(root)).getByRole("button", { name: "Add overhead triceps stretch again (in the program)" }),
+  ).toBeTruthy();
   expect(within(panel(root)).getByRole("button", { name: "Add push-up" })).toBeTruthy();
   expect(stationNames(root)).toEqual(["push-up", "squat", "plank"]);
   fireEvent.click(getByRole(root, "button", { name: "Move overhead triceps stretch up in the cool-down" }));
@@ -1623,6 +1625,9 @@ test("the total follows the add-on's timeline: no switch after a round's last st
   // One station has no switch at all: 3 works and 2 rests of 60 s are 5 min.
   const one = { work_seconds: 60, switch_seconds: 60, round_rest_seconds: 60 };
   expect(await totalOf({ stations: stations(1), rounds: 3, ...one })).toBe("5 min in all · 3 rounds × 1 exercise");
+  // The countdown isn't counted: a work of 25 s after a countdown of 5 s is under a minute.
+  const brief = { work_seconds: 25, switch_seconds: 0, round_rest_seconds: 0, countdown_seconds: 5 };
+  expect(await totalOf({ stations: stations(1), rounds: 1, ...brief })).toBe("< 1 min in all · 1 round × 1 exercise");
 });
 
 test("the total includes the cool-down: the rest before it, the holds and the changes between them", async () => {
