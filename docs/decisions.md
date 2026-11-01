@@ -334,7 +334,7 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   the step 5 build (Task S3); Claude, 2026-10-24 (Thomas's delegation for the night)
 
 ### D41: No switch after the last interval
-- **Date:** 2026-10-24 · **Status:** active
+- **Date:** 2026-10-24 · **Status:** active; `total_seconds` part superseded by D70
 - **Decision:** A session has no switch phase after the last interval of the last round; it ends when the last work
   phase ends. The program's `total_seconds` stays the planned length shown before a workout.
 - **Why:** There is no station to move to, so a final switch would only be dead time before Done.
@@ -587,3 +587,32 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   ([`2026-10-26-editor-cards-design.md`](superpowers/specs/2026-10-26-editor-cards-design.md)) §2.2 items 1, 5 and 6.
 - **Why:** Opening by the obvious click is what users try first, and going back after a save shows it worked.
 - **Source:** Claude, 2026-10-26, #96 (Thomas asked Claude to do it alone)
+
+### D70: No break before the rest between rounds
+- **Date:** 2026-10-31 · **Status:** active
+- **Decision:** The break between stations comes only between two stations of a round. After a round's last station the
+  rest between rounds follows directly, and with that rest at 0 the next round starts straight away. A program's
+  `total_seconds` is the length of the timeline, without the countdown.
+- **Why:** Thomas wanted only the 1 min rest between rounds, not a 15 s break and then the rest. One rule for the
+  session and the total keeps them from drifting apart.
+- **Source:** [cool-down spec](superpowers/specs/2026-10-31-cooldown-and-timeline-design.md) §2.2, §6; Thomas,
+  2026-10-31
+
+### D71: The plan stores the timeline
+- **Date:** 2026-10-31 · **Status:** active
+- **Decision:** A start builds the session's full list of phases once and freezes it in the plan. The engine, the
+  views, the totals, `rounds_completed` and the history read it. Nothing rebuilds it from the plan's numbers later.
+- **Why:** One place, the builder, knows the timing rules, so a later change (a warm-up, another kind of part) changes
+  only the builder. A running or stored session keeps the timeline it started with.
+- **Source:** [cool-down spec](superpowers/specs/2026-10-31-cooldown-and-timeline-design.md) §2.4, §6; Claude,
+  2026-10-31
+
+### D72: Cool-down phases keep the phase kinds and carry a `part`
+- **Date:** 2026-10-31 · **Status:** active
+- **Decision:** A cool-down is `countdown`, `work`, `switch` and `rest` phases like the circuit, with `part: "circuit"
+  | "cooldown"` on the phase, the next phase and the station reference. The contract stays at `api_version` 1.
+- **Why:** The add-on and the integration are both at 1.x, so neither may need a newer version of the other. An older
+  card shows a stretch as a work phase and still runs; a newer card with an older add-on reads a missing `part` as
+  `circuit`.
+- **Source:** [cool-down spec](superpowers/specs/2026-10-31-cooldown-and-timeline-design.md) §4.4, §6; Claude,
+  2026-10-31

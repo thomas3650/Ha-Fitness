@@ -16,7 +16,9 @@ from ha_fitness_server import __version__
 from tests.conftest import FrozenClock, MakeApp
 from tests.session_helpers import (
     AGENT,
+    PROGRAMS,
     SESSION,
+    SMALL,
     SMALL_END,
     SMALL_STARTS,
     TODAY,
@@ -271,3 +273,41 @@ def test_null_push_after_a_restart_inside_the_window(make_app: MakeApp) -> None:
         null = ws.receive_json()
     assert shown == {**ended, "server_time": shown["server_time"]}
     assert null == {"type": "session", "data": None}
+
+
+def test_phase_changed_carries_part(make_app: MakeApp) -> None:
+    """`phase_changed` on entering the first stretch has `part: cooldown`; `session_completed` has no `part`."""
+    clock = FrozenClock(WEDNESDAY_9)
+    with _client(make_app, clock) as tc:
+        thomas, _program_id = tc_setup(tc)
+        document = {
+            "name": "Udstræk",
+            "weekdays": ["wed"],
+            "stations": [{"exercise": exercise} for exercise in SMALL["stations"]],
+            **{key: value for key, value in SMALL.items() if key != "stations"},
+            "cooldown": {
+                "stretches": [{"exercise": "0690"}, {"exercise": "1378"}],
+                "hold_seconds": 30,
+                "change_seconds": 10,
+            },
+        }
+        response = tc.post(PROGRAMS, json=document)
+        assert response.status_code == 201, response.text
+        with tc.websocket_connect(WS) as ws:
+            ws_connect(ws)
+            tc_start(tc, response.json()["id"], thomas)
+            ws_session(ws.receive_json())
+            _event(ws.receive_json())
+            # The rest before the cool-down starts at 75 s, the first stretch at 95 s, the end at 165 s.
+            clock.set(at(WEDNESDAY_9, 95))
+            stretch = ws_session(ws.receive_json())
+            entered = _event(ws.receive_json())
+            clock.set(at(WEDNESDAY_9, 165))
+            assert ws_session(ws.receive_json())["status"] == "completed"
+            completed = _event(ws.receive_json())
+    assert stretch["phase"]["part"] == "cooldown"
+    assert entered[0] == "phase_changed"
+    assert entered[1]["phase"]["part"] == "cooldown"
+    assert entered[1]["phase"] == stretch["phase"]
+    assert completed[0] == "session_completed"
+    assert "part" not in completed[1]

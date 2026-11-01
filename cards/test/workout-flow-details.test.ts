@@ -41,6 +41,11 @@ interface Program {
     volume: number | null;
     shuffle: boolean;
   } | null;
+  cooldown?: {
+    stretches: { exercise_id: string; name: string }[];
+    hold_seconds: number;
+    change_seconds: number;
+  } | null;
 }
 
 interface Speaker {
@@ -915,4 +920,63 @@ test("a refused early start shows the can't-start text, also from an older add-o
     expect(button(flow, "Start").disabled).toBe(false);
     document.body.replaceChildren();
   }
+});
+
+// A program with a cool-down: the add-on's total includes the stretches (cool-down spec §4.2).
+const withCooldown: Program = {
+  ...onsdag,
+  id: 5,
+  name: "Fredag",
+  total_minutes: 47,
+  total_seconds: 2810,
+  cooldown: {
+    stretches: [
+      { exercise_id: "0001", name: "Seated lower back stretch" },
+      { exercise_id: "s-2", name: "Quad stretch" },
+    ],
+    hold_seconds: 30,
+    change_seconds: 10,
+  },
+};
+
+test("details lists the cool-down's stretches below the stations, with the hold and change times", async () => {
+  const fake = fakeHass("da", [thomas, maria], [onsdag, withCooldown]);
+  const { flow } = await mount(fake, { kind: "details", programId: 5 });
+
+  const stretches = getAllByRole(getByRole(root(flow), "list", { name: "Udstrækning" }), "listitem");
+  expect(stretches.map(text)).toEqual(["1 · Seated lower back stretch", "2 · Quad stretch"]);
+  // Below the stations.
+  const stations = getByRole(root(flow), "list", { name: "Øvelser" });
+  expect(stations.compareDocumentPosition(stretches[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(queryByText(root(flow), "Udstrækning · 30 s stræk / 10 s skift")).not.toBeNull();
+  // Their thumbnails come like the stations'.
+  expect(getByRole(stretches[0], "img", { name: "Seated lower back stretch" }).getAttribute("src")).toMatch(
+    /^blob:image-/,
+  );
+  expect(fake.hass.fetchWithAuth).toHaveBeenCalledWith("/api/ha_fitness/media/s-2/thumbnail");
+  // The total is the add-on's, the stretches included.
+  expect(facts(flow).at(-1)).toEqual(["Samlet tid", "46:50"]);
+});
+
+test("details in English shows the cool-down", async () => {
+  const fake = fakeHass("en", [thomas, maria], [withCooldown]);
+  const { flow } = await mount(fake, { kind: "details", programId: 5 });
+  expect(getAllByRole(getByRole(root(flow), "list", { name: "Cool-down" }), "listitem").map(text)).toEqual([
+    "1 · Seated lower back stretch",
+    "2 · Quad stretch",
+  ]);
+  expect(queryByText(root(flow), "Cool-down · 30 s stretch / 10 s change")).not.toBeNull();
+});
+
+test("no cool-down section without a cool-down, or from an older integration", async () => {
+  const none: Program = { ...onsdag, cooldown: null };
+  const fake = fakeHass("da", [thomas, maria], [none, solo]);
+  const { flow } = await mount(fake, details);
+  expect(queryByRole(root(flow), "list", { name: "Udstrækning" })).toBeNull();
+  expect(queryByText(root(flow), /^Udstrækning/)).toBeNull();
+  document.body.replaceChildren();
+
+  // `solo` has no `cooldown` key at all.
+  const older = await mount(fakeHass("da", [thomas, maria], [solo]), { kind: "details", programId: 4 });
+  expect(queryByRole(root(older.flow), "list", { name: "Udstrækning" })).toBeNull();
 });

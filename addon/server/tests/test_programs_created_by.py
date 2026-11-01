@@ -65,6 +65,8 @@ async def test_program_defaults(client: httpx.AsyncClient) -> None:
         "switch_seconds": 15,
         "round_rest_seconds": 60,
         "countdown_seconds": 5,
+        "cooldown_hold_seconds": 30,
+        "cooldown_change_seconds": 10,
     }
 
 

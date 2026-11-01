@@ -95,6 +95,7 @@ def _station(program: dict[str, Any], index: int) -> dict[str, Any]:
         "number": index + 1,
         "exercise_id": program["program"]["stations"][index]["exercise"],
         "name": program["station_names"][index],
+        "part": "circuit",
     }
 
 
@@ -132,18 +133,19 @@ async def test_start_returns_view_at_phase_0(make_app: MakeApp) -> None:
         "phase": {
             "index": 0,
             "kind": "countdown",
+            "part": "circuit",
             "round": 1,
             "interval": 1,
             "duration": 5,
             "ends_at": "2026-10-28T08:00:05.000Z",
             "remaining": None,
         },
-        "next_phase": {"kind": "work", "duration": 45},
+        "next_phase": {"kind": "work", "part": "circuit", "duration": 45},
         "stations": [
             {"current": _station(program, 0), "next": _station(program, 1)},
             {"current": _station(program, 1), "next": _station(program, 2)},
         ],
-        "totals": {"planned": 1725, "rounds": 5, "stations": 5},
+        "totals": {"planned": 1665, "rounds": 5, "stations": 5, "stretches": 0},
         "started_at": None,
         "ended_at": None,
         "music": None,
@@ -172,13 +174,14 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
     assert view["phase"] == {
         "index": 0,
         "kind": "work",
+        "part": "circuit",
         "round": 1,
         "interval": 1,
         "duration": 45,
         "ends_at": "2026-10-28T08:00:45.000Z",
         "remaining": None,
     }
-    assert view["next_phase"] == {"kind": "switch", "duration": 15}
+    assert view["next_phase"] == {"kind": "switch", "part": "circuit", "duration": 15}
     assert view["stations"] == [
         {"current": _station(program, 0), "next": _station(program, 1)}
     ]
@@ -192,9 +195,9 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
 @pytest.mark.parametrize(
     ("stations", "fields", "planned"),
     [
-        # 5 x 5 x (45 + 15) + 4 x 60, less the last switch: 1740 - 15.
-        (FIVE, {}, 1725),
-        # 3 x 2 x (30 + 10) + 1 x 20, less the last switch; the countdown of 10 is left out.
+        # 5 x 5 x 45 + 5 x 4 x 15 + 4 x 60: no switch after a round's last station.
+        (FIVE, {}, 1665),
+        # 3 x 2 x 30 + 2 x 2 x 10 + 1 x 20; the countdown of 10 is left out.
         (
             FIVE[:3],
             {
@@ -204,7 +207,7 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
                 "round_rest_seconds": 20,
                 "countdown_seconds": 10,
             },
-            250,
+            240,
         ),
         # No switches and no rests: 5 x 3 x 45.
         (FIVE, {"rounds": 3, "switch_seconds": 0, "round_rest_seconds": 0}, 675),
@@ -219,7 +222,7 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
             },
             10,
         ),
-        # One station, two rounds with a switch: work, switch, rest, work.
+        # One station, two rounds: work, rest, work; one station has no switch.
         (
             FIVE[:1],
             {
@@ -228,14 +231,14 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
                 "switch_seconds": 5,
                 "round_rest_seconds": 30,
             },
-            75,
+            70,
         ),
     ],
 )
-async def test_planned_total_excludes_countdown_and_last_switch(
+async def test_planned_total_excludes_countdown_and_round_end_switches(
     make_app: MakeApp, stations: list[str], fields: dict[str, Any], planned: int
 ) -> None:
-    """`totals.planned` sums the work, switch and rest phases, without the countdown and the switch after the last interval."""
+    """`totals.planned` sums the work, switch and rest phases: no countdown, and no switch after a round's last station."""
     async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
         [thomas] = await _set_people(client, THOMAS)
         program = await _create(client, "Plan", stations=stations, **fields)
@@ -245,6 +248,7 @@ async def test_planned_total_excludes_countdown_and_last_switch(
         "planned": planned,
         "rounds": program["program"]["rounds"],
         "stations": len(stations),
+        "stretches": 0,
     }
 
 
@@ -373,6 +377,7 @@ async def test_start_with_missing_exercise_names_it_by_id(
         "number": 2,
         "exercise_id": added.json()["id"],
         "name": added.json()["id"],
+        "part": "circuit",
     }
 
 

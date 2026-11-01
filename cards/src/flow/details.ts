@@ -29,6 +29,15 @@ export interface Program {
   stations: { exercise_id: string; name: string }[];
   /** The program's music; null without, and missing from an add-on older than music. */
   music?: ProgramMusic | null;
+  /** The cool-down after the circuit; null without, and missing from an older integration. */
+  cooldown?: ProgramCooldown | null;
+}
+
+/** A program's cool-down, as `ha_fitness/programs` returns it (cool-down spec §4.6). */
+export interface ProgramCooldown {
+  stretches: { exercise_id: string; name: string }[];
+  hold_seconds: number;
+  change_seconds: number;
 }
 
 /** A program's music, as `ha_fitness/programs` returns it (music spec §5.4). */
@@ -145,6 +154,7 @@ export function renderDetails(ctx: DetailsContext): TemplateResult {
             `,
           )}
         </ol>
+        ${renderCooldown(ctx, program)}
       </section>
       <section class="panel facts">
         ${renderChips(ctx)}
@@ -163,6 +173,31 @@ export function renderDetails(ctx: DetailsContext): TemplateResult {
         <p class="hint">${t("flow.ask_claude")}</p>
       </section>
     </div>
+  `;
+}
+
+/**
+ * The cool-down below the stations (cool-down spec §4.7): the hold and change times, and the
+ * stretches numbered from 1, as the stations show. Nothing without a cool-down.
+ */
+function renderCooldown(ctx: DetailsContext, program: Program): TemplateResult | typeof nothing {
+  const { t } = ctx;
+  const cooldown = program.cooldown;
+  if (!cooldown) return nothing;
+  return html`
+    <p class="lead cooldown">
+      ${t("flow.cooldown_line", { hold: cooldown.hold_seconds, change: cooldown.change_seconds })}
+    </p>
+    <ol class="grid" aria-label=${t("flow.cooldown_label")}>
+      ${cooldown.stretches.map(
+        (stretch, index) => html`
+          <li class="card">
+            ${renderImage(ctx.imageOf, stretch, "thumbnail", "picture")}
+            <span class="name">${index + 1} · ${stretch.name}</span>
+          </li>
+        `,
+      )}
+    </ol>
   `;
 }
 
@@ -334,6 +369,9 @@ export const detailsStyles = css`
   .lead {
     margin: 0 0 16px;
     font-weight: 500;
+  }
+  .lead.cooldown {
+    margin-top: 24px;
   }
   .grid {
     display: grid;

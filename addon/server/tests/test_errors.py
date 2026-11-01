@@ -120,6 +120,17 @@ async def test_active_without_weekdays_is_at_weekdays(
     assert "at least one weekday" in item["msg"]
 
 
+async def test_cooldown_empty_stretches_is_invalid(
+    client: httpx.AsyncClient,
+) -> None:
+    """A cool-down with no stretches is a 422 item at `cooldown.stretches`, typed `invalid`; none is `cooldown: null`."""
+    response = await client.post(PROGRAMS, json=_program(cooldown={"stretches": []}))
+    assert response.status_code == 422, response.text
+    items = response.json()["detail"]
+    [item] = [item for item in items if item["type"] == "invalid"]
+    assert item["loc"] == ["body", "cooldown", "stretches"]
+
+
 async def test_bad_active_without_weekdays_is_a_422_for_active(
     client: httpx.AsyncClient,
 ) -> None:

@@ -1,10 +1,17 @@
 import { type Connection, WsSubscription } from "./today-data";
 
-/** A station a participant is at, or moves to next (spec §3.1). */
+/**
+ * The part of the workout a phase or a station is in (cool-down spec §4.4). An add-on older than the
+ * cool-down sends none; missing reads as `circuit`.
+ */
+export type Part = "circuit" | "cooldown";
+
+/** A station a participant is at, or moves to next (spec §3.1); in the cool-down, a stretch. */
 export interface SessionStation {
   number: number;
   exercise_id: string;
   name: string;
+  part?: Part;
 }
 
 export type PhaseKind = "countdown" | "work" | "switch" | "rest";
@@ -21,6 +28,7 @@ export interface SessionPhase {
   ends_at: string | null;
   /** The seconds left, set while paused. */
   remaining: number | null;
+  part?: Part;
 }
 
 /** The add-on's session view (spec §3.5), as `ha_fitness/session/subscribe` sends it (spec §4). */
@@ -33,11 +41,14 @@ export interface SessionView {
   training_day_id: number | null;
   participants: { id: number; name: string }[];
   phase: SessionPhase | null;
-  next_phase: { kind: PhaseKind; duration: number } | null;
+  next_phase: { kind: PhaseKind; duration: number; part?: Part } | null;
   /** One per participant, in participant order. */
   stations: { current: SessionStation; next: SessionStation | null }[] | null;
-  /** `stations` is the intervals per round; older add-ons leave it out. */
-  totals: { planned: number; rounds: number; stations?: number };
+  /**
+   * `stations` is the intervals per round, `stretches` the cool-down's stretches (0 with none);
+   * older add-ons leave them out.
+   */
+  totals: { planned: number; rounds: number; stations?: number; stretches?: number };
   /** The start of the first work phase; null during the countdown, before work began. */
   started_at: string | null;
   ended_at: string | null;

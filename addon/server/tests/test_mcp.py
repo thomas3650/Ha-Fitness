@@ -148,6 +148,36 @@ async def test_program_descriptions_keep_timings_and_ask_for_music(
         assert word in summary, word
 
 
+@pytest.mark.parametrize("name", ["create_program", "update_program"])
+async def test_program_descriptions_describe_the_cooldown(
+    make_app: MakeApp, name: str
+) -> None:
+    """The program tools describe the cool-down, its refusal, the break rule, and keeping it on an update."""
+    async with mcp_client(make_app()) as session:
+        tools = {tool.name: tool for tool in await session.list_tools()}
+    description = tools[name].description or ""
+    for field in ("cooldown", "stretches", "hold_seconds", "change_seconds"):
+        assert field in description, field
+    # A stretch that can't be resolved fails with its stretch number.
+    assert "stretch number" in description
+    # The break between stations comes only between two stations of a round.
+    assert "between two stations of a round" in description
+    # On an update the cool-down the user didn't mention stays as it is.
+    sentences = " ".join(description.split()).split(". ")
+    keep = [sentence for sentence in sentences if "didn't mention" in sentence]
+    assert any("cool-down" in sentence for sentence in keep), keep
+    # The summary before the yes shows the cool-down.
+    summary = description[description.index("Before the yes") :]
+    assert "cool-down" in summary
+    # When creating, the cool-down's defaults are kept too.
+    creating = next(
+        sentence for sentence in sentences if "When creating: keep" in sentence
+    )
+    assert "cool-down" in creating
+    assert "hold 30 s" in creating
+    assert "change 10 s" in creating
+
+
 async def test_argument_schema_is_the_apis(make_app: MakeApp) -> None:
     """`create_program` takes the API's program document, ranges included."""
     async with mcp_client(make_app()) as session:
@@ -166,8 +196,8 @@ async def test_create_and_list_programs_via_mcp(make_app: MakeApp) -> None:
         )
         listed = await call(session, "list_programs")
     assert created["program"]["rounds"] == 5
-    # 5 stations x 5 rounds x (45 + 15) s + 4 x 60 s rest = 1740 s.
-    assert created["total_seconds"] == 1740
+    # 5 stations x 5 rounds x 45 s + 5 x 4 switches x 15 s + 4 x 60 s rest = 1665 s.
+    assert created["total_seconds"] == 1665
     assert listed == {
         "result": [
             {
@@ -177,7 +207,7 @@ async def test_create_and_list_programs_via_mcp(make_app: MakeApp) -> None:
                 "weekdays": ["wed"],
                 "station_count": 5,
                 "rounds": 5,
-                "total_minutes": 29,
+                "total_minutes": 28,
             }
         ]
     }
@@ -186,10 +216,10 @@ async def test_create_and_list_programs_via_mcp(make_app: MakeApp) -> None:
 @pytest.mark.parametrize(
     ("stations", "work_seconds", "switch_seconds", "minutes"),
     [
-        # 150 s is 2.5 min: half a minute rounds up, to 3.
-        (1, 120, 30, 3),
-        # 210 s is 3.5 min: up to 4.
-        (2, 90, 15, 4),
+        # 60 + 30 + 60 = 150 s is 2.5 min: half a minute rounds up, to 3.
+        (2, 60, 30, 3),
+        # 90 + 30 + 90 = 210 s is 3.5 min: up to 4.
+        (2, 90, 30, 4),
         # 100 s is 1.67 min.
         (1, 100, 0, 2),
     ],
@@ -258,6 +288,109 @@ async def test_unknown_exercise_error_has_close_matches(make_app: MakeApp) -> No
     assert detail["message"] == "Unknown exercise '3/4 sit-upp'"
     assert detail["station"] == 1
     assert {"id": "0001", "name": "3/4 sit-up"} in detail["close_matches"]
+
+
+# Two stretches by name: seated lower back stretch (0690) and calf stretch with rope (1378).
+STRETCHES = [
+    {"exercise": "seated lower back stretch"},
+    {"exercise": "calf stretch with rope"},
+]
+
+
+async def test_create_and_update_program_with_cooldown(make_app: MakeApp) -> None:
+    """`create_program` and `update_program` write the cool-down and return it; one left out is deleted."""
+    async with mcp_client(make_app()) as session:
+        created = await call(
+            session,
+            "create_program",
+            program=_program(cooldown={"stretches": STRETCHES}),
+        )
+        assert created["program"]["cooldown"] == {
+            "stretches": [{"exercise": "0690"}, {"exercise": "1378"}],
+            "hold_seconds": 30,
+            "change_seconds": 10,
+        }
+        assert created["stretch_names"] == [
+            "seated lower back stretch",
+            "calf stretch with rope",
+        ]
+        program_id = created["id"]
+        got = await call(session, "get_program", program_id=program_id)
+        assert got == created
+        # get_program's document sent back as it is keeps the cool-down.
+        same = await call(
+            session, "update_program", program_id=program_id, program=got["program"]
+        )
+        assert same["program"]["cooldown"] == created["program"]["cooldown"]
+        changed = {
+            "stretches": [{"exercise": "1378"}],
+            "hold_seconds": 45,
+            "change_seconds": 0,
+        }
+        updated = await call(
+            session,
+            "update_program",
+            program_id=program_id,
+            program=_program(cooldown=changed),
+        )
+        assert updated["program"]["cooldown"] == changed
+        assert updated["stretch_names"] == ["calf stretch with rope"]
+        left_out = await call(
+            session, "update_program", program_id=program_id, program=_program()
+        )
+    assert left_out["program"]["cooldown"] is None
+    assert left_out["stretch_names"] == []
+
+
+@pytest.mark.parametrize(
+    ("stretches", "number"),
+    [
+        ([{"exercise": "0690"}, {"exercise": "no such stretch"}], 2),
+        ([{"exercise": "lever chest press"}], 1),
+    ],
+)
+async def test_bad_stretch_error_has_its_stretch_number(
+    make_app: MakeApp, stretches: list[dict[str, str]], number: int
+) -> None:
+    """An unknown or shared stretch comes back as a tool error with the stretch's number, not a station's."""
+    async with mcp_client(make_app()) as session:
+        with pytest.raises(ToolError) as error:
+            await call(
+                session,
+                "create_program",
+                program=_program(cooldown={"stretches": stretches}),
+            )
+        assert await call(session, "list_programs") == {"result": []}
+    detail = json.loads(str(error.value))
+    assert detail["stretch"] == number
+    assert "station" not in detail
+    assert isinstance(detail["close_matches"], list)
+
+
+async def test_empty_cooldown_is_a_tool_error(make_app: MakeApp) -> None:
+    """A cool-down without stretches is refused; no cool-down is left out or null."""
+    async with mcp_client(make_app()) as session:
+        with pytest.raises(ToolError, match="at least one stretch"):
+            await call(
+                session, "create_program", program=_program(cooldown={"stretches": []})
+            )
+
+
+async def test_total_minutes_follows_the_timeline(make_app: MakeApp) -> None:
+    """No break before the rest between rounds, and the rest and the cool-down count."""
+    document = _program(
+        stations=[{"exercise": "0001"}, {"exercise": "0002"}],
+        rounds=2,
+        switch_seconds=60,
+        cooldown={"stretches": STRETCHES},
+    )
+    async with mcp_client(make_app()) as session:
+        created = await call(session, "create_program", program=document)
+        listed = await call(session, "list_programs")
+    # 2 rounds x (45 + 60 + 45) + 60 s rest + 60 s rest before the cool-down + 30 + 10 + 30 = 490 s.
+    assert created["total_seconds"] == 490
+    # 490 s is 8.17 min: 8. A switch after every station would make it 610 s, 10 min.
+    assert listed["result"][0]["total_minutes"] == 8
 
 
 async def test_not_found_and_taken_are_tool_errors_with_rests_text(

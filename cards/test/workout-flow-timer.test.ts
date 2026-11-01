@@ -1104,3 +1104,363 @@ test("player in the two-person timer", async () => {
   // The timer's own controls are still there.
   expect(button(flow, "Næste")).toBeTruthy();
 });
+
+// The cool-down (cool-down spec §4.7): four stretches after the circuit, each a hold and a change.
+const lowerBack = { number: 1, exercise_id: "s-1", name: "Seated lower back stretch", part: "cooldown" as const };
+const quad = { number: 2, exercise_id: "s-2", name: "Quad stretch", part: "cooldown" as const };
+const hamstring = { number: 3, exercise_id: "s-3", name: "Hamstring stretch", part: "cooldown" as const };
+const calf = { number: 4, exercise_id: "s-4", name: "Calf stretch", part: "cooldown" as const };
+const COOLDOWN_TOTALS = { planned: 1900, rounds: 5, stations: 3, stretches: 4 };
+
+/** The circuit's last work phase, with the rest before the cool-down next. */
+function lastWork(overrides: Partial<SessionView> = {}): SessionView {
+  return view({
+    phase: phase({ index: 15, round: 5, interval: 3, part: "circuit" }),
+    next_phase: { kind: "rest", duration: 60, part: "circuit" },
+    stations: [
+      { current: planke, next: lowerBack },
+      { current: push_up, next: lowerBack },
+    ],
+    totals: COOLDOWN_TOTALS,
+    ...overrides,
+  });
+}
+
+/** The rest before the cool-down: everyone moves to the first stretch. */
+function restBefore(overrides: Partial<SessionView> = {}): SessionView {
+  return view({
+    phase: phase({
+      index: 16,
+      kind: "rest",
+      round: 5,
+      interval: 3,
+      duration: 60,
+      ends_at: "2026-10-24T08:01:00.000Z",
+      part: "circuit",
+    }),
+    next_phase: { kind: "work", duration: 30, part: "cooldown" },
+    stations: [
+      { current: lowerBack, next: quad },
+      { current: lowerBack, next: quad },
+    ],
+    totals: COOLDOWN_TOTALS,
+    ...overrides,
+  });
+}
+
+/** The second stretch's hold. */
+function hold(overrides: Partial<SessionView> = {}): SessionView {
+  return view({
+    phase: phase({
+      index: 19,
+      kind: "work",
+      round: 1,
+      interval: 2,
+      duration: 30,
+      ends_at: "2026-10-24T08:00:30.000Z",
+      part: "cooldown",
+    }),
+    next_phase: { kind: "switch", duration: 10, part: "cooldown" },
+    stations: [
+      { current: quad, next: hamstring },
+      { current: quad, next: hamstring },
+    ],
+    totals: COOLDOWN_TOTALS,
+    ...overrides,
+  });
+}
+
+/** The change from the second stretch to the third. */
+function change(overrides: Partial<SessionView> = {}): SessionView {
+  return view({
+    phase: phase({
+      index: 20,
+      kind: "switch",
+      round: 1,
+      interval: 2,
+      duration: 10,
+      ends_at: "2026-10-24T08:00:10.000Z",
+      part: "cooldown",
+    }),
+    next_phase: { kind: "work", duration: 30, part: "cooldown" },
+    stations: [
+      { current: hamstring, next: calf },
+      { current: hamstring, next: calf },
+    ],
+    totals: COOLDOWN_TOTALS,
+    ...overrides,
+  });
+}
+
+/** One person: the first participant and station only. */
+function alone(session: SessionView): SessionView {
+  return { ...session, participants: [thomas], stations: session.stations!.slice(0, 1) };
+}
+
+function cards(flow: FlowElement): string[] {
+  return getAllByRole(root(flow), "region").map(text);
+}
+
+function hasButton(flow: FlowElement, name: string): boolean {
+  return queryByRole(root(flow), "button", { name }) !== null;
+}
+
+test("cool-down: the last circuit work points at the cool-down", async () => {
+  const two = await mount(fakeHass("da"), lastWork());
+  expect(ringState(two.flow).name).toBe("ARBEJD");
+  expect(cards(two.flow)).toEqual([
+    "1 Thomas Station 3 Planke Næste: udstrækning · Seated lower back stretch",
+    "2 Maria Station 1 Push-up Næste: udstrækning · Seated lower back stretch",
+  ]);
+  expect(hasButton(two.flow, "Spring udstrækning over")).toBe(false);
+  document.body.replaceChildren();
+
+  // One person: the NEXT card is titled for the cool-down.
+  const one = await mount(fakeHass("da"), alone(lastWork()));
+  expect(text(getByRole(root(one.flow), "region", { name: "UDSTRÆKNING" }))).toBe(
+    "UDSTRÆKNING Seated lower back stretch efter 60 s pause",
+  );
+  expect(queryByRole(root(one.flow), "region", { name: "NÆSTE" })).toBeNull();
+});
+
+test("cool-down: the rest before it reads COOL-DOWN NEXT and offers Skip", async () => {
+  const two = await mount(fakeHass("da"), restBefore());
+  expect(ringState(two.flow).name).toBe("PAUSE");
+  // No station badge: the stretch has no station.
+  expect(cards(two.flow)).toEqual([
+    "1 Thomas NU KOMMER UDSTRÆKNING Seated lower back stretch Næste: Quad stretch",
+    "2 Maria NU KOMMER UDSTRÆKNING Seated lower back stretch Næste: Quad stretch",
+  ]);
+  // The pills stay as the circuit's.
+  expect(hasPill(two.flow, "Runde 5 / 5")).toBe(true);
+  expect(hasPill(two.flow, "Interval 3 / 3")).toBe(true);
+  expect(hasButton(two.flow, "Spring udstrækning over")).toBe(true);
+  expect(hasButton(two.flow, "Slut")).toBe(true);
+  document.body.replaceChildren();
+
+  const one = await mount(fakeHass("da"), alone(restBefore()));
+  expect(text(getByRole(root(one.flow), "region", { name: "Thomas" }))).toBe(
+    "NU KOMMER UDSTRÆKNING Seated lower back stretch",
+  );
+  expect(text(getByRole(root(one.flow), "region", { name: "DEREFTER" }))).toBe(
+    "DEREFTER Quad stretch efter 30 s stræk",
+  );
+  expect(hasButton(one.flow, "Spring udstrækning over")).toBe(true);
+});
+
+test("cool-down: a hold shows STRETCH, the cool-down pill and the next stretch", async () => {
+  const two = await mount(fakeHass("da"), hold());
+  expect(ringState(two.flow)).toMatchObject({ name: "STRÆK", now: "30", text: "STRÆK 30 sekunder tilbage" });
+  expect(hasPill(two.flow, "Udstrækning 2 / 4")).toBe(true);
+  expect(before(pill(two.flow, "Udstrækning 2 / 4")!, ring(two.flow))).toBe(true);
+  expect(queryAllByText(root(two.flow), /^Runde/)).toHaveLength(0);
+  expect(queryAllByText(root(two.flow), /^Interval/)).toHaveLength(0);
+  expect(cards(two.flow)).toEqual(["1 Thomas Quad stretch Næste: Hamstring stretch", "2 Maria Quad stretch Næste: Hamstring stretch"]);
+  expect(getByRole(getAllByRole(root(two.flow), "region")[0], "img", { name: "Quad stretch" })).toBeTruthy();
+  expect(hasButton(two.flow, "Spring udstrækning over")).toBe(true);
+
+  // The last stretch: no next line.
+  await push(
+    two.flow,
+    hold({
+      revision: 11,
+      phase: phase({ index: 23, round: 1, interval: 4, duration: 30, ends_at: "2026-10-24T08:00:30.000Z", part: "cooldown" }),
+      next_phase: null,
+      stations: [
+        { current: calf, next: null },
+        { current: calf, next: null },
+      ],
+    }),
+  );
+  expect(cards(two.flow)).toEqual(["1 Thomas Calf stretch", "2 Maria Calf stretch"]);
+  expect(hasPill(two.flow, "Udstrækning 4 / 4")).toBe(true);
+  document.body.replaceChildren();
+
+  // One person: no Station pill either; the NEXT card shows the next stretch.
+  const one = await mount(fakeHass("da"), alone(hold()));
+  expect(text(getByRole(root(one.flow), "region", { name: "Thomas" }))).toBe("Quad stretch");
+  expect(text(getByRole(root(one.flow), "region", { name: "NÆSTE" }))).toBe("NÆSTE Hamstring stretch efter 10 s skift");
+  expect(queryAllByText(root(one.flow), /^Station/)).toHaveLength(0);
+  expect(hasPill(one.flow, "Udstrækning 2 / 4")).toBe(true);
+});
+
+test("cool-down: a change shows CHANGE and NEXT STRETCH", async () => {
+  const two = await mount(fakeHass("da"), change());
+  expect(ringState(two.flow)).toMatchObject({ name: "SKIFT", text: "SKIFT 10 sekunder tilbage" });
+  expect(hasPill(two.flow, "Udstrækning 2 / 4")).toBe(true);
+  expect(cards(two.flow)).toEqual([
+    "1 Thomas NÆSTE STRÆK Hamstring stretch Næste: Calf stretch",
+    "2 Maria NÆSTE STRÆK Hamstring stretch Næste: Calf stretch",
+  ]);
+  document.body.replaceChildren();
+
+  const one = await mount(fakeHass("da"), alone(change()));
+  expect(text(getByRole(root(one.flow), "region", { name: "Thomas" }))).toBe("NÆSTE STRÆK Hamstring stretch");
+  expect(text(getByRole(root(one.flow), "region", { name: "DEREFTER" }))).toBe("DEREFTER Calf stretch efter 30 s stræk");
+});
+
+test("cool-down: at local zero the ring shows the next phase's cool-down word", async () => {
+  const { flow } = await mount(fakeHass("da"), hold());
+  await wait(flow, 30_000);
+  expect(ringState(flow)).toMatchObject({ name: "SKIFT", now: "10" });
+  document.body.replaceChildren();
+
+  // With no rest before it, the circuit's last work goes straight into the first hold.
+  const straight = await mount(
+    fakeHass("da"),
+    lastWork({ next_phase: { kind: "work", duration: 30, part: "cooldown" } }),
+  );
+  await wait(straight.flow, 45_000);
+  expect(ringState(straight.flow)).toMatchObject({ name: "STRÆK", now: "30" });
+});
+
+test("cool-down with no rest before it: the last work points at it, with no Skip", async () => {
+  const { flow } = await mount(fakeHass("da"), lastWork({ next_phase: { kind: "work", duration: 30, part: "cooldown" } }));
+  expect(cards(flow)).toEqual([
+    "1 Thomas Station 3 Planke Næste: udstrækning · Seated lower back stretch",
+    "2 Maria Station 1 Push-up Næste: udstrækning · Seated lower back stretch",
+  ]);
+  expect(hasButton(flow, "Spring udstrækning over")).toBe(false);
+});
+
+test("in a program with a cool-down, a rest between rounds and a circuit switch offer no Skip", async () => {
+  const rest = view({
+    phase: phase({ index: 6, kind: "rest", round: 2, interval: 3, duration: 60, part: "circuit" }),
+    next_phase: { kind: "work", duration: 45, part: "circuit" },
+    totals: COOLDOWN_TOTALS,
+  });
+  const restFlow = await mount(fakeHass("da"), rest);
+  expect(ringState(restFlow.flow).name).toBe("PAUSE");
+  expect(hasButton(restFlow.flow, "Spring udstrækning over")).toBe(false);
+  expect(hasButton(restFlow.flow, "Slut")).toBe(true);
+  document.body.replaceChildren();
+
+  const circuitSwitch = view({
+    phase: phase({ index: 2, kind: "switch", round: 1, interval: 1, duration: 15, part: "circuit" }),
+    next_phase: { kind: "work", duration: 45, part: "circuit" },
+    totals: COOLDOWN_TOTALS,
+  });
+  const switchFlow = await mount(fakeHass("da"), circuitSwitch);
+  expect(ringState(switchFlow.flow).name).toBe("SKIFT");
+  expect(hasButton(switchFlow.flow, "Spring udstrækning over")).toBe(false);
+  expect(hasButton(switchFlow.flow, "Slut")).toBe(true);
+});
+
+test("Skip cool-down asks, with the wake-tap guard", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, hold());
+
+  await tap(flow, button(flow, "Spring udstrækning over"));
+  expect(hasText(flow, "Spring udstrækningen over?")).toBe(true);
+  expect(hasButton(flow, "Spring udstrækning over")).toBe(false);
+
+  // A tap on Ja right away does nothing.
+  await tap(flow, button(flow, "Ja"));
+  expect(sent(fake)).toEqual([]);
+
+  // Nej closes the question.
+  await tap(flow, button(flow, "Nej"));
+  expect(queryByText(root(flow), "Spring udstrækningen over?")).toBeNull();
+
+  await tap(flow, button(flow, "Spring udstrækning over"));
+  await wait(flow, 499);
+  await tap(flow, button(flow, "Ja"));
+  expect(sent(fake)).toEqual([]);
+  await wait(flow, 1);
+  await tap(flow, button(flow, "Ja"));
+  expect(sent(fake)).toEqual(["skip_cooldown"]);
+  expect(queryByText(root(flow), "Spring udstrækningen over?")).toBeNull();
+
+  fake.commands[0].resolve(finished(true, { revision: 11 }));
+  await settle(flow);
+  expect(hasText(flow, "Træning gennemført")).toBe(true);
+});
+
+test("an unanswered Skip question goes after 10 s", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, restBefore());
+
+  await tap(flow, button(flow, "Spring udstrækning over"));
+  await wait(flow, 9_999);
+  expect(hasText(flow, "Spring udstrækningen over?")).toBe(true);
+  await wait(flow, 1);
+  expect(queryByText(root(flow), "Spring udstrækningen over?")).toBeNull();
+  expect(button(flow, "Spring udstrækning over")).toBeTruthy();
+  expect(sent(fake)).toEqual([]);
+});
+
+test("opening the Skip or the End question closes the other", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, hold());
+
+  await tap(flow, button(flow, "Slut"));
+  expect(hasText(flow, "Afslut træningen?")).toBe(true);
+  await tap(flow, button(flow, "Spring udstrækning over"));
+  expect(queryByText(root(flow), "Afslut træningen?")).toBeNull();
+  expect(hasText(flow, "Spring udstrækningen over?")).toBe(true);
+
+  await tap(flow, button(flow, "Slut"));
+  expect(queryByText(root(flow), "Spring udstrækningen over?")).toBeNull();
+  expect(hasText(flow, "Afslut træningen?")).toBe(true);
+
+  // The End question opened last is armed by itself, and sends end.
+  await wait(flow, 500);
+  await tap(flow, button(flow, "Ja"));
+  expect(sent(fake)).toEqual(["end"]);
+});
+
+test("the Skip question goes when the session leaves the cool-down's reach", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, restBefore());
+
+  await tap(flow, button(flow, "Spring udstrækning over"));
+  expect(hasText(flow, "Spring udstrækningen over?")).toBe(true);
+
+  // Forrige from another tablet: back in the circuit's last work.
+  await push(flow, lastWork({ revision: 11 }));
+  expect(queryByText(root(flow), "Spring udstrækningen over?")).toBeNull();
+  expect(hasButton(flow, "Spring udstrækning over")).toBe(false);
+  expect(button(flow, "Slut")).toBeTruthy();
+});
+
+test("an older add-on's view (no part, no stretches) renders the circuit as today", async () => {
+  const { flow } = await mount(
+    fakeHass("da"),
+    view({ phase: phase({ index: 9, round: 5, interval: 3 }), next_phase: null, totals: { planned: 1740, rounds: 5, stations: 3 } }),
+  );
+  expect(ringState(flow).name).toBe("ARBEJD");
+  expect(hasPill(flow, "Runde 5 / 5")).toBe(true);
+  expect(hasPill(flow, "Interval 3 / 3")).toBe(true);
+  expect(cards(flow)).toEqual([
+    "1 Thomas Station 1 Push-up Næste: station 2 · Squat",
+    "2 Maria Station 2 Squat Næste: station 3 · Planke",
+  ]);
+  expect(hasButton(flow, "Spring udstrækning over")).toBe(false);
+});
+
+test("the cool-down in English", async () => {
+  const two = await mount(fakeHass("en"), lastWork());
+  expect(cards(two.flow)[0]).toBe("1 Thomas Station 3 Planke Next: cool-down · Seated lower back stretch");
+  await push(two.flow, restBefore({ revision: 11 }));
+  expect(cards(two.flow)[0]).toBe("1 Thomas COOL-DOWN NEXT Seated lower back stretch Next: Quad stretch");
+  expect(hasButton(two.flow, "Skip cool-down")).toBe(true);
+  await push(two.flow, hold({ revision: 12 }));
+  expect(ringState(two.flow)).toMatchObject({ name: "STRETCH", text: "STRETCH 30 seconds left" });
+  expect(hasPill(two.flow, "Cool-down 2 / 4")).toBe(true);
+  expect(cards(two.flow)[0]).toBe("1 Thomas Quad stretch Next: Hamstring stretch");
+  await tap(two.flow, button(two.flow, "Skip cool-down"));
+  expect(hasText(two.flow, "Skip the cool-down?")).toBe(true);
+  await push(two.flow, change({ revision: 13 }));
+  expect(ringState(two.flow).name).toBe("CHANGE");
+  expect(cards(two.flow)[0]).toBe("1 Thomas NEXT STRETCH Hamstring stretch Next: Calf stretch");
+  document.body.replaceChildren();
+
+  const one = await mount(fakeHass("en"), alone(lastWork()));
+  expect(text(getByRole(root(one.flow), "region", { name: "COOL-DOWN" }))).toBe(
+    "COOL-DOWN Seated lower back stretch after 60 s rest",
+  );
+  await push(one.flow, alone(hold({ revision: 11 })));
+  expect(text(getByRole(root(one.flow), "region", { name: "NEXT" }))).toBe("NEXT Hamstring stretch after 10 s change");
+  await push(one.flow, alone(change({ revision: 12 })));
+  expect(text(getByRole(root(one.flow), "region", { name: "THEN" }))).toBe("THEN Calf stretch after 30 s stretch");
+});

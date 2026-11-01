@@ -47,6 +47,13 @@ export interface Music {
   shuffle?: boolean;
 }
 
+/** A program's cool-down: stretches held one after another after the circuit (cool-down spec §4.1). */
+export interface Cooldown {
+  stretches: { exercise: string }[];
+  hold_seconds?: number;
+  change_seconds?: number;
+}
+
 export interface ProgramDocument {
   name: string;
   active?: boolean;
@@ -58,12 +65,16 @@ export interface ProgramDocument {
   round_rest_seconds?: number;
   countdown_seconds?: number;
   music?: Music | null;
+  /** Null or missing: no cool-down. */
+  cooldown?: Cooldown | null;
 }
 
 export interface ProgramOut {
   id: number;
   program: ProgramDocument;
   station_names: string[];
+  /** The cool-down's stretches' names, in order; empty with no cool-down. */
+  stretch_names: string[];
   equipment: string[];
   total_seconds: number;
   created_at: string;
@@ -77,6 +88,8 @@ export interface ProgramDefaults {
   switch_seconds: number;
   round_rest_seconds: number;
   countdown_seconds: number;
+  cooldown_hold_seconds: number;
+  cooldown_change_seconds: number;
 }
 
 export interface FavouritePlaylist {

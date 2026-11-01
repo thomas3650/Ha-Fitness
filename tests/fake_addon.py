@@ -91,7 +91,9 @@ SESSION_RUNNING: dict[str, Any] = {
 }
 
 
-# Two programs as GET /api/v1/programs gives them (step 3's ProgramOut), by name; one is inactive.
+# Three programs as GET /api/v1/programs gives them (step 3's ProgramOut), by name; one is inactive.
+# Onsdag has a cool-down (the cool-down spec §4.1). Søndag stands for an older add-on: no `cooldown`, no
+# `stretch_names`.
 PROGRAMS: list[dict[str, Any]] = [
     {
         "id": 4,
@@ -106,8 +108,10 @@ PROGRAMS: list[dict[str, Any]] = [
             "round_rest_seconds": 30,
             "countdown_seconds": 10,
             "music": None,
+            "cooldown": None,
         },
         "station_names": ["Plank"],
+        "stretch_names": [],
         "total_seconds": 600,
         "created_at": "2026-10-20T08:00:00Z",
         "updated_at": "2026-10-20T08:00:00Z",
@@ -131,8 +135,14 @@ PROGRAMS: list[dict[str, Any]] = [
                 "volume": 40,
                 "shuffle": False,
             },
+            "cooldown": {
+                "stretches": [{"exercise": "0010"}, {"exercise": "custom-3"}],
+                "hold_seconds": 30,
+                "change_seconds": 10,
+            },
         },
         "station_names": ["Squat", "Wall sit"],
+        "stretch_names": ["Hamstring stretch", "Calf stretch"],
         "equipment": ["dumbbells", "mat"],
         "total_seconds": 1769,
         "created_at": "2026-10-20T08:00:00Z",

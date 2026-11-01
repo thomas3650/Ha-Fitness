@@ -61,9 +61,19 @@ The program document:
 - rounds: 1-10, default 5.
 - work_seconds: 10-120, default 45. switch_seconds: 0-60, default 15. round_rest_seconds: 0-180, default 60.
 - countdown_seconds: 0, 5 or 10, default 5.
-- When creating: keep these defaults (work 45 s, the break between stations 15 s, the rest between rounds 60 s, the countdown 5 s)
-  unless the user asks for another value. "The break" means switch_seconds. Never make up timings. When updating,
-  leave the timing fields the user didn't mention as they are in get_program.
+- The break between stations comes only between two stations of a round (switch_seconds): the last station of a
+  round goes straight to the rest between rounds.
+- cooldown: optional; the cool-down after the last round, {"stretches": [...], "hold_seconds", "change_seconds"}.
+  stretches: 1-10, each {"exercise": <exercise id, or a name only one exercise has>}, like a station; any library
+  exercise can be a stretch, and search_exercises finds stretches by the word "stretch". A stretch that can't be
+  resolved fails with the stretch number and close_matches to pick from. hold_seconds: 10-120, default 30, the time
+  each stretch is held. change_seconds: 0-60, default 10, the change between two stretches. The rest between rounds
+  also comes before the cool-down. No cool-down: leave cooldown out or send null; an empty stretches list is refused.
+  When making a program you may suggest a cool-down.
+- When creating: keep these defaults (work 45 s, the break between stations 15 s, the rest between rounds 60 s, the
+  countdown 5 s, the cool-down's hold 30 s and change 10 s) unless the user asks for another value. "The break" means switch_seconds. Never make up timings. When updating,
+  leave the timing fields and the cool-down the user didn't mention as they are in get_program: send the cooldown
+  back unchanged, because a cooldown left out is deleted.
 - music: optional {"playlist", "playlist_name", "speaker": "media_player.<name>", "volume": 0-100, "shuffle": false}.
   Pick the speaker from list_speakers and the playlist from list_playlists: "playlist" is its uri, which is played,
   and "playlist_name" (1-200 characters, optional) its name, which the screens show instead of the uri.
@@ -78,7 +88,8 @@ Music: when creating a program, and when updating one that has no music, always 
 
 _YES_PROGRAM = """\
 Before the yes, show the user a summary of the program: the stations, the rounds, the timings (work, the break
-between stations, the rest between rounds) and the music, or that there is none. Show it and get a yes before calling."""
+between stations, the rest between rounds), the cool-down (its stretches, hold and change times) or that there is
+none, and the music, or that there is none. Show it and get a yes before calling."""
 
 
 class Deleted(TypedDict):
@@ -201,13 +212,16 @@ answer also has `facets`: the equipment, body-part and target values to filter b
 
     @mcp.tool(annotations=_READ)
     def get_program(program_id: int) -> ProgramOut:
-        """Return one program: its document (station exercise ids), the station names, the equipment it needs and its length in seconds.
+        """Return one program: its document (station and stretch exercise ids), the station names, the stretch names, the equipment it needs and its length in seconds.
 
-        `equipment` lists each kind of equipment once, in station order; body weight is left out.
+        `stretch_names` are the cool-down's stretches, in order, and empty without a cool-down. `equipment` lists each
+        kind of equipment once, the stations' first, then the stretches'; body weight is left out. The length counts
+        the cool-down.
 
-        The `program` field is a valid document as it stands: change it and pass it to update_program. The one
-        exception: a station whose exercise has left the library is named by its id, and update_program refuses the
-        document until that station gets another exercise.
+        The `program` field is a valid document as it stands: change it and pass it to update_program, with its
+        cooldown as it is unless the user asked to change it. The one exception: a station or stretch whose exercise
+        has left the library is named by its id, and update_program refuses the document until it gets another
+        exercise.
         """
         with _tool_errors():
             return holder.get().programs.get(program_id)
@@ -229,7 +243,7 @@ answer also has `facets`: the equipment, body-part and target values to filter b
         description=f"""Replace a program's whole document.
 
 Start from get_program's `program` and change what the user asked for; fields left out get their defaults, not the
-old values.
+old values, and a cooldown left out is deleted.
 
 {_PROGRAM_RULES}
 

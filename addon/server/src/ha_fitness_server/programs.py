@@ -16,21 +16,23 @@ from .errors import Conflict, Invalid, NotFound
 from .library.service import Library
 from .models import ACTIVE_SESSION_STATUSES, Program as ProgramRow, WorkoutSession
 from .schemas import CreatedBy, ProgramDocument, ProgramOut, ProgramSummary, StationIn
+from .timeline import build_timeline
 
 if TYPE_CHECKING:
     from .training_days import TrainingDays
 
 _NAME_KEY_CLASH = "UNIQUE constraint failed: programs.name_key"
 # Fields an update summary names without their values.
-_NAMED_ONLY = frozenset({"stations", "music", "weekdays"})
+_NAMED_ONLY = frozenset({"stations", "music", "weekdays", "cooldown"})
 
 
 def total_seconds(document: ProgramDocument) -> int:
-    """Return the length of a program: S * R * (W + switch) + (R - 1) * round rest (design §3.1)."""
-    stations = len(document.stations)
-    rounds = document.rounds
-    per_station = document.work_seconds + document.switch_seconds
-    return stations * rounds * per_station + (rounds - 1) * document.round_rest_seconds
+    """Return the length of a program: its timeline less the countdown (cool-down spec §4.2), so it can't drift."""
+    return sum(
+        entry.duration
+        for entry in build_timeline(document)
+        if entry.kind != "countdown"
+    )
 
 
 def total_minutes(document: ProgramDocument) -> int:
@@ -101,26 +103,21 @@ class Programs:
         self._clock = clock
 
     def _out(self, row: ProgramRow) -> ProgramOut:
-        """Turn a row into a `ProgramOut`, with the station names looked up now.
+        """Turn a row into a `ProgramOut`, with the station and stretch names looked up now.
 
-        A stored exercise that has left the library is named by its id and adds no equipment.
+        A stored exercise that has left the library is named by its id and adds no equipment. The equipment is the
+        stations', then the stretches', each value once.
         """
         document = ProgramDocument.model_validate(row.document)
-        names: builtins.list[str] = []
         equipment: dict[str, None] = {}
-        for station in document.stations:
-            try:
-                exercise = self._library.get(station.exercise)
-            except NotFound:
-                names.append(station.exercise)
-                continue
-            names.append(exercise.name)
-            if exercise.equipment and exercise.equipment.lower() != "body weight":
-                equipment.setdefault(exercise.equipment)
+        station_names = self._names(document.stations, equipment)
+        stretches = document.cooldown.stretches if document.cooldown else []
+        stretch_names = self._names(stretches, equipment)
         return ProgramOut(
             id=row.id,
             program=document,
-            station_names=names,
+            station_names=station_names,
+            stretch_names=stretch_names,
             equipment=list(equipment),
             total_seconds=total_seconds(document),
             created_at=row.created_at,
@@ -128,15 +125,48 @@ class Programs:
             created_by=row.created_by,
         )
 
+    def _names(
+        self, entries: builtins.list[StationIn], equipment: dict[str, None]
+    ) -> builtins.list[str]:
+        """Return the names of stations or stretches and add their equipment, body weight left out, to `equipment`.
+
+        An exercise that has left the library is named by its id.
+        """
+        names: builtins.list[str] = []
+        for entry in entries:
+            try:
+                exercise = self._library.get(entry.exercise)
+            except NotFound:
+                names.append(entry.exercise)
+                continue
+            names.append(exercise.name)
+            if exercise.equipment and exercise.equipment.lower() != "body weight":
+                equipment.setdefault(exercise.equipment)
+        return names
+
     def _resolved(self, document: ProgramDocument) -> dict[str, Any]:
-        """Return the document to store, each station's exercise resolved to its id; raise `Invalid` if one can't be."""
+        """Return the document to store, each station's and stretch's exercise resolved to its id.
+
+        Raise `Invalid` if one can't be.
+        """
         stations = [
             StationIn(exercise=self._library.resolve(station.exercise, index).id)
             for index, station in enumerate(document.stations, start=1)
         ]
-        return document.model_copy(update={"stations": stations}).model_dump(
-            mode="json"
-        )
+        update: dict[str, Any] = {"stations": stations}
+        if document.cooldown is not None:
+            stretches = [
+                StationIn(
+                    exercise=self._library.resolve(
+                        stretch.exercise, index, field="stretches"
+                    ).id
+                )
+                for index, stretch in enumerate(document.cooldown.stretches, start=1)
+            ]
+            update["cooldown"] = document.cooldown.model_copy(
+                update={"stretches": stretches}
+            )
+        return document.model_copy(update=update).model_dump(mode="json")
 
     def list(self) -> builtins.list[ProgramOut]:
         """Return every program, by name, ignoring case."""

@@ -15,13 +15,18 @@ spec already names.
 | **Circuit** | The only workout type in v1: S stations, R rounds, work time, switch time, rest between rounds. |
 | **Station** | One exercise in the circuit (1–15). Each participant is at one station per interval. |
 | **Round** | One pass through all stations: S intervals. |
-| **Interval** | One work period at a station, followed by the switch time, except after the last interval of the last round (D41). |
+| **Interval** | One work period at a station, followed by the switch time, except after the last interval of a round (D70). |
 | **Work time** (W) | Seconds of work per interval. |
 | **Switch time** (r) | Seconds to move to the next station after an interval. |
-| **Rest between rounds** | Seconds of rest after a round, except the last. |
+| **Rest between rounds** | Seconds of rest after a round. It comes right after the round's last interval, with no switch before it. Also the rest before the cool-down, if the program has one. |
 | **Countdown** | Seconds before the first interval (0, 5 or 10). |
-| **Phase** | A stretch of the timer: countdown, work, switch or rest. Each has a fixed length; the session ends when the last work phase ends. |
-| **Plan** | What a session freezes at its start: the program's name, timing and stations, the participants with their names, and the music with the start's speaker. A later edit changes no running session and no history (D40). |
+| **Phase** | One step of the timeline: countdown, work, switch or rest, in the circuit or the cool-down (its `part`). Each has a fixed length; the session ends when the last work phase ends. |
+| **Plan** | What a session freezes at its start: the program's name, timing, stations and stretches, the timeline, the participants with their names, and the music with the start's speaker. A later edit changes no running session and no history (D40, D71). |
+| **Timeline** | The list of phases a session runs, built once from the program at the start and kept in the plan. Nothing rebuilds it later (D71). |
+| **Cool-down** | A list of stretches after the last round and the rest after it. Everyone does the same stretch at the same time. A program may have none. |
+| **Stretch** | One exercise of the cool-down, done as one hold. |
+| **Hold time** | Seconds of each stretch. The same for every stretch of the cool-down. |
+| **Change time** | Seconds between two stretches to move into the next position. |
 
 ## People and sessions
 

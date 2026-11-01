@@ -9,13 +9,12 @@ start of the session:
 | 1 | work, round 1, interval 1 | 5 | 10 |
 | 2 | switch | 15 | 5 |
 | 3 | work, round 1, interval 2 | 20 | 10 |
-| 4 | switch | 30 | 5 |
-| 5 | rest | 35 | 20 |
-| 6 | work, round 2, interval 1 | 55 | 10 |
-| 7 | switch | 65 | 5 |
-| 8 | work, round 2, interval 2 | 70 | 10 |
+| 4 | rest | 30 | 20 |
+| 5 | work, round 2, interval 1 | 50 | 10 |
+| 6 | switch | 60 | 5 |
+| 7 | work, round 2, interval 2 | 65 | 10 |
 
-It ends at 80 s; `totals.planned` is 75.
+No switch comes before the rest (cool-down spec §2.2). It ends at 75 s; `totals.planned` is 70.
 """
 
 from collections.abc import AsyncIterator
@@ -53,8 +52,8 @@ SMALL: dict[str, Any] = {
     "countdown_seconds": 5,
 }
 # The start of each phase of `SMALL`, in seconds after the session's start, and its end.
-SMALL_STARTS = [0, 5, 15, 20, 30, 35, 55, 65, 70]
-SMALL_END = 80
+SMALL_STARTS = [0, 5, 15, 20, 30, 50, 60, 65]
+SMALL_END = 75
 
 
 def make_session_app(
@@ -208,6 +207,26 @@ def phase_of(view: dict[str, Any]) -> tuple[str, int, int, int]:
     """Return a view's phase as (kind, round, interval, duration)."""
     phase = view["phase"]
     return phase["kind"], phase["round"], phase["interval"], phase["duration"]
+
+
+def ends(view: dict[str, Any]) -> datetime:
+    """Return a running view's `phase.ends_at` as an aware time."""
+    return datetime.fromisoformat(view["phase"]["ends_at"])
+
+
+async def walk_by_ticks(
+    client: httpx.AsyncClient, clock: FrozenClock
+) -> list[dict[str, Any]]:
+    """Read every phase of the running session by moving the clock to each deadline; return the views, the last finished.
+
+    `next` would jump to the next work phase and skip the switches and rests; the clock walks them all.
+    """
+    views = [await current(client)]
+    while views[-1]["status"] == "running":
+        assert len(views) < 50, "the session never finishes"
+        clock.set(ends(views[-1]))
+        views.append(await current(client))
+    return views
 
 
 def numbers(view: dict[str, Any]) -> list[tuple[int, int | None]]:

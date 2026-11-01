@@ -12,7 +12,6 @@ workout, runs it for one or two people and keeps per-person stats; programs are 
 - `custom_components/ha_fitness/` — the integration; `frontend/` holds the built cards bundle (git-ignored)
 - `cards/` — the cards' source (Lit + TypeScript, Vite, Vitest)
 - `addon/web/` — the add-on's website (Lit + TypeScript, Vite, Vitest), built into the add-on image
-- `addon/web/` — the add-on's website (Lit + TypeScript, Vite, Vitest), built into the add-on image
 - `tests/` — the integration's tests
 - `scripts/` — the fast loop, the full loop and the link check; `scripts/dev/` holds the fake Music Assistant
 - `.devcontainer/supervisor/` — the Supervisor dev container of the full loop

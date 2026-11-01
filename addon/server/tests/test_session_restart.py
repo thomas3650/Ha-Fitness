@@ -133,7 +133,7 @@ async def test_pause_limit_ends_after_30_minutes(make_app: MakeApp) -> None:
     clock = FrozenClock(WEDNESDAY_9)
     async with started(clock, make_app) as client:
         await _start_small(client)
-        pause_at = at(WEDNESDAY_9, SMALL_STARTS[5] + 1)
+        pause_at = at(WEDNESDAY_9, SMALL_STARTS[4] + 1)
         clock.set(pause_at)
         await ok(client, "pause")
         clock.set(pause_at + LIMIT - timedelta(seconds=1))

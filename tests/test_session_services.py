@@ -203,7 +203,7 @@ async def test_ws_command_relays_and_maps_errors(
     )
     assert started["success"]
     assert started["result"] == SESSION_RUNNING
-    for command in ("pause", "resume", "next", "previous", "end"):
+    for command in ("pause", "resume", "next", "previous", "skip_cooldown", "end"):
         reply = await _command(client, command=command)
         assert reply["success"]
         assert reply["result"] == SESSION_RUNNING
@@ -213,6 +213,7 @@ async def test_ws_command_relays_and_maps_errors(
         "resume",
         "next",
         "previous",
+        "skip_cooldown",
         "end",
     ]
     assert fake_addon.session_calls[0][1] == {
@@ -225,6 +226,7 @@ async def test_ws_command_relays_and_maps_errors(
     for data in (
         {"command": "start", "program_id": 3, "participants": [1]},
         {"command": "next"},
+        {"command": "skip_cooldown"},
     ):
         reply = await _command(client, **data)
         assert not reply["success"]
@@ -321,12 +323,16 @@ async def test_ws_programs_shape_active_only(
 ) -> None:
     """Only the active programs, in the add-on's order, each in exactly §4's shape.
 
-    Søndag stands for an older add-on that sends no equipment: the key stays out. Fredag sends an empty list.
+    Søndag stands for an older add-on that sends no equipment and no cool-down: the equipment key stays out, and
+    `cooldown` is null. Fredag sends an empty list and `cooldown: null`. Onsdag's cool-down pairs its stretches
+    with their names.
     """
-    # A program that needs no equipment, from an add-on that sends the list.
+    # A program that needs no equipment and has no cool-down, from an add-on that sends both.
     fredag = copy.deepcopy(PROGRAMS[2])
     fredag["id"] = 6
     fredag["program"]["name"] = "Fredag"
+    fredag["program"]["cooldown"] = None
+    fredag["stretch_names"] = []
     fredag["equipment"] = []
     fake_addon.programs = [*copy.deepcopy(PROGRAMS), fredag]
     await _connected(hass, config_entry)
@@ -355,6 +361,14 @@ async def test_ws_programs_shape_active_only(
                 {"exercise_id": "custom-2", "name": "Wall sit"},
             ],
             "music": PROGRAMS[1]["program"]["music"],
+            "cooldown": {
+                "stretches": [
+                    {"exercise_id": "0010", "name": "Hamstring stretch"},
+                    {"exercise_id": "custom-3", "name": "Calf stretch"},
+                ],
+                "hold_seconds": 30,
+                "change_seconds": 10,
+            },
         },
         {
             "id": 5,
@@ -368,6 +382,7 @@ async def test_ws_programs_shape_active_only(
             "total_seconds": 1770,
             "stations": [{"exercise_id": "0002", "name": "Push-up"}],
             "music": None,
+            "cooldown": None,
         },
         {
             "id": 6,
@@ -382,6 +397,7 @@ async def test_ws_programs_shape_active_only(
             "equipment": [],
             "stations": [{"exercise_id": "0002", "name": "Push-up"}],
             "music": None,
+            "cooldown": None,
         },
     ]
     await unload(hass, config_entry)
@@ -454,6 +470,12 @@ async def test_non_admin_can_use_commands(
             {"people": [{"id": 1}]},
             200,
             id="malformed_item",
+        ),
+        pytest.param(
+            [{**PROGRAMS[1], "stretch_names": ["Hamstring stretch"]}],
+            {"people": [{"id": 1}]},
+            200,
+            id="stretches_and_names_unpaired",
         ),
     ],
 )

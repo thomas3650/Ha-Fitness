@@ -325,7 +325,7 @@ def test_counted_extra_sessions_publish_stats(make_app: MakeApp) -> None:
             later = clock.now()
             _start(tc, program_id, thomas)
             # Just past the end of round 1: the rest has begun.
-            _finish(tc, clock, at(later, SMALL_STARTS[5] + 1))
+            _finish(tc, clock, at(later, SMALL_STARTS[4] + 1))
             response = tc.post(f"{SESSION}/end", headers=AGENT)
             assert response.status_code == 200, response.text
             _window_passes(clock, clock.now())

@@ -256,6 +256,30 @@ class Setup(BaseModel):
         return playlists
 
 
+class Cooldown(BaseModel):
+    """A program's cool-down (cool-down spec §4.1): stretches held in turn, each an exercise like a station."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stretches: Annotated[list[StationIn], Field(max_length=10)]
+    hold_seconds: Annotated[int, Field(ge=10, le=120)] = 30
+    change_seconds: Annotated[int, Field(ge=0, le=60)] = 10
+
+    @field_validator("stretches")
+    @classmethod
+    def _some_stretches(cls, stretches: list[StationIn]) -> list[StationIn]:
+        """Refuse a cool-down without stretches; no cool-down is written as `cooldown: null`.
+
+        It is `invalid`, not Pydantic's `too_short`, the way `weekday_needed` is its own type.
+        """
+        if not stretches:
+            raise PydanticCustomError(
+                "invalid",
+                "Value error, a cool-down needs at least one stretch; leave it out or send null for none",
+            )
+        return stretches
+
+
 class ProgramDocument(BaseModel):
     """One program, as REST, MCP, storage and export use it (spec §5.1); defaults are filled in on write."""
 
@@ -273,6 +297,7 @@ class ProgramDocument(BaseModel):
     round_rest_seconds: Annotated[int, Field(ge=0, le=180)] = 60
     countdown_seconds: Literal[0, 5, 10] = 5
     music: Music | None = None
+    cooldown: Cooldown | None = None
 
     @field_validator("weekdays")
     @classmethod
@@ -312,6 +337,8 @@ class ProgramOut(BaseModel):
     id: int
     program: ProgramDocument
     station_names: list[str]
+    # The cool-down's stretch names, in order; empty without a cool-down. `station_names` stays the stations only.
+    stretch_names: list[str]
     equipment: list[str]
     total_seconds: int
     created_at: datetime
@@ -320,9 +347,9 @@ class ProgramOut(BaseModel):
     created_by: CreatedBy | None
 
 
-def _document_default(field: str) -> int:
-    """Return the default `ProgramDocument` gives a field it is written without."""
-    default: int = ProgramDocument.model_fields[field].default
+def _document_default(field: str, model: type[BaseModel] = ProgramDocument) -> int:
+    """Return the default `model`, a program document by default, gives a field it is written without."""
+    default: int = model.model_fields[field].default
     return default
 
 
@@ -334,6 +361,8 @@ class ProgramDefaults(BaseModel):
     switch_seconds: int = _document_default("switch_seconds")
     round_rest_seconds: int = _document_default("round_rest_seconds")
     countdown_seconds: int = _document_default("countdown_seconds")
+    cooldown_hold_seconds: int = _document_default("hold_seconds", Cooldown)
+    cooldown_change_seconds: int = _document_default("change_seconds", Cooldown)
 
 
 class ProgramSummary(BaseModel):
@@ -428,6 +457,8 @@ UtcMillis = Annotated[
 ]
 
 PhaseKind = Literal["countdown", "work", "switch", "rest"]
+# The part of the session a phase is in (cool-down spec §4.2); the rest before the cool-down is `circuit`.
+type Part = Literal["circuit", "cooldown"]
 
 
 class NewSession(BaseModel):
@@ -457,6 +488,7 @@ class SessionPhase(BaseModel):
 
     index: int
     kind: PhaseKind
+    part: Part
     round: int
     interval: int
     duration: int
@@ -468,15 +500,20 @@ class NextPhase(BaseModel):
     """The phase after the current one."""
 
     kind: PhaseKind
+    part: Part
     duration: int
 
 
 class StationRef(BaseModel):
-    """A station of the plan: its number from 1, and its exercise."""
+    """A station or a stretch of the plan: its number from 1, its exercise, and the part it is in (cool-down spec §4.4).
+
+    `part` tells a stretch (`cooldown`) from a station (`circuit`).
+    """
 
     number: int
     exercise_id: str
     name: str
+    part: Part = "circuit"
 
 
 class SessionStation(BaseModel):
@@ -487,11 +524,15 @@ class SessionStation(BaseModel):
 
 
 class SessionTotals(BaseModel):
-    """`planned` is the seconds of every work, switch and rest phase; the countdown is left out."""
+    """`planned` is the seconds of every work, switch and rest phase, the cool-down's too; the countdown is left out.
+
+    `stretches` is the cool-down's number of stretches, 0 with no cool-down.
+    """
 
     planned: int
     rounds: int
     stations: int
+    stretches: int
 
 
 # How a completed session felt (UI refresh spec §3.3); `sessions.FEELINGS` lists the same values.

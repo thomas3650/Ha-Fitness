@@ -59,7 +59,7 @@ async def test_upcoming_lists_each_programs_next_training(make_app: MakeApp) -> 
             "date": "2026-10-28",
             "station_count": 5,
             "rounds": 5,
-            "total_minutes": 29,
+            "total_minutes": 28,
             "startable": True,
         },
         {
@@ -68,7 +68,7 @@ async def test_upcoming_lists_each_programs_next_training(make_app: MakeApp) -> 
             "date": "2026-10-30",
             "station_count": 5,
             "rounds": 5,
-            "total_minutes": 29,
+            "total_minutes": 28,
             "startable": True,
         },
     ]
