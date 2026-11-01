@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/thomas3650/Ha-Fitness/compare/v1.1.0...v1.2.0) (2026-11-01)
+
+
+### Features
+
+* a cool-down of stretches, no break before the round rest, and a long beep at both ends of work ([#112](https://github.com/thomas3650/Ha-Fitness/issues/112)) ([56060d0](https://github.com/thomas3650/Ha-Fitness/commit/56060d001daa0d4c7804422f07745776d3b27faf))
+
 ## [1.1.0](https://github.com/thomas3650/Ha-Fitness/compare/v1.0.0...v1.1.0) (2026-10-25)
 
 
