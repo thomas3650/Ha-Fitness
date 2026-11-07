@@ -16,7 +16,7 @@ import { installFakeAudio } from "./fake-audio";
 
 // The flow element is defined once for the file, so its modules are imported statically; the
 // audio and image modules keep page-wide state, and every test's fakes answer them the same way.
-installFakeAudio("running");
+const audio = installFakeAudio("running");
 let objectUrls = 0;
 vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:image-${++objectUrls}`);
 
@@ -342,18 +342,18 @@ test("local zero shows next phase word", async () => {
 test("older revision ignored; new session applied", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, view({ revision: 10 }));
-  expect(hasPill(flow, "Runde 2 / 5")).toBe(true);
+  expect(hasPill(flow, "Interval 1")).toBe(true);
 
   // A command result and a push can arrive in either order: revision 9 is older.
-  await push(flow, view({ revision: 9, phase: phase({ round: 1 }) }));
-  expect(hasPill(flow, "Runde 2 / 5")).toBe(true);
+  await push(flow, view({ revision: 9, phase: phase({ interval: 2 }) }));
+  expect(hasPill(flow, "Interval 1")).toBe(true);
   // The same revision again changes nothing either.
-  await push(flow, view({ revision: 10, phase: phase({ round: 3 }) }));
-  expect(hasPill(flow, "Runde 2 / 5")).toBe(true);
+  await push(flow, view({ revision: 10, phase: phase({ interval: 3 }) }));
+  expect(hasPill(flow, "Interval 1")).toBe(true);
 
   // A different session applies whatever its revision.
-  await push(flow, view({ id: 8, revision: 1, phase: phase({ round: 1 }) }));
-  expect(hasPill(flow, "Runde 1 / 5")).toBe(true);
+  await push(flow, view({ id: 8, revision: 1, phase: phase({ interval: 2 }) }));
+  expect(hasPill(flow, "Interval 2")).toBe(true);
 });
 
 test("pause, resume and ring tap", async () => {
@@ -365,7 +365,7 @@ test("pause, resume and ring tap", async () => {
   fake.commands[0].resolve(soloPaused({ revision: 11 }));
   await settle(flow);
 
-  // Paused: the ring stops, keeps the phase word and says to tap; a PAUSED pill shows; the round
+  // Paused: the ring stops, keeps the phase word and says to tap; a PAUSED pill shows; the ring
   // button resumes.
   expect(ringState(flow)).toMatchObject({ name: "WORK", now: "30", text: "WORK 30 tap the ring to resume" });
   expect(hasPill(flow, "PAUSED")).toBe(true);
@@ -375,7 +375,7 @@ test("pause, resume and ring tap", async () => {
   expect(ringState(flow).now).toBe("30");
 
   // A tap on the paused ring resumes.
-  await tap(flow, ring(flow));
+  await tap(flow, button(flow, "Resume"));
   expect(sent(fake)).toEqual(["pause", "resume"]);
   fake.commands[1].resolve(
     solo({
@@ -389,39 +389,174 @@ test("pause, resume and ring tap", async () => {
   expect(hasPill(flow, "PAUSED")).toBe(false);
 
   // Tapping the running ring pauses.
-  await tap(flow, ring(flow));
+  await tap(flow, button(flow, "Pause"));
   expect(sent(fake)).toEqual(["pause", "resume", "pause"]);
-  fake.commands[2].resolve(soloPaused({ revision: 13 }));
-  await settle(flow);
-
-  // The round button named Resume resumes too.
-  await tap(flow, button(flow, "Resume"));
-  expect(sent(fake)).toEqual(["pause", "resume", "pause", "resume"]);
 });
 
-test("the ring is no button and no tab stop", async () => {
+test("the ring's progressbar is no tab stop; the ring button is", async () => {
   const { flow } = await mount(fakeHass("da"), solo());
   expect(ring(flow).getAttribute("tabindex")).toBeNull();
   expect(queryByRole(root(flow), "button", { name: "ARBEJD" })).toBeNull();
+  const pause = button(flow, "Pause");
+  expect(pause.tabIndex).toBe(0);
+  expect(pause.disabled).toBe(false);
 });
 
-test("the three icon buttons send previous, pause and next", async () => {
-  const fake = fakeHass("da");
-  const { flow } = await mount(fake, solo());
+test("no transport buttons", async () => {
+  for (const session of [solo(), view(), paused()]) {
+    const { flow } = await mount(fakeHass("da"), session);
+    expect(queryByRole(root(flow), "button", { name: "Forrige" })).toBeNull();
+    expect(queryByRole(root(flow), "button", { name: "Næste" })).toBeNull();
+    // The timer's own buttons are Slut and the ring's (and Tryk for lyd while the audio is locked).
+    const names = getAllByRole(root(flow), "button").map((element) => computeAccessibleName(element));
+    expect(names.filter((name) => name !== "Tryk for lyd")).toEqual([
+      "Slut",
+      session.status === "paused" ? "Fortsæt" : "Pause",
+    ]);
+    document.body.replaceChildren();
+  }
+  const { flow } = await mount(fakeHass("en"), view());
+  expect(queryByRole(root(flow), "button", { name: "Previous" })).toBeNull();
+  expect(queryByRole(root(flow), "button", { name: "Next" })).toBeNull();
+});
 
-  await tap(flow, button(flow, "Forrige"));
-  await tap(flow, button(flow, "Pause"));
-  await tap(flow, button(flow, "Næste"));
-  expect(sent(fake)).toEqual(["previous", "pause", "next"]);
+test("the ring button pauses and resumes", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, view());
+
+  // Running: one button named Pause, laid over the ring, not around its progressbar.
+  expect(queryAllByRole(root(flow), "button", { name: "Pause" })).toHaveLength(1);
+  const pause = button(flow, "Pause");
+  expect(pause.contains(ring(flow))).toBe(false);
+  expect(ring(flow).contains(pause)).toBe(false);
+  expect(text(pause)).toBe("tryk for pause");
+  expect(ringState(flow)).toMatchObject({ name: "ARBEJD", text: "ARBEJD 45 sekunder tilbage" });
+  await tap(flow, pause);
+  expect(sent(fake)).toEqual(["pause"]);
+  fake.commands[0].resolve(paused({ revision: 11 }));
+  await settle(flow);
+
+  // Paused: one button named Fortsæt; the ring's caption says to tap.
+  expect(queryAllByRole(root(flow), "button", { name: "Pause" })).toHaveLength(0);
+  expect(queryAllByRole(root(flow), "button", { name: "Fortsæt" })).toHaveLength(1);
+  expect(ringState(flow)).toMatchObject({ name: "ARBEJD", text: "ARBEJD 30 tryk på ringen for at fortsætte" });
+  expect(queryByText(root(flow), "tryk for pause")).toBeNull();
+  await tap(flow, button(flow, "Fortsæt"));
+  expect(sent(fake)).toEqual(["pause", "resume"]);
+});
+
+test("get ready's ring has no button", async () => {
+  const { flow } = await mount(
+    fakeHass("da"),
+    view({
+      revision: 1,
+      phase: phase({ index: 0, kind: "countdown", round: 1, duration: 10, ends_at: "2026-10-24T08:00:10.000Z" }),
+      next_phase: { kind: "work", duration: 45 },
+    }),
+  );
+  expect(ringState(flow)).toMatchObject({ name: "GØR KLAR", now: "10" });
+  expect(queryByRole(root(flow), "button", { name: "Pause" })).toBeNull();
+  expect(queryByText(root(flow), "tryk for pause")).toBeNull();
+});
+
+test("the interval pill", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(
+    fake,
+    view({ phase: phase({ interval: 3 }), totals: { planned: 1740, rounds: 5, stations: 5 } }),
+  );
+  expect(hasPill(flow, "Interval 3 / 5")).toBe(true);
+  expect(text(getByRole(pill(flow, "Interval 3 / 5")!, "strong"))).toBe("3 / 5");
+  expect(before(ring(flow), pill(flow, "Interval 3 / 5")!)).toBe(true);
+  // No round pill: round 2 of 5 shows nowhere.
+  expect(queryAllByText(root(flow), /Runde/)).toHaveLength(0);
+  expect(queryAllByText(root(flow), /2 \/ 5/)).toHaveLength(0);
+  document.body.replaceChildren();
+
+  // One person: the station pill.
+  const one = await mount(fakeHass("da"), solo({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
+  expect(hasPill(one.flow, "Station 1 / 3")).toBe(true);
+  expect(before(ring(one.flow), pill(one.flow, "Station 1 / 3")!)).toBe(true);
+  expect(queryAllByText(root(one.flow), /Runde/)).toHaveLength(0);
+});
+
+test("the band's times", async () => {
+  const { flow } = await mount(fakeHass("da"), view({ time_trained: 663, totals: { planned: 1725, rounds: 5 } }));
+  const band = whole(flow);
+  expect(hasPill(flow, "11:03")).toBe(true);
+  expect(hasPill(flow, "17:42 tilbage")).toBe(true);
+  expect(band.contains(pill(flow, "11:03"))).toBe(true);
+  expect(band.contains(pill(flow, "17:42 tilbage"))).toBe(true);
+  expect(band.getAttribute("aria-valuetext")).toBe("17:42 tilbage af træningen");
+  expect(computeAccessibleName(band)).toBe("Hele træningen");
+  expect(queryAllByText(root(flow), /\/ 28:45/)).toHaveLength(0);
+  document.body.replaceChildren();
+
+  const en = await mount(fakeHass("en"), view({ time_trained: 663, totals: { planned: 1725, rounds: 5 } }));
+  expect(hasPill(en.flow, "17:42 left")).toBe(true);
+  expect(whole(en.flow).getAttribute("aria-valuetext")).toBe("17:42 left of the workout");
+});
+
+test("one rounding rule", async () => {
+  const { flow } = await mount(fakeHass("da"), view({ time_trained: 663, totals: { planned: 1725, rounds: 5 } }));
+  await wait(flow, 400);
+  expect(hasPill(flow, "11:03")).toBe(true);
+  expect(hasPill(flow, "17:42 tilbage")).toBe(true);
+  expect(whole(flow).getAttribute("aria-valuetext")).toBe("17:42 tilbage af træningen");
+  await wait(flow, 600);
+  expect(hasPill(flow, "11:04")).toBe(true);
+  expect(hasPill(flow, "17:41 tilbage")).toBe(true);
+});
+
+test("time left never below zero", async () => {
+  const { flow } = await mount(fakeHass("da"), solo({ time_trained: 1800 }));
+  expect(hasPill(flow, "30:00")).toBe(true);
+  expect(hasPill(flow, "0:00 tilbage")).toBe(true);
+  expect(whole(flow).getAttribute("aria-valuetext")).toBe("0:00 tilbage af træningen");
+});
+
+test("gaps from marks", async () => {
+  const { flow } = await mount(fakeHass("da"), view({ totals: { planned: 1740, rounds: 3, marks: [300, 600] } }));
+  const gaps = getAllByRole(whole(flow), "separator", { hidden: true });
+  expect(gaps).toHaveLength(2);
+  for (const gap of gaps) expect(gap.getAttribute("aria-hidden")).toBe("true");
+});
+
+test("no gaps without marks", async () => {
+  const { flow } = await mount(fakeHass("da"), view());
+  expect(queryAllByRole(whole(flow), "separator", { hidden: true })).toHaveLength(0);
+  await push(flow, view({ revision: 11, totals: { planned: 1740, rounds: 1, marks: [] } }));
+  expect(queryAllByRole(whole(flow), "separator", { hidden: true })).toHaveLength(0);
+});
+
+test("banners above the cards", async () => {
+  const { flow } = await mount(fakeHass("da"), view());
+  await push(flow, view(), false);
+  const note = getByRole(root(flow), "status");
+  expect(text(note)).toBe("HA Fitness kan ikke nås");
+  expect(before(button(flow, "Slut"), note)).toBe(true);
+  expect(before(note, getAllByRole(root(flow), "region")[0])).toBe(true);
+  document.body.replaceChildren();
+
+  // Locked: no audio context yet, or the page's one suspended.
+  const context = audio.contexts[0];
+  const locked = await mount(fakeHass("da"), view());
+  try {
+    context?.setState("suspended");
+    await settle(locked.flow);
+    const sound = button(locked.flow, "Tryk for lyd");
+    expect(before(button(locked.flow, "Slut"), sound)).toBe(true);
+    expect(before(sound, getAllByRole(root(locked.flow), "region")[0])).toBe(true);
+  } finally {
+    context?.setState("running");
+  }
 });
 
 test("the pills by the ring for one person", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
-  expect(hasPill(flow, "Runde 2 / 5")).toBe(true);
   expect(hasPill(flow, "Station 1 / 3")).toBe(true);
-  // Runde comes before the ring, and Station after it (#60).
-  expect(before(pill(flow, "Runde 2 / 5")!, ring(flow))).toBe(true);
+  // Station comes after the ring.
   expect(before(ring(flow), pill(flow, "Station 1 / 3")!)).toBe(true);
   expect(hasPill(flow, "PAUSET")).toBe(false);
 
@@ -450,9 +585,7 @@ test("the pills by the ring for one person", async () => {
 test("each pill bolds its numbers", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
-  expect(text(getByRole(pill(flow, "Runde 2 / 5")!, "strong"))).toBe("2 / 5");
   expect(text(getByRole(pill(flow, "Station 1 / 3")!, "strong"))).toBe("1 / 3");
-  expect(text(getByRole(pill(flow, "6:00 / 29:00")!, "strong"))).toBe("6:00");
 
   // Without the stations total, the number alone is bold.
   await push(flow, solo({ revision: 11, phase: phase({ interval: 2 }) }));
@@ -530,13 +663,13 @@ test("THEN during a switch and a rest, with the move above the picture", async (
   expect(text(getByRole(root(en.flow), "region", { name: "THEN" }))).toBe("THEN Planke after 45 s work");
 });
 
-test("the whole-workout bar's value stays within its maximum; the elapsed text doesn't", async () => {
-  // Paused moments and Forrige can take a workout past its planned time.
+test("the whole-workout bar's value stays within its maximum; the trained text doesn't", async () => {
+  // Paused moments and a previous can take a workout past its planned time.
   const fake = fakeHass("da");
   const { flow } = await mount(fake, solo({ time_trained: 1800 }));
   expect(whole(flow).getAttribute("aria-valuemax")).toBe("1740");
   expect(whole(flow).getAttribute("aria-valuenow")).toBe("1740");
-  expect(hasPill(flow, "30:00 / 29:00")).toBe(true);
+  expect(hasPill(flow, "30:00")).toBe(true);
 });
 
 test("the whole-workout bar moves with the clock", async () => {
@@ -556,19 +689,13 @@ test("the whole-workout bar moves with the clock", async () => {
   expect(whole(en.flow).getAttribute("aria-valuemax")).toBe("1740");
 });
 
-test("previous and next send commands", async () => {
+test("a newer view from a next moves the flow", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, view());
 
-  await tap(flow, button(flow, "Forrige"));
-  await tap(flow, button(flow, "Næste"));
-  expect(fake.commands.map((command) => command.message)).toEqual([
-    { type: "ha_fitness/session/command", command: "previous" },
-    { type: "ha_fitness/session/command", command: "next" },
-  ]);
-
-  // The result moves the flow, like any newer view.
-  fake.commands[1].resolve(
+  // A next from elsewhere moves the flow, like any newer view.
+  await push(
+    flow,
     view({
       revision: 11,
       phase: phase({ index: 5, interval: 2, ends_at: "2026-10-24T08:00:45.000Z" }),
@@ -578,7 +705,6 @@ test("previous and next send commands", async () => {
       ],
     }),
   );
-  await settle(flow);
   expect(hasPill(flow, "Interval 2")).toBe(true);
 });
 
@@ -715,38 +841,35 @@ test("one-person and two-person layouts in work and switch", async () => {
 test("the two-person timer has the same buttons and progress bar as one person's", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, view({ totals: { planned: 1740, rounds: 5, stations: 3 } }));
-  // The pills by the ring: the round before it and the interval after it, no Station pill; no NÆSTE card.
-  expect(hasPill(flow, "Runde 2 / 5")).toBe(true);
+  // The pill by the ring: the interval after it, no Station pill; no NÆSTE card.
   expect(hasPill(flow, "Interval 1 / 3")).toBe(true);
-  expect(before(pill(flow, "Runde 2 / 5")!, ring(flow))).toBe(true);
   expect(before(ring(flow), pill(flow, "Interval 1 / 3")!)).toBe(true);
   expect(hasPill(flow, "Station 1 / 3")).toBe(false);
   expect(queryByRole(root(flow), "region", { name: "NÆSTE" })).toBeNull();
   expect(whole(flow).getAttribute("aria-valuenow")).toBe("360");
 
-  await tap(flow, button(flow, "Forrige"));
   await tap(flow, button(flow, "Pause"));
-  await tap(flow, button(flow, "Næste"));
-  await tap(flow, ring(flow));
-  expect(sent(fake)).toEqual(["previous", "pause", "next", "pause"]);
+  expect(sent(fake)).toEqual(["pause"]);
 });
 
 test("elapsed from time_trained and server_time", async () => {
   const fake = fakeHass("da");
   // 6:00 trained as of the add-on's 08:00:00; the program plans 29:00.
   const { flow } = await mount(fake, view());
-  expect(hasPill(flow, "6:00 / 29:00")).toBe(true);
-  expect(hasPill(flow, "Runde 2 / 5")).toBe(true);
+  expect(hasPill(flow, "6:00")).toBe(true);
+  expect(hasPill(flow, "23:00 tilbage")).toBe(true);
   expect(hasPill(flow, "Interval 1")).toBe(true);
 
   // Running past the countdown: the time since server_time counts.
   await wait(flow, 12_000);
-  expect(hasPill(flow, "6:12 / 29:00")).toBe(true);
+  expect(hasPill(flow, "6:12")).toBe(true);
+  expect(hasPill(flow, "22:48 tilbage")).toBe(true);
 
   // Paused: the view's time_trained only.
   await push(flow, paused({ revision: 11, time_trained: 372, server_time: "2026-10-24T08:00:12.000Z" }));
   await wait(flow, 30_000);
-  expect(hasPill(flow, "6:12 / 29:00")).toBe(true);
+  expect(hasPill(flow, "6:12")).toBe(true);
+  expect(hasPill(flow, "22:48 tilbage")).toBe(true);
 });
 
 test("unreachable keeps counting, holds at zero, Luk after 10 s", async () => {
@@ -795,9 +918,9 @@ test("the timer in English", async () => {
   const fake = fakeHass("en");
   const { flow } = await mount(fake, view());
   expect(ringState(flow).text).toBe("WORK 45 seconds left");
-  expect(hasPill(flow, "Round 2 / 5")).toBe(true);
-  expect(button(flow, "Previous")).toBeTruthy();
-  expect(button(flow, "Next")).toBeTruthy();
+  expect(hasPill(flow, "Interval 1")).toBe(true);
+  expect(hasPill(flow, "23:00 left")).toBe(true);
+  expect(button(flow, "Pause")).toBeTruthy();
   expect(getAllByRole(root(flow), "region").map(text)[0]).toBe("1 Thomas Station 1 Push-up Next: station 2 · Squat");
   await tap(flow, button(flow, "End"));
   expect(hasText(flow, "End the workout?")).toBe(true);
@@ -825,7 +948,7 @@ test("a view handed over later counts from when it arrived", async () => {
   await settle(flow);
   try {
     expect(ringState(flow).now).toBe("25");
-    expect(hasPill(flow, "6:20 / 29:00")).toBe(true);
+    expect(hasPill(flow, "6:20")).toBe(true);
   } finally {
     overlay.close();
   }
@@ -918,11 +1041,11 @@ test("get ready shows the work word at the countdown's local zero", async () => 
 
 test("a late view of an older session can't pull the flow back", async () => {
   const fake = fakeHass("da");
-  const { flow } = await mount(fake, view({ id: 8, revision: 1, phase: phase({ round: 1 }) }));
-  expect(hasPill(flow, "Runde 1 / 5")).toBe(true);
+  const { flow } = await mount(fake, view({ id: 8, revision: 1, phase: phase({ interval: 1 }) }));
+  expect(hasPill(flow, "Interval 1")).toBe(true);
 
-  await push(flow, view({ id: 7, revision: 30, phase: phase({ round: 4 }) }));
-  expect(hasPill(flow, "Runde 1 / 5")).toBe(true);
+  await push(flow, view({ id: 7, revision: 30, phase: phase({ interval: 3 }) }));
+  expect(hasPill(flow, "Interval 1")).toBe(true);
 });
 
 test("Luk counts from when the controller first learned the add-on was gone", async () => {
@@ -998,8 +1121,9 @@ test("the GIFs coming up are fetched ahead", async () => {
 
 // The music player (music spec §6.2).
 
-function music(state: MusicState["state"] = "playing"): MusicState {
-  return { playlist_name: "Workout Mix", speaker: "media_player.living_room", speaker_name: "Stue", state };
+function music(state: MusicState["state"] = "playing", volume?: number | null): MusicState {
+  const base: MusicState = { playlist_name: "Workout Mix", speaker: "media_player.living_room", speaker_name: "Stue", state };
+  return volume === undefined ? base : { ...base, volume };
 }
 
 function player(flow: FlowElement, name = "Musik"): HTMLElement {
@@ -1095,14 +1219,217 @@ test("no player when music is null", async () => {
   expect(queryByRole(root(older.flow), "group", { name: "Musik" })).toBeNull();
 });
 
+// The volume slider (timer band and volume spec §2.2).
+
+const VOLUME = "Musikkens lydstyrke";
+
+function slider(flow: FlowElement): HTMLInputElement {
+  return getByRole(player(flow), "slider", { name: VOLUME }) as HTMLInputElement;
+}
+
+/** Drag the thumb to `level`: the range input's `input` event. */
+async function drag(flow: FlowElement, level: number): Promise<void> {
+  const element = slider(flow);
+  element.value = String(level);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  await settle(flow);
+}
+
+/** Let go of the thumb at `level`: the range input's `change` event. */
+async function release(flow: FlowElement, level: number): Promise<void> {
+  const element = slider(flow);
+  element.value = String(level);
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(flow);
+}
+
+function volumeSent(fake: Fake): Message[] {
+  return musicSent(fake).filter((message) => message.action === "volume");
+}
+
+test("no slider without volume", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, music("playing"));
+  expect(queryByRole(player(flow), "slider")).toBeNull();
+  document.body.replaceChildren();
+
+  const nulled = await mount(fakeHass("da"), solo(), true, music("playing", null));
+  expect(queryByRole(player(nulled.flow), "slider")).toBeNull();
+});
+
+test("the slider shows the volume", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, music("playing", 40));
+  const element = slider(flow);
+  expect(element.value).toBe("40");
+  expect(element.min).toBe("0");
+  expect(element.max).toBe("100");
+  // The slider adds no text to the player.
+  expect(text(player(flow))).toBe("Workout Mix Stue");
+  document.body.replaceChildren();
+
+  const english = await mount(fakeHass("en"), solo(), true, music("playing", 40));
+  expect(getByRole(player(english.flow, "Music"), "slider", { name: "Music volume" })).toBeTruthy();
+});
+
+test("the slider is disabled while waiting and unavailable", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, music("waiting", 40));
+  expect(slider(flow).disabled).toBe(true);
+  await push(flow, solo(), true, music("unavailable", 40));
+  expect(slider(flow).disabled).toBe(true);
+  await push(flow, solo(), true, music("playing", 40));
+  expect(slider(flow).disabled).toBe(false);
+  await push(flow, solo(), true, music("paused", 40));
+  expect(slider(flow).disabled).toBe(false);
+});
+
+test("the slider sends throttled levels and one on release", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  expect(volumeSent(fake)).toEqual([{ type: "ha_fitness/music", action: "volume", level: 50 }]);
+  await wait(flow, 100);
+  await drag(flow, 55);
+  await wait(flow, 100);
+  await drag(flow, 60);
+  expect(volumeSent(fake)).toHaveLength(1);
+  await wait(flow, 100);
+  expect(volumeSent(fake).map((message) => message.level)).toEqual([50, 60]);
+  // Nothing new to send: the throttle sends nothing more.
+  await wait(flow, 600);
+  expect(volumeSent(fake)).toHaveLength(2);
+
+  await release(flow, 60);
+  expect(volumeSent(fake)).toEqual([
+    { type: "ha_fitness/music", action: "volume", level: 50 },
+    { type: "ha_fitness/music", action: "volume", level: 60 },
+    { type: "ha_fitness/music", action: "volume", level: 60 },
+  ]);
+  // The volume is no session command.
+  expect(sent(fake)).toEqual([]);
+});
+
+test("a release cancels the pending send and sends its own level", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  await wait(flow, 100);
+  await drag(flow, 70);
+  await wait(flow, 50);
+  await release(flow, 75);
+  await wait(flow, 600);
+
+  expect(volumeSent(fake).map((message) => message.level)).toEqual([50, 75]);
+});
+
+test("a state while held doesn't move the thumb; after release it follows the state", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  await push(flow, solo(), true, music("playing", 45));
+  expect(slider(flow).value).toBe("50");
+
+  await release(flow, 50);
+  // The speaker reaches the released level: the slider follows the speaker again.
+  await push(flow, solo(), true, music("playing", 50));
+  await push(flow, solo(), true, music("playing", 52));
+  expect(slider(flow).value).toBe("52");
+  await push(flow, solo(), true, music("playing", 30));
+  expect(slider(flow).value).toBe("30");
+});
+
+test("after release the released level shows until the speaker has it, or 2 s pass", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  await release(flow, 50);
+  // The state still says 40: the thumb doesn't jump back.
+  await push(flow, solo(), true, music("playing", 40));
+  expect(slider(flow).value).toBe("50");
+  await wait(flow, 1900);
+  expect(slider(flow).value).toBe("50");
+  await wait(flow, 100);
+  expect(slider(flow).value).toBe("40");
+
+  // A state with the released level ends the hold at once.
+  await release(flow, 60);
+  await wait(flow, 500);
+  await push(flow, solo(), true, music("playing", 60));
+  await push(flow, solo(), true, music("playing", 35));
+  expect(slider(flow).value).toBe("35");
+});
+
+test("the hold ends when the slider can't be used", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  await push(flow, solo(), true, music("unavailable", 40));
+  await push(flow, solo(), true, music("playing", 70));
+  expect(slider(flow).value).toBe("70");
+  // The throttle's trailing send is dropped too.
+  await drag(flow, 55);
+  await wait(flow, 100);
+  await drag(flow, 58);
+  await push(flow, solo(), true, music("waiting", 70));
+  await wait(flow, 600);
+  expect(volumeSent(fake).map((message) => message.level)).toEqual([50, 55]);
+
+  await push(flow, solo(), true, music("playing", 70));
+  await drag(flow, 20);
+  await push(flow, solo(), true, music("playing", null));
+  await push(flow, solo(), true, music("playing", 70));
+  expect(slider(flow).value).toBe("70");
+
+  await drag(flow, 20);
+  await push(flow, solo(), true, null);
+  await push(flow, solo(), true, music("playing", 70));
+  expect(slider(flow).value).toBe("70");
+});
+
+test.each(["pointercancel", "blur"])("%s releases the hold", async (type) => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  slider(flow).dispatchEvent(new Event(type));
+  await settle(flow);
+
+  expect(volumeSent(fake).map((message) => message.level)).toEqual([50, 50]);
+  await push(flow, solo(), true, music("playing", 50));
+  await push(flow, solo(), true, music("playing", 45));
+  expect(slider(flow).value).toBe("45");
+  // Without a hold, another blur sends nothing.
+  slider(flow).dispatchEvent(new Event(type));
+  await settle(flow);
+  expect(volumeSent(fake)).toHaveLength(2);
+});
+
+test("a refused set shows nothing", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await release(flow, 65);
+  fake.music[0].reject({ code: "unavailable", message: "Speaker gone" });
+  await settle(flow);
+
+  expect(queryByRole(root(flow), "alert")).toBeNull();
+  // The slider follows the music state again after the 2 s hold.
+  await push(flow, solo(), true, music("playing", 40));
+  await wait(flow, 2000);
+  expect(slider(flow).value).toBe("40");
+});
+
 test("player in the two-person timer", async () => {
   const fake = fakeHass("da");
   const { flow } = await mount(fake, view(), true, music("playing"));
   expect(text(player(flow))).toBe("Workout Mix Stue");
   await tap(flow, playerButton(flow, "Næste nummer"));
   expect(musicSent(fake)).toEqual([{ type: "ha_fitness/music", action: "next" }]);
-  // The timer's own controls are still there.
-  expect(button(flow, "Næste")).toBeTruthy();
+  // The timer's own control is still there.
+  expect(button(flow, "Pause")).toBeTruthy();
 });
 
 // The cool-down (cool-down spec §4.7): four stretches after the circuit, each a hold and a change.
@@ -1231,8 +1558,7 @@ test("cool-down: the rest before it reads COOL-DOWN NEXT and offers Skip", async
     "1 Thomas NU KOMMER UDSTRÆKNING Seated lower back stretch Næste: Quad stretch",
     "2 Maria NU KOMMER UDSTRÆKNING Seated lower back stretch Næste: Quad stretch",
   ]);
-  // The pills stay as the circuit's.
-  expect(hasPill(two.flow, "Runde 5 / 5")).toBe(true);
+  // The pill stays as the circuit's.
   expect(hasPill(two.flow, "Interval 3 / 3")).toBe(true);
   expect(hasButton(two.flow, "Spring udstrækning over")).toBe(true);
   expect(hasButton(two.flow, "Slut")).toBe(true);
@@ -1252,7 +1578,8 @@ test("cool-down: a hold shows STRETCH, the cool-down pill and the next stretch",
   const two = await mount(fakeHass("da"), hold());
   expect(ringState(two.flow)).toMatchObject({ name: "STRÆK", now: "30", text: "STRÆK 30 sekunder tilbage" });
   expect(hasPill(two.flow, "Udstrækning 2 / 4")).toBe(true);
-  expect(before(pill(two.flow, "Udstrækning 2 / 4")!, ring(two.flow))).toBe(true);
+  // Under the ring, the only pill.
+  expect(before(ring(two.flow), pill(two.flow, "Udstrækning 2 / 4")!)).toBe(true);
   expect(queryAllByText(root(two.flow), /^Runde/)).toHaveLength(0);
   expect(queryAllByText(root(two.flow), /^Interval/)).toHaveLength(0);
   expect(cards(two.flow)).toEqual(["1 Thomas Quad stretch Næste: Hamstring stretch", "2 Maria Quad stretch Næste: Hamstring stretch"]);
@@ -1429,8 +1756,9 @@ test("an older add-on's view (no part, no stretches) renders the circuit as toda
     view({ phase: phase({ index: 9, round: 5, interval: 3 }), next_phase: null, totals: { planned: 1740, rounds: 5, stations: 3 } }),
   );
   expect(ringState(flow).name).toBe("ARBEJD");
-  expect(hasPill(flow, "Runde 5 / 5")).toBe(true);
   expect(hasPill(flow, "Interval 3 / 3")).toBe(true);
+  // No marks: the band has no gaps.
+  expect(queryAllByRole(whole(flow), "separator", { hidden: true })).toHaveLength(0);
   expect(cards(flow)).toEqual([
     "1 Thomas Station 1 Push-up Næste: station 2 · Squat",
     "2 Maria Station 2 Squat Næste: station 3 · Planke",

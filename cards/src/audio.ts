@@ -9,9 +9,10 @@ interface Note {
 }
 
 const TONES: Record<ToneKind, Note[]> = {
-  // A short beep for the last 5 seconds of a phase.
-  beep: [{ frequency: 880, offset: 0, length: 0.12 }],
-  // The long beep: one higher beep of 1.5 s at every change into or out of work.
+  // The countdown beep for the last 5 seconds of a phase: 0.25 s, long enough that a tablet's
+  // audio waking up doesn't swallow it, and not a note of the chime.
+  beep: [{ frequency: 1175, offset: 0, length: 0.25 }],
+  // The long beep: one higher, longer beep of 1.5 s at every change into or out of work.
   work: [{ frequency: 1320, offset: 0, length: 1.5 }],
   // Three rising tones when the session completes.
   chime: [
@@ -21,11 +22,21 @@ const TONES: Record<ToneKind, Note[]> = {
   ],
 };
 
-const VOLUME = 0.3;
+// Every tone's volume. Two tones rarely overlap; together they stay at 1.0.
+const VOLUME = 0.5;
 const RAMP = 0.01;
+
+/**
+ * The keep-alive's frequency: a continuous tone too quiet to hear while a session runs, so an
+ * audio driver that powers down after silence doesn't lose the start of the next beep. Not below
+ * 100 Hz, which tablet audio processing may filter out; not a tone's frequency.
+ */
+export const KEEP_ALIVE_HZ = 150;
+const KEEP_ALIVE_GAIN = 0.001;
 
 // One context for the page. The browser allows sound only after a gesture.
 let context: AudioContext | undefined;
+let keepAlive: OscillatorNode | undefined;
 const stateListeners = new Set<() => void>();
 
 function onStateChange(): void {
@@ -114,4 +125,31 @@ function play(ctx: AudioContext, note: Note, start: number): OscillatorNode {
   oscillator.start(start);
   oscillator.stop(end);
   return oscillator;
+}
+
+/** Start the keep-alive, if sound can play and it isn't playing already. */
+export function startKeepAlive(): void {
+  const ctx = context;
+  if (keepAlive || !ctx || ctx.state !== "running") return;
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.value = KEEP_ALIVE_HZ;
+  gain.gain.value = KEEP_ALIVE_GAIN;
+  oscillator.connect(gain).connect(ctx.destination);
+  oscillator.start();
+  keepAlive = oscillator;
+}
+
+/** Stop the keep-alive, if it plays. */
+export function stopKeepAlive(): void {
+  const oscillator = keepAlive;
+  keepAlive = undefined;
+  if (!oscillator) return;
+  try {
+    oscillator.stop();
+    oscillator.disconnect();
+  } catch {
+    // Already stopped.
+  }
 }

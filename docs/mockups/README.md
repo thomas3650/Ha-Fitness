@@ -21,6 +21,7 @@ Exercise GIFs in `gifs/` are © Gym visual (via hasaneyldrm/exercises-dataset). 
 | Switch / rest, paused | `TimerRest` | Workout overlay (page-level, D45) |
 | Timer, 2 participants | `TimerDuo` | Workout overlay (page-level, D45) |
 | Timer, 3–4 participants | `TimerSquad` | Workout overlay (page-level, D45) |
+| Timer from 2026-11: the time-left band, the volume slider, no buttons (replaces the controls and the line of `Timer` and `TimerDuo`) | `TimerBand` | Workout overlay (page-level, D45); light and Danish |
 | Circuit complete | `Complete` | Workout overlay (page-level, D45), the end |
 | Program (read-only + Claude draft) | `Planner` | Add-on website (Ingress); replaced by `website/` W1–W3, W5 |
 | Exercise library | `Library` | Add-on website (Ingress) |

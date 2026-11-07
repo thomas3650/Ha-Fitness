@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=1368">
+<title>Timer, band and volume</title>
+<style>
+  .tab { zoom: 1.668; width: 820px; height: 547px; background: #fafafa; border-radius: 14px; border: 1px solid #ddd; box-sizing: border-box;
+         font-family: Inter, Roboto, system-ui, sans-serif; color: #1c1c1c; overflow: hidden; margin: 0; border: 0; border-radius: 0;
+         padding: 22px 26px 24px; display: grid; grid-template-rows: auto 1fr auto; gap: 16px; }
+  .big { font-family: "Space Grotesk", Inter, sans-serif; font-weight: 700; }
+  .top { display: flex; align-items: center; justify-content: space-between; height: 46px; }
+  .player { display: flex; align-items: center; gap: 10px; border: 1px solid #ddd; border-radius: 30px; background: #fff;
+            padding: 0 12px 0 8px; height: 46px; box-sizing: border-box; }
+  .note { width: 30px; height: 30px; border-radius: 50%; background: #ffe7d6; color: #e8711c; font-size: 15px;
+          display: flex; align-items: center; justify-content: center; }
+  .ptext { display: flex; flex-direction: column; gap: 2px; line-height: 1.15; }
+  .ptext .t1 { font-size: 12px; font-weight: 700; } .ptext .t2 { font-size: 10px; color: #666; }
+  .pbtn { width: 30px; height: 30px; border-radius: 50%; background: #e6e6e6; font-size: 10px; display: flex;
+          align-items: center; justify-content: center; }
+  .vol { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555; padding-left: 10px; border-left: 1px solid #e3e3e3; height: 26px; }
+  .slider { width: 120px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #0099c8 55%, #ddd 55%); position: relative; }
+  .slider::after { content: ""; position: absolute; left: calc(55% - 9px); top: -6px; width: 18px; height: 18px;
+                   border-radius: 50%; background: #fff; border: 2px solid #0099c8; box-sizing: border-box; }
+  .slut { background: #e6e6e6; border-radius: 23px; height: 46px; padding: 0 26px; font-weight: 600; font-size: 12px;
+          display: flex; align-items: center; }
+  .main { display: grid; grid-template-columns: 1fr 250px 1fr; gap: 24px; min-height: 0; }
+  .pc { background: #fff; border: 1px solid #ddd; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; min-height: 0; }
+  .who { display: flex; align-items: center; justify-content: space-between; }
+  .who .n { display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 13px; }
+  .who .s { font-size: 10px; color: #555; }
+  .badge { width: 24px; height: 24px; border-radius: 50%; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+  .img { flex: 1; margin: 12px 6px; background: #f1f1f1; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 10px; }
+  .ex { font-weight: 700; font-size: 15px; } .nx { font-size: 10px; color: #555; margin-top: 4px; }
+  .centre { display: grid; grid-template-rows: 1fr auto 1fr; justify-items: center; }
+  .centre .ring { grid-row: 2; }
+  .centre .ipill { grid-row: 3; align-self: end; }
+  .ring { width: 236px; height: 236px; border-radius: 50%; position: relative; background: conic-gradient(#ff8a3d 0 86%, #ddd 86% 100%); }
+  .ring::before { content: ""; position: absolute; inset: 13px; border-radius: 50%; background: #fafafa; }
+  .ring .in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .ring .w { color: #c25a12; letter-spacing: 2px; font-size: 12px; font-weight: 600; }
+  .ring .num { font-size: 62px; line-height: 1; margin: 2px 0; }
+  .ring .c { font-size: 10px; color: #555; }
+  .ring .tap { font-size: 10px; color: #0099c8; font-weight: 600; margin-top: 6px; }
+  .ipill { display: flex; align-items: center; gap: 8px; border: 1px solid #ddd; border-radius: 22px; background: #fff;
+           height: 44px; box-sizing: border-box; padding: 0 20px; white-space: nowrap; }
+  .ipill span:first-child { font-size: 15px; color: #444; }
+  .band { height: 44px; border-radius: 22px; background: #e3e3e3; position: relative; overflow: hidden; }
+  .band .done { position: absolute; inset: 0 62% 0 0; background: #ff8a3d; }
+  .band .gap { position: absolute; top: 0; bottom: 0; width: 3px; background: #fafafa; }
+  .band .l { position: absolute; left: 16px; top: 0; bottom: 0; display: flex; align-items: center; font-size: 13px; color: #fff; font-weight: 600; }
+  .band .r { position: absolute; right: 18px; top: 0; bottom: 0; display: flex; align-items: center; gap: 6px; }
+
+  html, body { margin: 0; background: #fafafa; }
+</style></head><body>
+<div class="tab">
+  <div class="top">
+    <div class="player"><div class="note">♪</div><div class="ptext"><div class="t1">Workout Mix</div><div class="t2">Kitchen speaker</div></div>
+      <div class="pbtn">❚❚</div><div class="pbtn">▶❙</div><div class="vol">🔉<div class="slider"></div></div></div>
+    <div class="slut">Slut</div>
+  </div>
+  <div class="main">
+    <div class="pc"><div class="who"><div class="n"><div class="badge" style="background:#b18cf7">1</div>Thomas</div><div class="s">Station 1</div></div>
+      <div class="img">exercise</div><div class="ex">push-up</div><div class="nx">Næste: station 2 · squat</div></div>
+    <div class="centre">
+      <div class="ring"><div class="in"><div class="w">ARBEJD</div><div class="num big">43</div><div class="c">sekunder tilbage</div><div class="tap">❚❚ tryk for pause</div></div></div>
+      <div class="ipill"><span>Interval</span><span class="big" style="font-size:26px">3 / 5</span></div>
+    </div>
+    <div class="pc"><div class="who"><div class="n"><div class="badge" style="background:#3dd6c6">2</div>Elin</div><div class="s">Station 2</div></div>
+      <div class="img">exercise</div><div class="ex">squat to overhead reach</div><div class="nx">Næste: station 3 · walking lunge</div></div>
+  </div>
+  <div class="band">
+    <div class="done"></div>
+    <div class="gap" style="left:20%"></div><div class="gap" style="left:40%"></div><div class="gap" style="left:60%"></div><div class="gap" style="left:80%"></div>
+    <div class="l">11:03</div>
+    <div class="r"><span class="big" style="font-size:26px">17:42</span><span style="font-size:12px;color:#444">tilbage</span></div>
+  </div>
+</div>
+
+</body></html>

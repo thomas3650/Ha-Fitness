@@ -79,6 +79,7 @@ async def test_start_at_countdown_end(workout: Workout) -> None:
         "speaker": "media_player.kitchen",
         "speaker_name": "Kitchen speaker",
         "state": "waiting",
+        "volume": 40,
     }
 
     await workout.push(view(started_at=workout.setup_time + timedelta(seconds=10)))
@@ -91,7 +92,13 @@ async def test_start_at_countdown_end(workout: Workout) -> None:
         ),
         ("shuffle_set", {"shuffle": True}),
     ]
-    assert await workout.state() == "playing"
+    assert await workout.music_state() == {
+        "playlist_name": "Workout Mix",
+        "speaker": "media_player.kitchen",
+        "speaker_name": "Kitchen speaker",
+        "state": "playing",
+        "volume": 70,
+    }
 
 
 async def test_start_without_volume_set_support(workout: Workout) -> None:
@@ -500,6 +507,31 @@ async def test_fade_steps_then_pause_then_restore(
     assert speaker.attributes["volume_level"] == pytest.approx(START_LEVEL)
     await _tick(hass, freezer, 5)
     assert len(workout.kitchen.calls) == before + 12
+
+
+async def test_fade_starts_from_the_set_level(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, workout: Workout
+) -> None:
+    """A level the volume action set (35, the program starts at 70) is where the fade starts and what it sets back."""
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(view(started_at=started))
+    reply = await workout.command("volume", level=35)
+    assert reply["success"], reply
+    before = len(workout.kitchen.calls)
+
+    await workout.push(view(status="ended", started_at=started))
+    for _ in range(10):
+        await _tick(hass, freezer, 0.5)
+
+    fade = workout.kitchen.calls[before:]
+    assert [name for name, _ in fade] == [
+        *["volume_set"] * 10,
+        "media_pause",
+        "volume_set",
+    ]
+    assert _levels(fade) == pytest.approx(
+        [*[0.35 * (10 - step) / 10 for step in range(1, 11)], 0.35]
+    )
 
 
 async def test_fade_steps_keep_absolute_times(
