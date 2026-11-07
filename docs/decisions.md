@@ -617,6 +617,15 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
 - **Source:** [cool-down spec](superpowers/specs/2026-10-31-cooldown-and-timeline-design.md) §4.4, §6; Claude,
   2026-10-31
 
+### D73: The timer has no transport buttons; the ring is the pause control
+- **Date:** 2026-11-07 · **Status:** active
+- **Decision:** The timer shows no Forrige, pause or Næste buttons. Tapping the ring pauses and resumes, and a button
+  laid over the ring, in the tab order, makes that tap. This reverses the UI refresh spec's "no button role and no tab
+  stop" for the timer's ring. Skipping and going back are not offered during a workout.
+- **Why:** Thomas wanted a calmer screen and doesn't need the buttons.
+- **Source:** [timer band spec](superpowers/specs/2026-11-07-timer-band-and-volume-design.md) §2.3, §6; Thomas,
+  2026-11-07
+
 ### D74: `totals.marks`
 - **Date:** 2026-11-07 · **Status:** active
 - **Decision:** A session's totals carry where each round after the first and the cool-down start, in seconds into

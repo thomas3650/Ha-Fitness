@@ -46,9 +46,10 @@ export interface SessionView {
   stations: { current: SessionStation; next: SessionStation | null }[] | null;
   /**
    * `stations` is the intervals per round, `stretches` the cool-down's stretches (0 with none);
-   * older add-ons leave them out.
+   * `marks` the seconds into `planned` where each round after the first and the cool-down start.
+   * Older add-ons leave them out.
    */
-  totals: { planned: number; rounds: number; stations?: number; stretches?: number };
+  totals: { planned: number; rounds: number; stations?: number; stretches?: number; marks?: number[] };
   /** The start of the first work phase; null during the countdown, before work began. */
   started_at: string | null;
   ended_at: string | null;

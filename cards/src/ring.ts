@@ -18,7 +18,11 @@ export interface RingOptions {
   word: string;
   /** The line under the seconds ("sekunder tilbage"), if any. */
   caption?: string;
-  onTap?: () => void;
+  /**
+   * Room for one more line under the caption, left empty: the timer's ring button puts its
+   * "tryk for pause" there, so the texts stay centred together.
+   */
+  room?: boolean;
 }
 
 const SIZE = 320;
@@ -27,9 +31,10 @@ const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /**
- * The timer's ring: an SVG circle that empties as the phase runs, exposed as a progressbar with
- * the seconds left. The texts sit in the middle. A tap is a pointer shortcut only: the ring has no
- * button role and no tab stop. It renders into the caller's shadow root.
+ * The ring: an SVG circle that empties as the phase runs, exposed as a progressbar with the
+ * seconds left. The texts sit in the middle. The ring itself has no button role and no tab stop;
+ * get ready's ring is only that. The timer lays a button of its own over it (D73), as a sibling,
+ * so the progressbar keeps its role. It renders into the caller's shadow root.
  */
 export function ring(options: RingOptions) {
   const fraction = Math.min(1, Math.max(0, options.fraction));
@@ -42,7 +47,6 @@ export function ring(options: RingOptions) {
       aria-valuemax=${options.max}
       aria-valuenow=${options.value}
       style="--ring-color: ${options.color}${options.wordColor ? `; --word-color: ${options.wordColor}` : ""}"
-      @click=${() => options.onTap?.()}
     >
       <svg viewBox="0 0 ${SIZE} ${SIZE}" aria-hidden="true">
         ${svg`
@@ -65,6 +69,7 @@ export function ring(options: RingOptions) {
         <span class="word">${options.word}</span>
         <span class="seconds">${options.value}</span>
         ${options.caption ? html`<span class="caption">${options.caption}</span>` : nothing}
+        ${options.room ? html`<span class="room"></span>` : nothing}
       </div>
     </div>
   `;

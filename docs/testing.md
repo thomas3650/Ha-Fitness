@@ -241,22 +241,28 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
    with "Næste" beside it.
 5. **The timer for 2 people,** in work and in switch: a panel per person, with the person's colour, and the ring in
    the middle.
-6. **Paused:** tap the ring. It stops and shows "PAUSE"; the play button resumes.
-7. **Fortsæt after a reload:** reload while a session runs. Nothing opens by itself. The today card shows the session
+   There are no Forrige, pause or Næste buttons. The ring reads "tryk for pause" under its caption, and the pill
+   under it reads "Interval n / N" (one person: "Station n / N"). There is no round pill.
+6. **Paused:** tap the ring. It stops, turns blue and reads "tryk på ringen for at fortsætte"; a tap on the ring
+   resumes. Tab to the ring: it is a button named "Pause" while running and "Fortsæt" while paused.
+7. **The band** at the bottom: the trained time on the left and the time left (such as "17:42 tilbage") on the right, both
+   dark, on the fill and the grey alike. The fill grows in the phase's colour. A thin gap marks where each round after
+   the first and the cool-down start; with an older add-on there are none.
+8. **Fortsæt after a reload:** reload while a session runs. Nothing opens by itself. The today card shows the session
    row: the program's name, "I gang · runde …", the people with the minutes, and Fortsæt, which opens the overlay at the
    timer.
-8. **Done:** Slut, then Ja. After a full round "Godt gået!" shows; before one, "Træningen blev afsluttet". Luk closes
+9. **Done:** Slut, then Ja. After a full round "Godt gået!" shows; before one, "Træningen blev afsluttet". Luk closes
    it.
-9. **The today card stays visible during an extra session:** with no day open, start a session from
-   `custom:ha-fitness-workout-card` (the dev dashboard's Workout view). Back on the first view, the today card shows
-   the session row ("I gang · runde …" and Fortsæt) while the session runs. `dev_onboard.py` saves the dashboard only
-   while it has none, so a dev HA onboarded before the Workout view existed lacks it: delete the `ha-fitness-dev`
-   dashboard (Settings → Dashboards) and run `dev_onboard.py` again.
-10. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the 5
+10. **The today card stays visible during an extra session:** with no day open, start a session from
+    `custom:ha-fitness-workout-card` (the dev dashboard's Workout view). Back on the first view, the today card shows
+    the session row ("I gang · runde …" and Fortsæt) while the session runs. `dev_onboard.py` saves the dashboard
+    only while it has none, so a dev HA onboarded before the Workout view existed lacks it: delete the
+    `ha-fitness-dev` dashboard (Settings → Dashboards) and run `dev_onboard.py` again.
+11. **A real short run:** `scripts/seed --short`, then Start on Kort's row, with the sound on. Listen that the 5
     beeps before each end, at 5, 4, 3, 2 and 1 s, line up with the numbers. A long beep of 1.5 s sounds at the start
     of every work, also right after the countdown, and at its end. There is no low change tone. The last work ends
     with the beeps and then the chime.
-11. **Music, with the fake Music Assistant** (music spec §8). `scripts/seed` gives Sample the playlist "Workout Mix" on
+12. **Music, with the fake Music Assistant** (music spec §8). `scripts/seed` gives Sample the playlist "Workout Mix" on
     the living-room speaker. Start Sample as in step 1.
     - **Details:** the row "Musik" with "Workout Mix", and the "Højttaler" dropdown with the fake's three speakers,
       the living-room speaker chosen.
@@ -293,7 +299,7 @@ portrait frame in [`ha-notes.md`](ha-notes.md#the-frontend). The design is in th
 
 On the dev dashboard's Workout view, as the Danish user, with a screenshot of each step. The design is in the
 [stats spec](superpowers/specs/2026-10-24-stats-design.md) §5.2. A dev HA onboarded before the stats card existed lacks
-it; step 9 of the workout flow check says how to get it.
+it; step 10 of the workout flow check says how to get it.
 
 1. **Each line,** in the order of spec §5.2:
    - with an empty data folder (`scripts/develop stop`, move `local/addon-data/` aside, start again), before
