@@ -190,8 +190,10 @@ The HA version is pinned in three places that move together, by hand, in one PR:
 ## macOS
 
 - `hass` started with `&` in a non-interactive shell crashes in Bluetooth (CoreBluetooth via PyObjC). Run
-  `scripts/develop` in a terminal, or with Claude Code's Bash `run_in_background`; `scripts/smoke` runs HA in the
-  foreground with a timer.
+  `scripts/develop` in a terminal; `scripts/smoke` runs HA in the foreground with a timer.
+- Since 2026-11-07, `hass` is killed (exit 137) right after its Bluetooth setup when it runs in Claude Code's Bash
+  sandbox, `run_in_background` and `scripts/smoke` included. In a tab of the desktop app's Terminal panel, both run
+  fine.
 - `hass` exits with 134 on SIGTERM, from the same teardown. That is harmless.
 - Stop the fast loop with `scripts/develop stop`, not `pkill -f "hass -c config"`: the pattern also matches the shells
   that wrap the command.
