@@ -53,8 +53,9 @@ Model: opus · Review: yes
 **Files:**
 - Modify: `addon/server/src/ha_fitness_server/schemas.py` (`SessionTotals`)
 - Modify: `addon/server/src/ha_fitness_server/sessions.py` (`_totals`)
-- Test: `addon/server/tests/test_timeline.py` or a new `addon/server/tests/test_session_marks.py`; fix the exact
-  `totals` asserts in `test_session_start.py` (lines ~148, ~247) and `test_session_cooldown.py` (~160)
+- Test: a new `addon/server/tests/test_session_marks.py`; fix the exact `totals` asserts:
+  `test_session_start.py:148` → `"marks": [345, 690, 1035, 1380]`, the parametrised test at `:247` per case, and
+  `test_session_cooldown.py:160` → `[45, 90]`
 - Docs: `docs/architecture.md` (the session view's totals), `docs/decisions.md` (D74, text in spec §6)
 
 **Interfaces:**
@@ -77,8 +78,8 @@ Model: opus · Review: yes
   `plan_phases` with a running sum of non-countdown durations, appending the sum before each phase that is the first
   work of a round > 1 (part circuit) or the first phase with part `cooldown`.
 - [ ] **Step 4: Run** the new tests and the whole add-on gate → PASS; update the three exact asserts.
-- [ ] **Step 5: Docs:** `architecture.md` names `totals.marks` (one sentence, additive, `api_version` 1); D74 in
-  `decisions.md` per spec §6.
+- [ ] **Step 5: Docs:** `architecture.md` names `totals.marks` next to the session view (one sentence, additive,
+  `api_version` 1); D74 in `decisions.md` per spec §6. Run `uv run python scripts/check_links.py`.
 - [ ] **Step 6: Commit** `feat(addon): totals.marks, where each round and the cool-down start`.
 
 ### Task 2: The tones and the keep-alive
@@ -94,19 +95,24 @@ Model: opus · Review: yes
 **Interfaces:**
 - Produces in `audio.ts`: `export const KEEP_ALIVE_HZ: number` (≥ 100), `export function startKeepAlive(): void`
   (idempotent; does nothing with no running context), `export function stopKeepAlive(): void` (idempotent).
-- Produces in `fake-audio.ts`: `FakeTone.peak: number` (the highest gain value set on the tone's gain node);
-  oscillators whose frequency is set to `KEEP_ALIVE_HZ` are not in `tones` but in `context.keepAlives: FakeTone[]`.
+- Produces in `fake-audio.ts`: `FakeTone.peak: number`. The fake links each oscillator to its gain node through
+  `oscillator.connect(gain)`, and records the gain's `value` setter, `setValueAtTime` and the ramps; `peak` is the
+  highest automation value, or, with none, `value` (Web Audio's default 1). Oscillators whose frequency is set to
+  `KEEP_ALIVE_HZ` are not in `tones` but in `context.keepAlives: FakeTone[]`. A keep-alive is live when not
+  cancelled.
+- `KEEP_ALIVE_HZ` differs from every tone frequency (659, 784, 1047, 1175, 1320).
 
 - [ ] **Step 1: Write the failing tests:**
   - `audio.test.ts` `the countdown beep`: `scheduleTone("beep", …)` makes one tone at 1175 Hz, stopping 0.25 s after
     its start, with `peak` 0.5. `every tone at volume 0.5`: `work` and each chime note have `peak` 0.5.
   - `audio.test.ts` `keep-alive`: `startKeepAlive()` on a running context makes one keep-alive at `KEEP_ALIVE_HZ`,
-    `KEEP_ALIVE_HZ >= 100`, gain ≤ 0.001, not in `tones`; a second call adds none; `stopKeepAlive()` stops it; on a
+    `KEEP_ALIVE_HZ >= 100`, `0 < peak ≤ 0.001`, not in `tones`; a second call adds none; `stopKeepAlive()` stops it; on a
     locked context nothing starts.
   - `workout-flow-pings.test.ts`: `keep-alive while running` (a running timer view → one live keep-alive),
     `keep-alive stops on pause`, `… on end` (completed view), `… on close` (flow disconnected),
-    `keep-alive starts on a mid-session unlock` (locked context, running view → none; unlock → one). Existing
-    tests that read the beep's frequency (`kindOf`) get 1175.
+    `keep-alive starts on a mid-session unlock` (locked context, running view → none; unlock → one),
+    `keep-alive in get ready` (a running countdown view → one). The beep's length assert at
+    `cards/test/audio.test.ts:177` (`toBeCloseTo(0.12, 6)`) becomes 0.25; `kindOf` learns frequencies at runtime.
 - [ ] **Step 2: Run** `npm test --prefix cards -- audio workout-flow-pings` → FAIL.
 - [ ] **Step 3: Implement:** `beep: [{ frequency: 1175, offset: 0, length: 0.25 }]`, `VOLUME = 0.5`; the keep-alive as
   one module-level oscillator → gain node (fixed gain ≤ 0.001) → destination. In `WorkoutFlow`, call
@@ -120,10 +126,11 @@ Model: opus · Review: yes
 Model: opus · Review: yes
 
 **Files:**
-- Modify: `cards/src/flow/timer.ts` (render and styles), `cards/src/ring.ts` only if the overlay button needs a hook,
+- Modify: `cards/src/flow/timer.ts` (render and styles), `cards/src/ring.ts` (its docstring's "no button role and no
+  tab stop" now applies to get ready's ring only; the timer no longer passes `onTap`),
   `cards/src/workout-flow.ts` (the timer context: drop `onPrevious`, `onPause`, `onResume`, `onNext`), `cards/src/overlay.ts`
   (`totals.marks?: number[]`), `cards/src/i18n/en.json`, `cards/src/i18n/da.json`
-- Test: `cards/test/workout-flow-timer.test.ts`
+- Test: `cards/test/workout-flow-timer.test.ts`, `cards/test/workout-flow-pings.test.ts`
 - Docs: `docs/decisions.md` (D73, spec §6), `docs/testing.md` (the workout-flow Chrome check: the ring tap pauses and
   resumes, the band)
 
@@ -136,31 +143,44 @@ Spec §2.3 and §2.4 hold the layout; the mockup shows it. Texts per spec §5.
 
 - [ ] **Step 1: Write the failing tests** (roles and rendered text; a frozen clock):
   - `no transport buttons`: no button named Forrige, Næste, or a pause/resume button outside the ring.
-  - `the ring button pauses and resumes`: a running view has a button named "Pause"; clicking it sends `pause`; a
-    paused view's button is named "Fortsæt" and sends `resume`. The progressbar named after the phase word is still
-    there, outside the button. The ring's caption reads "tryk for pause" while running.
+  - `the ring button pauses and resumes`: a running view has exactly one button named "Pause"; clicking it sends
+    `pause`; a paused view has exactly one button named "Fortsæt", which sends `resume`. The progressbar named after
+    the phase word is still there and is not inside the button. While running the button shows the text "tryk for
+    pause", and the ring still reads "sekunder tilbage".
+  - The existing "pause, resume and ring tap" tests (`workout-flow-timer.test.ts:378`, `:392`) click the button
+    instead of the progressbar. "the ring is no button and no tab stop" (`:402`) becomes: the timer's ring
+    progressbar has no tab stop, and the ring button is in the tab order.
   - `get ready's ring has no button`: the ready step has the progressbar and no ring button.
   - `the interval pill`: "Interval" and "3 / 5" show; no round pill ("Runde"). One person: "Station" n / N. In the
     cool-down: the cool-down pill's text, under the ring (the only pill).
   - `the band's times`: `time_trained` 663 and planned 1725 → "11:03" and "17:42" with "tilbage"; the progressbar's
-    value text "17:42 tilbage af træningen"; the old "/ 28:45" text is gone.
+    value text "17:42 tilbage af træningen"; the old "/ 28:45" text is gone. The band keeps its accessible name
+    `flow.whole_workout` (the test helpers `ring()` and `whole()` tell the progressbars apart by it).
+  - `one rounding rule`: 0.4 s after `server_time` the band still reads "11:03" and "17:42"
+    (`left = max(0, planned − floor(elapsed))`).
   - `time left never below zero`: elapsed beyond planned → "0:00".
-  - `gaps from marks`: `marks: [300, 600]` → two round gaps (render each gap as an element with an accessible-hidden
-    marker the test can count by role `separator`, `aria-orientation="vertical"`); `no gaps without marks`.
+  - `gaps from marks`: `marks: [300, 600]` → two `aria-hidden` gap elements inside the band, counted with
+    `getAllByRole("separator", { hidden: true })` within the band's container; `no gaps without marks`.
   - `banners above the cards`: an unreachable view shows its note; `Tryk for lyd` shows when locked.
-  - Remove the tests of the removed buttons; keep the skip-tone tests (they drive `next`/`previous` through views).
+  - Remove the tests of the removed buttons.
+  - The skip-tone tests in `workout-flow-pings.test.ts` tap "Næste" (lines ~245, ~400) and "Forrige" (~415, ~482,
+    ~492). Replace each tap and its `fake.commands[n].resolve(...)` with `push(flow, <the view a REST next/previous
+    gives>)`, keeping the expected tones; `playSkipTone` runs from `take()` for pushed views too. The
+    "Pause"/"Fortsæt" taps keep working through the ring button.
 - [ ] **Step 2: Run** `npm test --prefix cards -- workout-flow-timer` → FAIL.
-- [ ] **Step 3: Implement** in `timer.ts`: drop `.timer-controls`; the ring wrapped with a transparent `<button>`
-  laid over it (accessible name `flow.pause` / `flow.resume`; the ring's progressbar a sibling, not a child);
+- [ ] **Step 3: Implement** in `timer.ts`: drop `.timer-controls`; a transparent `<button>` laid over the ring
+  (accessible name `flow.pause` / `flow.resume`; the ring's progressbar a sibling, not a child; the button holds the
+  visible "tryk for pause" line with a pause icon, placed under the ring's caption, so the progressbar's text is
+  unchanged);
   `renderCentre` / `renderCooldownCentre` render only the bottom pill, big (label normal, numbers large); `renderWhole`
-  becomes the band (fill share as today, phase colour, gaps at `mark / planned`, trained time left, time left right,
+  becomes the band (time left `max(0, planned − floor(elapsed))`; fill share as today, phase colour, gaps at `mark / planned`, trained time left, time left right,
   both in the primary text colour, `aria-valuetext` the time-left text); the banners in a row between the top row
   and the cards that takes no height when empty; one CSS grid for the screen (top row, banners, main, band); the top
   row loses `.elapsed` and keeps Skip cool-down and Slut on the right; portrait keeps its stacking. New keys per spec
   §5; drop `flow.previous`, `flow.next`, `flow.round_label` if unused (check with grep, including `ready.ts`).
 - [ ] **Step 4: Run** the cards gate → PASS.
 - [ ] **Step 5: Docs:** D73 in `decisions.md`; `testing.md`'s workout-flow check: tap the ring to pause and resume
-  (replacing the play button), check the band's times and gaps.
+  (replacing the play button), check the band's times and gaps. Run `uv run python scripts/check_links.py`.
 - [ ] **Step 6: Commit** `feat(cards): the timer's time-left band, the ring as the pause control, no transport buttons`.
 
 ### Task 4: The music volume: integration and slider
@@ -179,23 +199,31 @@ Model: opus · Review: yes
 **Interfaces:**
 - Produces (websocket): `{"type": "ha_fitness/music", "action": "volume", "level": <int 0–100>}`; the music state's
   `volume: int | None`.
+- Produces (cards): `TimerContext.onVolumeInput(level: number)` (while dragging, the `input` event) and
+  `TimerContext.onVolumeChange(level: number)` (on release, the `change` event).
 - Consumes: Task 3's `renderPlayer`.
 
 Spec §2.2 and §4.
 
 - [ ] **Step 1: Write the failing integration tests:**
+  - The exact music-state asserts get `volume`: `tests/test_music_controller.py:77-82` (70 after the start) and
+    `KITCHEN_WAITING` in `tests/test_websocket.py:377-382` (40, the kitchen's `DEFAULT_VOLUME` before the start).
   - `music state carries the volume`: the fake speaker at 0.4 → `volume == 40`; a speaker without `VOLUME_SET` →
     `None`; a speaker with no `volume_level` → `None`. The state is re-sent when the speaker's volume changes.
   - `the volume action sets the level`: `action: "volume", level: 65` → `media_player.volume_set` with 0.65 on the
     session speaker; the program's music settings unchanged.
   - `invalid_format`: `volume` without `level`; `level` 101, -1, 50.5 and `true`; `level` with `action: "play"`.
-  - `not_found` with no active session with music; `unavailable` without `VOLUME_SET` and when the call fails.
-  - `the fade starts from the set level`: set 70, end the session → the fade's first step is below 0.70 from 0.70,
-    and the last sets 0.70 back.
+  - `not_found` with no active session with music; `unavailable` when the call fails, and without `VOLUME_SET`
+    (a session whose program's music names the tests' garage player, `Player("garage", …, volume=False)` in
+    `tests/music_fakes.py:78`).
+  - `the fade starts from the set level`: set 35 (the program starts at 70), end the session → the fade's steps are
+    0.315, 0.28 … 0, then the pause, then the restore at 0.35.
 - [ ] **Step 2: Run** `uv run pytest tests/test_music_controller.py tests/test_websocket.py -v` → FAIL.
 - [ ] **Step 3: Implement** the integration: `volume` in `music_state` (`round(volume_level * 100)`, None per spec);
-  `MUSIC_ACTIONS` gains `volume`; the schema accepts `level` only with `volume` (a `vol.Any` of two schemas, or a
-  validator), integer 0–100, booleans refused; `async_command(action, level=None)` calls `SERVICE_VOLUME_SET`, raising
+  `MUSIC_ACTIONS` gains `volume`; the schema is `probatio.All(probatio.Schema({type, action,
+  Optional("level"): …}), validator)` (HA's `websocket_command` extends the first mapping; a `vol.Any` doesn't work).
+  The validator requires `level` exactly when `action == "volume"`, refuses a boolean explicitly (bool is an int
+  subclass) before the 0–100 integer check; `async_command(action, level=None)` calls `SERVICE_VOLUME_SET`, raising
   `MusicUnavailable` without `VOLUME_SET`.
 - [ ] **Step 4: Run** the integration gate → PASS.
 - [ ] **Step 5: Write the failing card tests:**
@@ -210,9 +238,10 @@ Spec §2.2 and §4.
 - [ ] **Step 6: Run** `npm test --prefix cards -- workout-flow-timer` → FAIL.
 - [ ] **Step 7: Implement** the slider in `renderPlayer` after next track: a speaker icon and a touch-friendly range
   input (0–100) named `Musikkens lydstyrke`; the player grows to hold it. The flow keeps `held` and a throttle timer;
-  the send swallows refusals like `music()`.
+  the send swallows refusals like `music()`. A release cancels a pending trailing send, then sends the release value.
 - [ ] **Step 8: Run** the cards gate → PASS.
 - [ ] **Step 9: Docs:** `architecture.md` (the `volume` field and action, its refusals); `testing.md` music steps.
+  Run `uv run python scripts/check_links.py`.
 - [ ] **Step 10: Commit** `feat: the music volume slider on the timer`.
 
 ### Task 5: Fast loop, Chrome check and the release notes text
