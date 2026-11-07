@@ -46,7 +46,7 @@ interface Hass extends LanguageHass, ImageHass {
   connection?: Connection;
 }
 
-type Command = "pause" | "resume" | "next" | "previous" | "end" | "skip_cooldown";
+type Command = "pause" | "resume" | "next" | "end" | "skip_cooldown";
 type MusicAction = "pause" | "play" | "next";
 type Step = "details" | "ready" | "timer" | "done";
 
@@ -104,6 +104,8 @@ const CHANGE_TONE: ToneKind = "work";
 
 /** While the volume slider is dragged, its level goes out at most this often (timer band and volume spec §2.2.5). */
 const VOLUME_THROTTLE_MS = 300;
+/** After release, the released level shows until the speaker reports it, or this long, so the thumb doesn't jump back. */
+const VOLUME_SETTLE_MS = 2000;
 
 /**
  * When `view`'s running phase started (the add-on's epoch ms), for its start tone. A countdown
@@ -163,7 +165,10 @@ export class WorkoutFlow extends LitElement {
   declare stats?: StatsMessage | null;
   /** The text of a failed feeling tap. */
   declare feelingError?: string;
-  /** The level the volume slider's thumb is held at, while it is; a music state doesn't move it then. */
+  /**
+   * The level the volume slider shows instead of the music's: while its thumb is dragged, and after
+   * release until the speaker reports that level or 2 s pass. A music state doesn't move it then.
+   */
   declare volumeHeld?: number;
 
   /** The newest view the flow has seen, from a push or a command result. */
@@ -193,6 +198,10 @@ export class WorkoutFlow extends LitElement {
   private volumeTimer?: ReturnType<typeof setTimeout>;
   /** The newest level dragged to within the throttle, still to send. */
   private volumePending?: number;
+  /** Set while the thumb is dragged: from the first `input` until release. */
+  private volumeDragging = false;
+  /** The 2 s after release while the released level shows. */
+  private volumeSettleTimer?: ReturnType<typeof setTimeout>;
   /** Set once this flow has asked to close; it never asks twice. */
   private closed = false;
   /**
@@ -238,8 +247,7 @@ export class WorkoutFlow extends LitElement {
     this.endAsk(false);
     clearTimeout(this.unreachableTimer);
     clearTimeout(this.doneTimer);
-    this.stopVolume();
-    this.volumeHeld = undefined;
+    this.endVolumeHold();
     this.statsSubscription.disconnect();
     this.stats = undefined;
   }
@@ -250,6 +258,7 @@ export class WorkoutFlow extends LitElement {
       this.take(this.state?.session ?? undefined);
     }
     if (changed.has("result")) this.take(this.result);
+    if (changed.has("state") || changed.has("result")) this.followVolume();
     // A new details mode on the same flow (a Start while a finished view shows) starts over.
     if (changed.has("mode")) this.leftDetails = isActive(this.newest);
     // The controller hands over `hass` on every card update; only a new mode loads again.
@@ -613,6 +622,9 @@ export class WorkoutFlow extends LitElement {
    * newest level dragged to (timer band and volume spec §2.2.5).
    */
   private volumeInput(level: number): void {
+    this.volumeDragging = true;
+    clearTimeout(this.volumeSettleTimer);
+    this.volumeSettleTimer = undefined;
     this.volumeHeld = level;
     if (this.volumeTimer !== undefined) {
       this.volumePending = level;
@@ -634,11 +646,53 @@ export class WorkoutFlow extends LitElement {
     }, VOLUME_THROTTLE_MS);
   }
 
-  /** The volume slider let go: a pending send is dropped, the release's level goes, and the slider follows the music again. */
+  /**
+   * The volume slider let go: a pending send is dropped and the release's level goes. The slider
+   * keeps showing that level until the speaker reports it or 2 s pass, then follows the music.
+   */
   private volumeChange(level: number): void {
     this.stopVolume();
-    this.volumeHeld = undefined;
+    this.volumeDragging = false;
+    if (this.state?.music?.volume === level) {
+      this.volumeHeld = undefined;
+    } else {
+      this.volumeHeld = level;
+      clearTimeout(this.volumeSettleTimer);
+      this.volumeSettleTimer = setTimeout(() => this.endVolumeHold(), VOLUME_SETTLE_MS);
+    }
     this.sendVolume(level);
+  }
+
+  /** A cancelled touch or a lost focus while dragging ends the drag as a release would. */
+  private volumeRelease(level: number): void {
+    if (this.volumeDragging) this.volumeChange(level);
+  }
+
+  /**
+   * Follow a new music state: a slider that can't be used (no music, no volume, waiting,
+   * unavailable, or no timer) drops its hold and its pending send; the speaker reaching the
+   * released level ends the hold after a release.
+   */
+  private followVolume(): void {
+    const music = this.state?.music;
+    const usable =
+      this.step() === "timer" &&
+      typeof music?.volume === "number" &&
+      music.state !== "waiting" &&
+      music.state !== "unavailable";
+    if (!usable) this.endVolumeHold();
+    else if (!this.volumeDragging && this.volumeHeld !== undefined && music.volume === this.volumeHeld) {
+      this.endVolumeHold();
+    }
+  }
+
+  /** Drop the hold, the throttle and the settle: the slider follows the music state. */
+  private endVolumeHold(): void {
+    this.stopVolume();
+    clearTimeout(this.volumeSettleTimer);
+    this.volumeSettleTimer = undefined;
+    this.volumeDragging = false;
+    if (this.volumeHeld !== undefined) this.volumeHeld = undefined;
   }
 
   private stopVolume(): void {
@@ -1001,6 +1055,7 @@ export class WorkoutFlow extends LitElement {
       volumeHeld: this.volumeHeld,
       onVolumeInput: (level) => this.volumeInput(level),
       onVolumeChange: (level) => this.volumeChange(level),
+      onVolumeRelease: (level) => this.volumeRelease(level),
     };
   }
 

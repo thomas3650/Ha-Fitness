@@ -54,12 +54,14 @@ export interface TimerContext {
   onMusicToggle: () => void;
   /** The player's Next track. */
   onMusicNext: () => void;
-  /** The level the volume slider's thumb is held at, while it is; the slider shows it, not the music's. */
+  /** The level the volume slider shows instead of the music's, while held or just released. */
   volumeHeld: number | undefined;
   /** The volume slider moved, while its thumb is held (the `input` event). */
   onVolumeInput: (level: number) => void;
   /** The volume slider let go (the `change` event). */
   onVolumeChange: (level: number) => void;
+  /** A cancelled touch or a lost focus on the volume slider (`pointercancel`, `blur`). */
+  onVolumeRelease: (level: number) => void;
 }
 
 /** Whether a part is the cool-down; a missing part (an older add-on) is the circuit. */
@@ -311,6 +313,8 @@ function renderVolume(ctx: TimerContext, level: number, disabled: boolean) {
         ?disabled=${disabled}
         @input=${(event: Event) => ctx.onVolumeInput(value(event))}
         @change=${(event: Event) => ctx.onVolumeChange(value(event))}
+        @pointercancel=${(event: Event) => ctx.onVolumeRelease(value(event))}
+        @blur=${(event: Event) => ctx.onVolumeRelease(value(event))}
       />
     </span>
   `;

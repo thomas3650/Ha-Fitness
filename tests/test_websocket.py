@@ -451,6 +451,33 @@ async def test_subscription_resends_on_speaker_state_change(
     assert (await _next_event(client))["music"]["state"] == "paused"
 
 
+async def test_subscription_skips_a_speaker_change_outside_the_music_state(
+    hass: HomeAssistant, workout: Workout, hass_ws_client: WebSocketGenerator
+) -> None:
+    """A speaker change that leaves the music state as it was (a new media_position) sends nothing."""
+    await workout.push(view(started_at=workout.setup_time + timedelta(seconds=10)))
+    client = await hass_ws_client(hass)
+    _, first = await subscribe(client)
+    assert first["music"]["state"] == "playing"
+    speaker = hass.states.get("media_player.kitchen")
+    assert speaker is not None
+
+    hass.states.async_set(
+        speaker.entity_id,
+        speaker.state,
+        {**speaker.attributes, "media_position": 42},
+    )
+    await hass.async_block_till_done()
+    await hass.services.async_call(
+        "media_player",
+        "media_pause",
+        {"entity_id": "media_player.kitchen"},
+        blocking=True,
+    )
+
+    assert (await _next_event(client))["music"]["state"] == "paused"
+
+
 async def test_subscription_music_null_without_music(
     workout: Workout, hass_ws_client: WebSocketGenerator
 ) -> None:

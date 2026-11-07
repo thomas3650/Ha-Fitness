@@ -285,7 +285,7 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
       `play_media` (its `media_title` becomes the playlist), and the player shows Pause musik.
     - **Long names in portrait** (800×1280): give the program a long `playlist_name` and the speaker a long name
       (its name in HA's entity settings). Both lines end in an ellipsis; the pills and Slut keep their place.
-12. The console is clean throughout.
+13. The console is clean throughout.
 
 ### The refreshed screens
 

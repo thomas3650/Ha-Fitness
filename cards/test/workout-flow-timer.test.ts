@@ -1331,10 +1331,80 @@ test("a state while held doesn't move the thumb; after release it follows the st
   expect(slider(flow).value).toBe("50");
 
   await release(flow, 50);
+  // The speaker reaches the released level: the slider follows the speaker again.
+  await push(flow, solo(), true, music("playing", 50));
   await push(flow, solo(), true, music("playing", 52));
   expect(slider(flow).value).toBe("52");
   await push(flow, solo(), true, music("playing", 30));
   expect(slider(flow).value).toBe("30");
+});
+
+test("after release the released level shows until the speaker has it, or 2 s pass", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  await release(flow, 50);
+  // The state still says 40: the thumb doesn't jump back.
+  await push(flow, solo(), true, music("playing", 40));
+  expect(slider(flow).value).toBe("50");
+  await wait(flow, 1900);
+  expect(slider(flow).value).toBe("50");
+  await wait(flow, 100);
+  expect(slider(flow).value).toBe("40");
+
+  // A state with the released level ends the hold at once.
+  await release(flow, 60);
+  await wait(flow, 500);
+  await push(flow, solo(), true, music("playing", 60));
+  await push(flow, solo(), true, music("playing", 35));
+  expect(slider(flow).value).toBe("35");
+});
+
+test("the hold ends when the slider can't be used", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  await push(flow, solo(), true, music("unavailable", 40));
+  await push(flow, solo(), true, music("playing", 70));
+  expect(slider(flow).value).toBe("70");
+  // The throttle's trailing send is dropped too.
+  await drag(flow, 55);
+  await wait(flow, 100);
+  await drag(flow, 58);
+  await push(flow, solo(), true, music("waiting", 70));
+  await wait(flow, 600);
+  expect(volumeSent(fake).map((message) => message.level)).toEqual([50, 55]);
+
+  await push(flow, solo(), true, music("playing", 70));
+  await drag(flow, 20);
+  await push(flow, solo(), true, music("playing", null));
+  await push(flow, solo(), true, music("playing", 70));
+  expect(slider(flow).value).toBe("70");
+
+  await drag(flow, 20);
+  await push(flow, solo(), true, null);
+  await push(flow, solo(), true, music("playing", 70));
+  expect(slider(flow).value).toBe("70");
+});
+
+test.each(["pointercancel", "blur"])("%s releases the hold", async (type) => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  slider(flow).dispatchEvent(new Event(type));
+  await settle(flow);
+
+  expect(volumeSent(fake).map((message) => message.level)).toEqual([50, 50]);
+  await push(flow, solo(), true, music("playing", 50));
+  await push(flow, solo(), true, music("playing", 45));
+  expect(slider(flow).value).toBe("45");
+  // Without a hold, another blur sends nothing.
+  slider(flow).dispatchEvent(new Event(type));
+  await settle(flow);
+  expect(volumeSent(fake)).toHaveLength(2);
 });
 
 test("a refused set shows nothing", async () => {
@@ -1346,8 +1416,9 @@ test("a refused set shows nothing", async () => {
   await settle(flow);
 
   expect(queryByRole(root(flow), "alert")).toBeNull();
-  // The slider follows the next music state.
+  // The slider follows the music state again after the 2 s hold.
   await push(flow, solo(), true, music("playing", 40));
+  await wait(flow, 2000);
   expect(slider(flow).value).toBe("40");
 });
 

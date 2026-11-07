@@ -299,7 +299,9 @@ class MusicController:
             if action == "volume":
                 if not _can_set_volume(self.hass.states.get(followed.speaker)):
                     raise MusicUnavailable
-                data = {ATTR_MEDIA_VOLUME_LEVEL: (level or 0) / 100}
+                # The command's schema requires a level with `volume`.
+                assert level is not None
+                data = {ATTR_MEDIA_VOLUME_LEVEL: level / 100}
             try:
                 await self._async_call(
                     MEDIA_PLAYER_DOMAIN, service, followed.speaker, data

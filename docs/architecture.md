@@ -338,8 +338,8 @@ plays it, because Music Assistant is HA's.
   isn't silent. Unloading the integration does the same for fades in flight.
 - **The music state** is `{playlist_name, speaker, speaker_name, state, volume} | null`. `state` is `waiting`,
   `playing`, `paused` or `unavailable`. HA's `idle` counts as `paused`. `volume` is the speaker's `volume_level` times
-  100, rounded, or `null` when the speaker has no level or can't set its volume. It is re-sent on every change of the
-  speaker, its volume included. The music state is `null` without an active session, a session without music, Music
+  100, rounded, or `null` when the speaker has no level or can't set its volume. It is re-sent when it changes, its
+  volume included; a speaker change that leaves it as it was sends nothing. The music state is `null` without an active session, a session without music, Music
   Assistant or an add-on that supports music.
 - **An older add-on** (no `GET /api/v1/music`) is flagged by the coordinator's route probe, which also raises
   `addon_too_old` ([above](#the-integrations-side)). The programs then carry no music, a start drops the speaker and
