@@ -14,7 +14,7 @@ and no install on the real HA. A release only delivers a tested version to the h
 Every PR. A dev Home Assistant with the integration and cards, and the add-on server on its own, all on the Mac.
 
 1. `scripts/setup` once per clone, and after a dependency change.
-2. `scripts/develop`. Claude starts it with the Bash tool's `run_in_background` ([why](ha-notes.md#macos)). It builds
+2. `scripts/develop`. Claude starts it in a tab of the desktop app's Terminal panel ([why](ha-notes.md#macos)). It builds
    the cards and the add-on's website, then starts:
    - the cards watch build (log `local/cards-watch.log`);
    - the website's watch build into `addon/web/dist/` (log `local/web-watch.log`);
