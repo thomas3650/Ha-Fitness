@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/thomas3650/Ha-Fitness/compare/ha-fitness-addon-v1.4.0...ha-fitness-addon-v1.5.0) (2026-11-07)
+
+
+### Features
+
+* the timer's time-left band, a music volume slider, no transport buttons and clearer countdown beeps ([#117](https://github.com/thomas3650/Ha-Fitness/issues/117)) ([da7e852](https://github.com/thomas3650/Ha-Fitness/commit/da7e85202ce1fc5c703c019393791364df2c041a))
+
 ## [1.4.0](https://github.com/thomas3650/Ha-Fitness/compare/ha-fitness-addon-v1.3.0...ha-fitness-addon-v1.4.0) (2026-11-01)
 
 
