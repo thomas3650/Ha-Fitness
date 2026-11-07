@@ -142,7 +142,7 @@ Model: opus · Review: yes
 Spec §2.3 and §2.4 hold the layout; the mockup shows it. Texts per spec §5.
 
 - [ ] **Step 1: Write the failing tests** (roles and rendered text; a frozen clock):
-  - `no transport buttons`: no button named Forrige, Næste, or a pause/resume button outside the ring.
+  - `no transport buttons`: no button named Forrige or Næste.
   - `the ring button pauses and resumes`: a running view has exactly one button named "Pause"; clicking it sends
     `pause`; a paused view has exactly one button named "Fortsæt", which sends `resume`. The progressbar named after
     the phase word is still there and is not inside the button. While running the button shows the text "tryk for
@@ -162,11 +162,16 @@ Spec §2.3 and §2.4 hold the layout; the mockup shows it. Texts per spec §5.
   - `gaps from marks`: `marks: [300, 600]` → two `aria-hidden` gap elements inside the band, counted with
     `getAllByRole("separator", { hidden: true })` within the band's container; `no gaps without marks`.
   - `banners above the cards`: an unreachable view shows its note; `Tryk for lyd` shows when locked.
-  - Remove the tests of the removed buttons.
+  - Edit, don't delete, the tests that use the removed buttons or texts only in passing; drop only those lines:
+    `:727-731` (its `sent` list becomes `["pause", …]`), `:799-800` (Previous/Next in English), `:1105` (`Næste`),
+    `:789` ("6:00 / 29:00" and the Runde pill become the band's texts), and `:563` (keep its "a result moves the
+    flow" half as a `push`).
   - The skip-tone tests in `workout-flow-pings.test.ts` tap "Næste" (lines ~245, ~400) and "Forrige" (~415, ~482,
     ~492). Replace each tap and its `fake.commands[n].resolve(...)` with `push(flow, <the view a REST next/previous
     gives>)`, keeping the expected tones; `playSkipTone` runs from `take()` for pushed views too. The
-    "Pause"/"Fortsæt" taps keep working through the ring button.
+    "Pause"/"Fortsæt" taps keep working through the ring button. Mind the command indexes: in "Forrige that
+    restarts the current work phase…" the Pause tap becomes `fake.commands[0]`; in "rescheduled after pause, next
+    and newer revision" only the Næste step changes.
 - [ ] **Step 2: Run** `npm test --prefix cards -- workout-flow-timer` → FAIL.
 - [ ] **Step 3: Implement** in `timer.ts`: drop `.timer-controls`; a transparent `<button>` laid over the ring
   (accessible name `flow.pause` / `flow.resume`; the ring's progressbar a sibling, not a child; the button holds the
