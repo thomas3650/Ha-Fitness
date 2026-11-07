@@ -198,6 +198,7 @@
     "music_pause": "Pause music",
     "music_play": "Play music",
     "music_next": "Next track",
+    "music_volume": "Music volume",
     "cooldown_label": "Cool-down",
     "cooldown_line": "Cool-down · {hold} s stretch / {change} s change",
     "cooldown_next": "COOL-DOWN NEXT",

@@ -102,6 +102,9 @@ function errorCode(error: unknown): string | undefined {
  */
 const CHANGE_TONE: ToneKind = "work";
 
+/** While the volume slider is dragged, its level goes out at most this often (timer band and volume spec §2.2.5). */
+const VOLUME_THROTTLE_MS = 300;
+
 /**
  * When `view`'s running phase started (the add-on's epoch ms), for its start tone. A countdown
  * has no start tone, and a paused phase no start.
@@ -134,6 +137,7 @@ export class WorkoutFlow extends LitElement {
     result: { state: true },
     stats: { state: true },
     feelingError: { state: true },
+    volumeHeld: { state: true },
   };
 
   declare hass?: Hass;
@@ -159,6 +163,8 @@ export class WorkoutFlow extends LitElement {
   declare stats?: StatsMessage | null;
   /** The text of a failed feeling tap. */
   declare feelingError?: string;
+  /** The level the volume slider's thumb is held at, while it is; a music state doesn't move it then. */
+  declare volumeHeld?: number;
 
   /** The newest view the flow has seen, from a push or a command result. */
   private newest?: SessionView;
@@ -183,6 +189,10 @@ export class WorkoutFlow extends LitElement {
   /** The session whose done step the 60 s close is armed for. */
   private doneFor?: number;
   private doneTimer?: ReturnType<typeof setTimeout>;
+  /** The volume's throttle: running for 300 ms after each send while the thumb is held. */
+  private volumeTimer?: ReturnType<typeof setTimeout>;
+  /** The newest level dragged to within the throttle, still to send. */
+  private volumePending?: number;
   /** Set once this flow has asked to close; it never asks twice. */
   private closed = false;
   /**
@@ -228,6 +238,8 @@ export class WorkoutFlow extends LitElement {
     this.endAsk(false);
     clearTimeout(this.unreachableTimer);
     clearTimeout(this.doneTimer);
+    this.stopVolume();
+    this.volumeHeld = undefined;
     this.statsSubscription.disconnect();
     this.stats = undefined;
   }
@@ -597,6 +609,52 @@ export class WorkoutFlow extends LitElement {
   }
 
   /**
+   * The volume slider moved while held: send the level at once, then at most every 300 ms, the
+   * newest level dragged to (timer band and volume spec §2.2.5).
+   */
+  private volumeInput(level: number): void {
+    this.volumeHeld = level;
+    if (this.volumeTimer !== undefined) {
+      this.volumePending = level;
+      return;
+    }
+    this.sendVolume(level);
+    this.armVolume();
+  }
+
+  /** The throttle's 300 ms; at its end the newest level dragged to goes out, and it runs again. */
+  private armVolume(): void {
+    this.volumeTimer = setTimeout(() => {
+      this.volumeTimer = undefined;
+      const pending = this.volumePending;
+      this.volumePending = undefined;
+      if (pending === undefined) return;
+      this.sendVolume(pending);
+      this.armVolume();
+    }, VOLUME_THROTTLE_MS);
+  }
+
+  /** The volume slider let go: a pending send is dropped, the release's level goes, and the slider follows the music again. */
+  private volumeChange(level: number): void {
+    this.stopVolume();
+    this.volumeHeld = undefined;
+    this.sendVolume(level);
+  }
+
+  private stopVolume(): void {
+    clearTimeout(this.volumeTimer);
+    this.volumeTimer = undefined;
+    this.volumePending = undefined;
+  }
+
+  /** Set the music's volume. A refused set shows nothing: the slider follows the next music state. */
+  private sendVolume(level: number): void {
+    void this.hass?.callWS({ type: "ha_fitness/music", action: "volume", level }).catch(() => {
+      // Nothing to show; the slider follows the subscription.
+    });
+  }
+
+  /**
    * "How did it feel?": send the answer; the mark follows the view it returns. A tap starts the
    * 60 s close over, whether it goes through or not; a failure shows its text under the buttons.
    */
@@ -940,6 +998,9 @@ export class WorkoutFlow extends LitElement {
       onKeepGoing: () => this.endAsk(),
       onMusicToggle: () => void this.music(this.state?.music?.state === "playing" ? "pause" : "play"),
       onMusicNext: () => void this.music("next"),
+      volumeHeld: this.volumeHeld,
+      onVolumeInput: (level) => this.volumeInput(level),
+      onVolumeChange: (level) => this.volumeChange(level),
     };
   }
 

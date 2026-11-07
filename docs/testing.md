@@ -270,8 +270,12 @@ step. The flow is the overlay that Start and Fortsæt open; the design is in the
       name. The fake's speaker is `playing`, with the playlist as its `media_title`.
     - **Pause and Play:** Pause musik pauses the speaker and the workout goes on; Afspil musik plays it again.
     - **Next:** Næste nummer moves the speaker to "Track 2".
-    - **The fade at Slut:** Slut, then Ja. The speaker's volume steps down over about 5 s, the speaker pauses, and
-      the volume is set back.
+    - **The volume:** the slider "Musikkens lydstyrke" after Næste nummer shows the speaker's volume. Dragging it moves
+      the fake speaker's `volume_level` while you drag, and it lands on the level you let go at. It is disabled
+      before the countdown ends. Start again on the fake's "Garage speaker", which can't set its volume: the player
+      has no slider.
+    - **The fade at Slut:** Slut, then Ja. The speaker's volume steps down over about 5 s from the level the slider
+      last set, the speaker pauses, and that level is set back.
     - **Unavailable:** start again. Before the countdown ends (on the details screen or during Get ready), call
       `fake_set_available` with `available: false` for the chosen speaker ([how](#the-fake-music-assistant)), so the
       start fails. The player reads "Musik utilgængelig", Afspil musik is enabled and Næste nummer is disabled.

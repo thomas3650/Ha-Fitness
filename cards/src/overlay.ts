@@ -71,6 +71,11 @@ export interface MusicState {
   speaker: string;
   speaker_name: string;
   state: "waiting" | "playing" | "paused" | "unavailable";
+  /**
+   * The session speaker's volume, 0 to 100; null when it has no level or can't set its volume,
+   * and left out by an integration from before the volume. Without it no slider shows.
+   */
+  volume?: number | null;
 }
 
 /**

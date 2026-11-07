@@ -198,6 +198,7 @@
     "music_pause": "Pause musik",
     "music_play": "Afspil musik",
     "music_next": "Næste nummer",
+    "music_volume": "Musikkens lydstyrke",
     "cooldown_label": "Udstrækning",
     "cooldown_line": "Udstrækning · {hold} s stræk / {change} s skift",
     "cooldown_next": "NU KOMMER UDSTRÆKNING",

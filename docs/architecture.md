@@ -301,9 +301,12 @@ The integration relays it.
   - `ha_fitness/people` gives `[{id, name}]` from `GET /api/v1/people`.
   - `ha_fitness/speakers` gives `{speakers: [{entity_id, name, available}]}`, sorted by name. It reads HA only, so it
     needs no add-on. It is empty without Music Assistant.
-  - `ha_fitness/music` takes `action` (`pause`, `play` or `next`) for the active session's speaker. It changes
-    the music, not the workout. Its errors are `not_found` with the key `music_not_found` (no active session with
-    music) and `unavailable` with the key `music_unavailable` (the speaker can't play, or the call failed).
+  - `ha_fitness/music` takes `action` (`pause`, `play`, `next` or `volume`) for the active session's speaker. It
+    changes the music, not the workout. `volume` needs `level`, an integer from 0 to 100, and sets the speaker's
+    volume to `level / 100`; it doesn't change the program's music. A `volume` without `level`, a `level` that isn't
+    an integer from 0 to 100 (a boolean included), or a `level` with another action is HA's `invalid_format`. Its
+    other errors are `not_found` with the key `music_not_found` (no active session with music) and `unavailable`
+    with the key `music_unavailable` (the speaker can't play or can't set its volume, or the call failed).
   - The lists answer `unavailable` when the add-on can't be used, or sends an item they can't read.
 
 #### The session relay
@@ -333,9 +336,11 @@ plays it, because Music Assistant is HA's.
     playlist isn't played again from the top.
 - **The fade** lowers the volume in steps over a few seconds, then pauses, then sets the volume back. The next playback
   isn't silent. Unloading the integration does the same for fades in flight.
-- **The music state** is `{playlist_name, speaker, speaker_name, state} | null`. `state` is `waiting`, `playing`,
-  `paused` or `unavailable`. HA's `idle` counts as `paused`. It is `null` without an active session, a session without
-  music, Music Assistant or an add-on that supports music.
+- **The music state** is `{playlist_name, speaker, speaker_name, state, volume} | null`. `state` is `waiting`,
+  `playing`, `paused` or `unavailable`. HA's `idle` counts as `paused`. `volume` is the speaker's `volume_level` times
+  100, rounded, or `null` when the speaker has no level or can't set its volume. It is re-sent on every change of the
+  speaker, its volume included. The music state is `null` without an active session, a session without music, Music
+  Assistant or an add-on that supports music.
 - **An older add-on** (no `GET /api/v1/music`) is flagged by the coordinator's route probe, which also raises
   `addon_too_old` ([above](#the-integrations-side)). The programs then carry no music, a start drops the speaker and
   the controller does nothing.

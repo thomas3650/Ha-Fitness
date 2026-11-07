@@ -1121,8 +1121,9 @@ test("the GIFs coming up are fetched ahead", async () => {
 
 // The music player (music spec §6.2).
 
-function music(state: MusicState["state"] = "playing"): MusicState {
-  return { playlist_name: "Workout Mix", speaker: "media_player.living_room", speaker_name: "Stue", state };
+function music(state: MusicState["state"] = "playing", volume?: number | null): MusicState {
+  const base: MusicState = { playlist_name: "Workout Mix", speaker: "media_player.living_room", speaker_name: "Stue", state };
+  return volume === undefined ? base : { ...base, volume };
 }
 
 function player(flow: FlowElement, name = "Musik"): HTMLElement {
@@ -1216,6 +1217,138 @@ test("no player when music is null", async () => {
   // An older integration sends no music at all.
   const older = await mount(fakeHass("da"), solo());
   expect(queryByRole(root(older.flow), "group", { name: "Musik" })).toBeNull();
+});
+
+// The volume slider (timer band and volume spec §2.2).
+
+const VOLUME = "Musikkens lydstyrke";
+
+function slider(flow: FlowElement): HTMLInputElement {
+  return getByRole(player(flow), "slider", { name: VOLUME }) as HTMLInputElement;
+}
+
+/** Drag the thumb to `level`: the range input's `input` event. */
+async function drag(flow: FlowElement, level: number): Promise<void> {
+  const element = slider(flow);
+  element.value = String(level);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  await settle(flow);
+}
+
+/** Let go of the thumb at `level`: the range input's `change` event. */
+async function release(flow: FlowElement, level: number): Promise<void> {
+  const element = slider(flow);
+  element.value = String(level);
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle(flow);
+}
+
+function volumeSent(fake: Fake): Message[] {
+  return musicSent(fake).filter((message) => message.action === "volume");
+}
+
+test("no slider without volume", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, music("playing"));
+  expect(queryByRole(player(flow), "slider")).toBeNull();
+  document.body.replaceChildren();
+
+  const nulled = await mount(fakeHass("da"), solo(), true, music("playing", null));
+  expect(queryByRole(player(nulled.flow), "slider")).toBeNull();
+});
+
+test("the slider shows the volume", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, music("playing", 40));
+  const element = slider(flow);
+  expect(element.value).toBe("40");
+  expect(element.min).toBe("0");
+  expect(element.max).toBe("100");
+  // The slider adds no text to the player.
+  expect(text(player(flow))).toBe("Workout Mix Stue");
+  document.body.replaceChildren();
+
+  const english = await mount(fakeHass("en"), solo(), true, music("playing", 40));
+  expect(getByRole(player(english.flow, "Music"), "slider", { name: "Music volume" })).toBeTruthy();
+});
+
+test("the slider is disabled while waiting and unavailable", async () => {
+  const { flow } = await mount(fakeHass("da"), solo(), true, music("waiting", 40));
+  expect(slider(flow).disabled).toBe(true);
+  await push(flow, solo(), true, music("unavailable", 40));
+  expect(slider(flow).disabled).toBe(true);
+  await push(flow, solo(), true, music("playing", 40));
+  expect(slider(flow).disabled).toBe(false);
+  await push(flow, solo(), true, music("paused", 40));
+  expect(slider(flow).disabled).toBe(false);
+});
+
+test("the slider sends throttled levels and one on release", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  expect(volumeSent(fake)).toEqual([{ type: "ha_fitness/music", action: "volume", level: 50 }]);
+  await wait(flow, 100);
+  await drag(flow, 55);
+  await wait(flow, 100);
+  await drag(flow, 60);
+  expect(volumeSent(fake)).toHaveLength(1);
+  await wait(flow, 100);
+  expect(volumeSent(fake).map((message) => message.level)).toEqual([50, 60]);
+  // Nothing new to send: the throttle sends nothing more.
+  await wait(flow, 600);
+  expect(volumeSent(fake)).toHaveLength(2);
+
+  await release(flow, 60);
+  expect(volumeSent(fake)).toEqual([
+    { type: "ha_fitness/music", action: "volume", level: 50 },
+    { type: "ha_fitness/music", action: "volume", level: 60 },
+    { type: "ha_fitness/music", action: "volume", level: 60 },
+  ]);
+  // The volume is no session command.
+  expect(sent(fake)).toEqual([]);
+});
+
+test("a release cancels the pending send and sends its own level", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  await wait(flow, 100);
+  await drag(flow, 70);
+  await wait(flow, 50);
+  await release(flow, 75);
+  await wait(flow, 600);
+
+  expect(volumeSent(fake).map((message) => message.level)).toEqual([50, 75]);
+});
+
+test("a state while held doesn't move the thumb; after release it follows the state", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await drag(flow, 50);
+  await push(flow, solo(), true, music("playing", 45));
+  expect(slider(flow).value).toBe("50");
+
+  await release(flow, 50);
+  await push(flow, solo(), true, music("playing", 52));
+  expect(slider(flow).value).toBe("52");
+  await push(flow, solo(), true, music("playing", 30));
+  expect(slider(flow).value).toBe("30");
+});
+
+test("a refused set shows nothing", async () => {
+  const fake = fakeHass("da");
+  const { flow } = await mount(fake, solo(), true, music("playing", 40));
+
+  await release(flow, 65);
+  fake.music[0].reject({ code: "unavailable", message: "Speaker gone" });
+  await settle(flow);
+
+  expect(queryByRole(root(flow), "alert")).toBeNull();
+  // The slider follows the next music state.
+  await push(flow, solo(), true, music("playing", 40));
+  expect(slider(flow).value).toBe("40");
 });
 
 test("player in the two-person timer", async () => {

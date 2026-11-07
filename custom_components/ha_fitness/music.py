@@ -74,6 +74,7 @@ _COMMAND_SERVICES = {
     "pause": SERVICE_MEDIA_PAUSE,
     "play": SERVICE_MEDIA_PLAY,
     "next": SERVICE_MEDIA_NEXT_TRACK,
+    "volume": SERVICE_VOLUME_SET,
 }
 
 
@@ -135,6 +136,20 @@ def _is_music_assistant_player(hass: HomeAssistant, entity_id: str) -> bool:
 
 def _is_available(state: State | None) -> bool:
     return state is not None and state.state not in _NOT_AVAILABLE
+
+
+def _can_set_volume(state: State | None) -> bool:
+    """Whether the speaker can set its volume (`VOLUME_SET`)."""
+    features = state.attributes.get(ATTR_SUPPORTED_FEATURES, 0) if state else 0
+    return bool(features & MediaPlayerEntityFeature.VOLUME_SET)
+
+
+def _volume(state: State | None) -> int | None:
+    """The speaker's level, 0 to 100 (the timer band and volume spec §4); None without a level or `VOLUME_SET`."""
+    if state is None or not _can_set_volume(state):
+        return None
+    level = state.attributes.get(ATTR_MEDIA_VOLUME_LEVEL)
+    return None if level is None else round(level * 100)
 
 
 def _can_play(hass: HomeAssistant, entity_id: str) -> bool:
@@ -246,13 +261,15 @@ class MusicController:
             "speaker": followed.speaker,
             "speaker_name": name or followed.speaker,
             "state": state,
+            "volume": _volume(speaker),
         }
 
-    async def async_command(self, action: str) -> None:
+    async def async_command(self, action: str, level: int | None = None) -> None:
         """Run a card's music command on the session's speaker (the music spec §5.5).
 
-        It doesn't change the workout. It raises `MusicNotFound` without an active session with music, and
-        `MusicUnavailable` when the speaker is unavailable or the call fails.
+        `volume` sets the speaker's level to `level` (0 to 100). It doesn't change the workout or the program's
+        music. It raises `MusicNotFound` without an active session with music, and `MusicUnavailable` when the
+        speaker is unavailable, can't set its volume, or the call fails.
         """
         service = _COMMAND_SERVICES[action]
         followed = self._followed
@@ -278,8 +295,15 @@ class MusicController:
                 raise MusicNotFound
             if not _can_play(self.hass, followed.speaker):
                 raise MusicUnavailable
+            data: dict[str, Any] | None = None
+            if action == "volume":
+                if not _can_set_volume(self.hass.states.get(followed.speaker)):
+                    raise MusicUnavailable
+                data = {ATTR_MEDIA_VOLUME_LEVEL: (level or 0) / 100}
             try:
-                await self._async_call(MEDIA_PLAYER_DOMAIN, service, followed.speaker)
+                await self._async_call(
+                    MEDIA_PLAYER_DOMAIN, service, followed.speaker, data
+                )
             except _CALL_ERRORS as err:
                 _LOGGER.warning("The music command %s failed: %s", action, err)
                 raise MusicUnavailable from err

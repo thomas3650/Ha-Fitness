@@ -379,6 +379,7 @@ KITCHEN_WAITING = {
     "speaker": "media_player.kitchen",
     "speaker_name": "Kitchen speaker",
     "state": "waiting",
+    "volume": 40,
 }
 
 
@@ -426,7 +427,7 @@ async def test_subscription_sends_music(
 async def test_subscription_resends_on_speaker_state_change(
     hass: HomeAssistant, workout: Workout, hass_ws_client: WebSocketGenerator
 ) -> None:
-    """A change of the speaker's state is sent; a change of only its attributes isn't."""
+    """A change of the speaker's state is sent, and so is a change of its volume."""
     await workout.push(view(started_at=workout.setup_time + timedelta(seconds=10)))
     client = await hass_ws_client(hass)
     _, first = await subscribe(client)
@@ -438,6 +439,8 @@ async def test_subscription_resends_on_speaker_state_change(
         {"entity_id": "media_player.kitchen", "volume_level": 0.3},
         blocking=True,
     )
+    music = (await _next_event(client))["music"]
+    assert (music["state"], music["volume"]) == ("playing", 30)
     await hass.services.async_call(
         "media_player",
         "media_pause",
@@ -527,7 +530,7 @@ async def test_music_state_kept_across_disconnect(
 
     event = await _next_event(client)
     assert event["available"] is False
-    assert event["music"] == {**KITCHEN_WAITING, "state": "playing"}
+    assert event["music"] == {**KITCHEN_WAITING, "state": "playing", "volume": 70}
 
 
 async def test_subscription_music_follows_music_supported(
@@ -698,6 +701,104 @@ async def test_music_command_unavailable_on_other_platform(
     assert tv_player.calls == []
     assert await workout.state() == "unavailable"
     await unload(hass, other_entry)
+
+
+# The volume (the timer band and volume spec §4).
+
+
+async def test_music_state_carries_the_volume(
+    hass: HomeAssistant, workout: Workout, hass_ws_client: WebSocketGenerator
+) -> None:
+    """The speaker's level times 100, rounded, re-sent when it changes; null without a level or without VOLUME_SET."""
+    started = workout.setup_time + timedelta(seconds=10)
+    await workout.push(view(started_at=started))
+    client = await hass_ws_client(hass)
+    _, first = await subscribe(client)
+    assert first["music"]["volume"] == 70
+
+    workout.kitchen.set_volume_level(0.554)
+    event = await _event_until(client, lambda event: event["music"]["volume"] != 70)
+    assert event["music"]["volume"] == 55
+    workout.kitchen.set_volume_level(None)
+    event = await _event_until(client, lambda event: event["music"]["volume"] != 55)
+    assert event["music"]["volume"] is None
+
+    garage = {**MUSIC, "speaker": "media_player.garage"}
+    await workout.push(view(id=8, music=garage, started_at=started))
+    music = await workout.music_state()
+    assert music is not None
+    assert music["speaker"] == "media_player.garage"
+    assert music["volume"] is None
+
+
+async def test_volume_action_sets_the_level(
+    hass: HomeAssistant, workout: Workout, hass_ws_client: WebSocketGenerator
+) -> None:
+    """`volume` sets the session speaker's level; the program's music and the workout are unchanged."""
+    await workout.push(view(started_at=workout.setup_time + timedelta(seconds=10)))
+
+    reply = await workout.command("volume", level=65)
+
+    assert reply["success"], reply
+    assert reply["result"] is None
+    assert workout.kitchen.calls[-1] == ("volume_set", {"volume_level": 0.65})
+    assert names(workout.kitchen) == [*START_CALLS, "volume_set"]
+    client = await hass_ws_client(hass)
+    _, event = await subscribe(client)
+    assert event["music"]["volume"] == 65
+    assert event["session"]["music"] == MUSIC
+    assert workout.fake_addon.session_calls == []
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"action": "volume"},
+        {"action": "volume", "level": 101},
+        {"action": "volume", "level": -1},
+        {"action": "volume", "level": 50.5},
+        {"action": "volume", "level": True},
+        {"action": "volume", "level": "50"},
+        {"action": "play", "level": 50},
+    ],
+)
+async def test_volume_invalid_format(workout: Workout, fields: dict[str, Any]) -> None:
+    """A volume without an integer level 0 to 100, or a level with another action, is invalid_format."""
+    await workout.push(view(started_at=workout.setup_time + timedelta(seconds=10)))
+
+    reply = await workout.command(**fields)
+
+    assert not reply["success"], reply
+    assert reply["error"]["code"] == "invalid_format"
+    assert names(workout.kitchen) == START_CALLS
+
+
+async def test_volume_errors(hass: HomeAssistant, workout: Workout) -> None:
+    """not_found without a session with music; unavailable on a failed call and without VOLUME_SET."""
+    started = workout.setup_time + timedelta(seconds=10)
+    _assert_error(
+        await workout.command("volume", level=50), "not_found", "music_not_found"
+    )
+    await workout.push(view(music=None, started_at=started))
+    _assert_error(
+        await workout.command("volume", level=50), "not_found", "music_not_found"
+    )
+
+    await workout.push(view(started_at=started))
+    workout.kitchen.fail = {"volume_set"}
+    _assert_error(
+        await workout.command("volume", level=50), "unavailable", "music_unavailable"
+    )
+    assert names(workout.kitchen) == [*START_CALLS, "volume_set"]
+
+    garage = workout.players["media_player.garage"]
+    music = {**MUSIC, "speaker": "media_player.garage"}
+    await workout.push(view(id=8, music=music, started_at=started))
+    before = len(garage.calls)
+    _assert_error(
+        await workout.command("volume", level=50), "unavailable", "music_unavailable"
+    )
+    assert garage.calls[before:] == []
 
 
 async def test_schema_error_fails_the_start(workout: Workout) -> None:

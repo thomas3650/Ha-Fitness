@@ -1,4 +1,5 @@
 import { type TemplateResult, css, html, nothing, unsafeCSS } from "lit";
+import { live } from "lit/directives/live.js";
 
 import { iconButton } from "../icon-button";
 import type { MusicState, Part, PhaseKind, SessionStation, SessionView } from "../overlay";
@@ -53,6 +54,12 @@ export interface TimerContext {
   onMusicToggle: () => void;
   /** The player's Next track. */
   onMusicNext: () => void;
+  /** The level the volume slider's thumb is held at, while it is; the slider shows it, not the music's. */
+  volumeHeld: number | undefined;
+  /** The volume slider moved, while its thumb is held (the `input` event). */
+  onVolumeInput: (level: number) => void;
+  /** The volume slider let go (the `change` event). */
+  onVolumeChange: (level: number) => void;
 }
 
 /** Whether a part is the cool-down; a missing part (an older add-on) is the circuit. */
@@ -251,15 +258,17 @@ function renderAsk(ctx: TimerContext, asking: boolean, question: string, label: 
 /**
  * The music player at the top row's start (music spec §6.2): the music badge, the playlist over the
  * speaker, and Pause or Play with Next. While waiting for the first work phase both are disabled;
- * while unavailable only Play works, so a failed start can be tried again.
+ * while unavailable only Play works, so a failed start can be tried again. With a volume, the
+ * volume slider follows Next, disabled when Next is (timer band and volume spec §2.2).
  */
 function renderPlayer(ctx: TimerContext) {
   const { t, music } = ctx;
   if (!music) return nothing;
   const playing = music.state === "playing";
   const waiting = music.state === "waiting";
+  const volume = typeof music.volume === "number" ? music.volume : undefined;
   return html`
-    <div class="timer-music card" role="group" aria-label=${t("flow.music")}>
+    <div class="timer-music card ${volume === undefined ? "" : "with-volume"}" role="group" aria-label=${t("flow.music")}>
       <span class="timer-music-badge"><ha-icon icon="mdi:music" aria-hidden="true"></ha-icon></span>
       <span class="timer-music-lines">
         <span class="timer-music-playlist">${music.playlist_name}</span>
@@ -281,7 +290,29 @@ function renderPlayer(ctx: TimerContext) {
         disabled: waiting || music.state === "unavailable",
         onClick: ctx.onMusicNext,
       })}
+      ${volume === undefined ? nothing : renderVolume(ctx, ctx.volumeHeld ?? volume, waiting || music.state === "unavailable")}
     </div>
+  `;
+}
+
+/** The volume slider: a speaker icon and a native range input, 0 to 100, with a large thumb for touch. */
+function renderVolume(ctx: TimerContext, level: number, disabled: boolean) {
+  const value = (event: Event) => Number((event.target as HTMLInputElement).value);
+  return html`
+    <span class="timer-music-volume">
+      <ha-icon icon="mdi:volume-high" aria-hidden="true"></ha-icon>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        aria-label=${ctx.t("flow.music_volume")}
+        .value=${live(String(level))}
+        ?disabled=${disabled}
+        @input=${(event: Event) => ctx.onVolumeInput(value(event))}
+        @change=${(event: Event) => ctx.onVolumeChange(value(event))}
+      />
+    </span>
   `;
 }
 
@@ -508,6 +539,65 @@ export const timerStyles = css`
     padding: 0 8px 0 9px;
     border-radius: 999px;
     font-size: 1rem;
+  }
+  /* With the volume slider the player grows, toward the mockup's 640 px on the tablet. */
+  .timer-music.with-volume {
+    max-width: 640px;
+    padding-right: 18px;
+  }
+  .timer-music-volume {
+    display: flex;
+    flex: 1 1 160px;
+    align-items: center;
+    gap: 8px;
+    min-width: 120px;
+    color: var(--secondary-text-color);
+    --mdc-icon-size: 22px;
+  }
+  .timer-music-volume ha-icon {
+    flex: none;
+  }
+  /* A touch-friendly range: a 44 px tall hit area, a thick track and a large thumb. */
+  .timer-music-volume input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    margin: 0;
+    background: transparent;
+    accent-color: ${unsafeCSS(RING_COLORS.work)};
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .timer-music-volume input:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  .timer-music-volume input::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--divider-color, rgba(0, 0, 0, 0.12));
+  }
+  .timer-music-volume input::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--divider-color, rgba(0, 0, 0, 0.12));
+  }
+  .timer-music-volume input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px;
+    height: 24px;
+    margin-top: -9px;
+    border: none;
+    border-radius: 50%;
+    background: ${unsafeCSS(RING_COLORS.work)};
+  }
+  .timer-music-volume input::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 50%;
+    background: ${unsafeCSS(RING_COLORS.work)};
   }
   .timer-music-badge {
     display: flex;
