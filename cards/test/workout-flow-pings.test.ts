@@ -671,3 +671,67 @@ test("Fortsæt into a work phase plays no long beep", async () => {
   await settle(flow);
   expect(live()).toEqual([...beeps(27, 28, 29, 30, 31), { kind: "work", start: 32 }]);
 });
+
+/** The keep-alives still playing. */
+function keepAlives(): FakeTone[] {
+  return audio.keepAlives().filter((tone) => !tone.cancelled);
+}
+
+test("keep-alive while running", async () => {
+  await mount(fakeHass(), view());
+  expect(keepAlives()).toHaveLength(1);
+  // The tones don't count it.
+  expect(live().every((tone) => tone.kind !== undefined)).toBe(true);
+});
+
+test("keep-alive in get ready", async () => {
+  await mount(
+    fakeHass(),
+    view({
+      revision: 1,
+      phase: phase({ index: 0, kind: "countdown", round: 1, duration: 10, ends_at: at(10) }),
+      next_phase: { kind: "work", duration: 45 },
+    }),
+  );
+  expect(keepAlives()).toHaveLength(1);
+});
+
+test("keep-alive stops on pause", async () => {
+  const fake = fakeHass("da");
+  const flow = await mount(fake, view());
+  await wait(flow, 10_000);
+  expect(keepAlives()).toHaveLength(1);
+
+  await tap(flow, "Pause");
+  fake.commands[0].resolve(
+    view({ revision: 11, status: "paused", phase: phase({ ends_at: null, remaining: 35 }), server_time: at(10) }),
+  );
+  await settle(flow);
+  expect(keepAlives()).toHaveLength(0);
+});
+
+test("keep-alive stops on end", async () => {
+  const flow = await mount(fakeHass(), view({ phase: phase({ index: 9, round: 5, interval: 3 }), next_phase: null }));
+  expect(keepAlives()).toHaveLength(1);
+
+  await wait(flow, 45_000);
+  await push(flow, finished(true, { server_time: at(45) }));
+  expect(keepAlives()).toHaveLength(0);
+});
+
+test("keep-alive stops on close", async () => {
+  await mount(fakeHass(), view());
+  expect(keepAlives()).toHaveLength(1);
+
+  document.body.replaceChildren();
+  expect(keepAlives()).toHaveLength(0);
+});
+
+test("keep-alive starts on a mid-session unlock", async () => {
+  context().setState("suspended");
+  const flow = await mount(fakeHass("da"), view());
+  expect(keepAlives()).toHaveLength(0);
+
+  await tap(flow, "Tryk for lyd");
+  expect(keepAlives()).toHaveLength(1);
+});

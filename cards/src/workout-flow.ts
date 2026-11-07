@@ -7,6 +7,8 @@ import {
   audioTime,
   onAudioStateChange,
   scheduleTone,
+  startKeepAlive,
+  stopKeepAlive,
   unlockAudio,
 } from "./audio";
 import {
@@ -219,6 +221,7 @@ export class WorkoutFlow extends LitElement {
     this.stopAudioWatch?.();
     this.stopAudioWatch = undefined;
     this.silence();
+    stopKeepAlive();
     this.plannedFrom = undefined;
     this.stopIdle();
     this.stopTick();
@@ -738,6 +741,9 @@ export class WorkoutFlow extends LitElement {
       locked: audioLocked(),
       counting,
     };
+    // The keep-alive plays while a session runs with sound (spec §2.1).
+    if (counting && !from.locked && from.view?.status === "running") startKeepAlive();
+    else stopKeepAlive();
     const last = this.plannedFrom;
     if (
       last &&
