@@ -66,8 +66,8 @@ structure is not the cause.
    session speaker's volume, 0–100. The player grows to hold it (today it is at most 400 px wide; the mockup's is about
    640 px on the tablet).
 2. **It sets the volume of the session's speaker,** one speaker for the room, however many people train. It doesn't
-   change the program or the workout. A (re)start of the music (the music spec's start, a Play after a failure, a
-   resume, the speaker coming back) sets the program's start volume again, as today; the slider then shows that.
+   change the program or the workout. A (re)start of the music (the music spec's start, a Play or a resume after a
+   failure, the speaker coming back) sets the program's start volume again, as today; the slider then shows that.
 3. **When it shows:** only when the music state has a `volume` (§4). Otherwise the player looks as today.
 4. **When it can be used:** while the music state is `playing` or `paused`. It is disabled while `waiting` and
    `unavailable`, as next track is.
@@ -132,8 +132,8 @@ light theme, Danish on the tablet:
 
 The band needs to know where each round starts, in the same unit as `time_trained` and `totals.planned`.
 
-- **The field:** `SessionTotals.marks: list[int]`. It is in every view built from `_totals`: the active session
-  (`GET /api/v1/session`, the push channel) and the finished ones (`GET /api/v1/sessions`, MCP `get_session` and
+- **The field:** `SessionTotals.marks: list[int]`. It is in every view built from `_totals`: the current session
+  (`GET /api/v1/session`, the push channel, MCP `get_session`) and the finished ones (`GET /api/v1/sessions`, MCP
   `list_sessions`).
 - **What a mark is:** a number of seconds into `planned` (the timeline's work, switch and rest seconds, the countdown
   left out). There is one mark where each round after the first starts, and one where the cool-down starts. The marks
@@ -147,7 +147,7 @@ The band needs to know where each round starts, in the same unit as `time_traine
 - **The contract:** an additive field. `api_version` stays 1 (as with D72). An older add-on leaves it out; the cards
   then draw a band without gaps. The integration passes the view through unchanged. The cards' `SessionView.totals`
   type gets `marks?: number[]`.
-- **A known gap:** the fill follows the active seconds and the marks follow the plan. After "Start nu" or a skip
+- **A known gap:** the fill follows the active seconds and the marks follow the plan. After a `next` or `previous`
   through REST, the fill can be off from the round it is in. That is the same as today's line, and good enough.
 
 ## 4. The integration: the volume
@@ -158,7 +158,8 @@ The band needs to know where each round starts, in the same unit as `time_traine
 - **The `ha_fitness/music` command** gets an action `volume`, with a `level`, an integer 0–100. It calls
   `media_player.volume_set` on the session speaker with `level / 100`.
 - **Its refusals:**
-  - A `volume` without `level`, a `level` that isn't an integer 0–100, or a `level` with another action: HA's
+  - A `volume` without `level`, a `level` that isn't an integer 0–100 (a boolean
+    is refused too), or a `level` with another action: HA's
     `invalid_format`, from the command's schema.
   - No active session with music: `not_found`, as for the other actions. That includes a fade after the session ended.
   - A speaker without `VOLUME_SET`, or a failed call: `unavailable`, as for the other actions.
@@ -214,7 +215,8 @@ The builder names the new keys. `flow.previous`, `flow.next` and `flow.round_lab
   with no round rest (0); one station; a cool-down with and without the rest before it; no countdown. The existing
   exact `totals` asserts get `marks`.
 - **Integration (pytest):** the music state's `volume` (with a level; null without `VOLUME_SET`; null without a level);
-  the `volume` action (sets the level; `invalid_format` for the three bad inputs; `not_found`; `unavailable` without
+  the `volume` action (sets the level; `invalid_format` for the three bad inputs and a
+  boolean `level`; `not_found`; `unavailable` without
   `VOLUME_SET` and on a failed call); the fade starting from a level the action set and setting it back.
 - **The fast loop and the Chrome check** at 1368×912 in Danish, with the fake Music Assistant: two people in work, a
   rest, paused and the cool-down (the cool-down pill under the ring); one person; the slider moving the fake
