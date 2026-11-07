@@ -616,3 +616,11 @@ to set their status to `superseded by D<n>`, or to name a part a later decision 
   `circuit`.
 - **Source:** [cool-down spec](superpowers/specs/2026-10-31-cooldown-and-timeline-design.md) §4.4, §6; Claude,
   2026-10-31
+
+### D74: `totals.marks`
+- **Date:** 2026-11-07 · **Status:** active
+- **Decision:** A session's totals carry where each round after the first and the cool-down start, in seconds into
+  `planned`. The field is additive; `api_version` stays 1.
+- **Why:** The timer's band shows the rounds at their real places, and only the timeline knows them.
+- **Source:** [timer band spec](superpowers/specs/2026-11-07-timer-band-and-volume-design.md) §3, §6; Claude,
+  2026-11-07

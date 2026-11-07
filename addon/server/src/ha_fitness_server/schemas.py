@@ -527,12 +527,16 @@ class SessionTotals(BaseModel):
     """`planned` is the seconds of every work, switch and rest phase, the cool-down's too; the countdown is left out.
 
     `stretches` is the cool-down's number of stretches, 0 with no cool-down.
+
+    `marks` are seconds into `planned`, in order: one where each round after the first starts (at its first work) and
+    one where the cool-down starts. The rest after a round belongs to that round. One round and no cool-down: none.
     """
 
     planned: int
     rounds: int
     stations: int
     stretches: int
+    marks: list[int]
 
 
 # How a completed session felt (UI refresh spec §3.3); `sessions.FEELINGS` lists the same values.

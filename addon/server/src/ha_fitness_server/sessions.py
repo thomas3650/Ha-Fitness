@@ -241,14 +241,30 @@ def _rounds_behind(plan_phases: list[Phase], index: int) -> int:
 
 
 def _totals(plan: Plan, plan_phases: list[Phase]) -> SessionTotals:
-    """Return the totals of a plan: the countdown is left out of `planned`."""
+    """Return the totals of a plan: the countdown is left out of `planned` and of the marks (timer band spec §3)."""
+    planned = 0
+    marks: list[int] = []
+    in_cooldown = False
+    for entry in plan_phases:
+        if entry.kind == "countdown":
+            continue
+        round_starts = (
+            entry.part == "circuit"
+            and entry.kind == "work"
+            and entry.round > 1
+            and entry.interval == 1
+        )
+        cooldown_starts = entry.part == "cooldown" and not in_cooldown
+        if round_starts or cooldown_starts:
+            marks.append(planned)
+        in_cooldown = in_cooldown or entry.part == "cooldown"
+        planned += entry.duration
     return SessionTotals(
-        planned=sum(
-            entry.duration for entry in plan_phases if entry.kind != "countdown"
-        ),
+        planned=planned,
         rounds=plan.rounds,
         stations=len(plan.stations),
         stretches=len(plan.stretches),
+        marks=marks,
     )
 
 

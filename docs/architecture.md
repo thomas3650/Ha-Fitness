@@ -499,11 +499,12 @@ The design is the [step 5 spec](superpowers/specs/2026-10-24-the-workout-design.
   feeling body that isn't `{"feeling": <text>}`.
 - **The view** (`SessionView` in `schemas.py`) has the phase with `ends_at` (UTC with milliseconds, null while paused)
   or `remaining` (while paused), the next phase, each participant's current and next station, `totals` (`planned`,
-  `rounds`, `stations`, `stretches`), `time_trained` in whole seconds, `revision`, which goes up with every change, and
-  `server_time`. `phase`, `next_phase` and `StationRef` carry `part` (`circuit` or `cooldown`, D72); in the cool-down
-  the stations are the stretches. A finished view has no phase, next phase or stations. `music` is the plan's
-  `{playlist, playlist_name, speaker, volume, shuffle}`, frozen at the start, or null for a program without music;
-  history keeps it.
+  `rounds`, `stations`, `stretches`, `marks`), `time_trained` in whole seconds, `revision`, which goes up with every
+  change, and `server_time`. `totals.marks` are the seconds into `planned` where each round after the first and the
+  cool-down start (D74); the field is additive, so `api_version` stays 1. `phase`, `next_phase` and `StationRef` carry
+  `part` (`circuit` or `cooldown`, D72); in the cool-down the stations are the stretches. A finished view has no phase,
+  next phase or stations. `music` is the plan's `{playlist, playlist_name, speaker, volume, shuffle}`, frozen at the
+  start, or null for a program without music; history keeps it.
 - **The feeling** is stored on the session (a nullable column) and shown in the view, in `GET /api/v1/sessions` and in
   the MCP `list_sessions`. A write raises `revision` and publishes `session`.
 - **The change log** records `session.started`, `session.completed`, `session.ended` and `session.feeling`. Pause,
