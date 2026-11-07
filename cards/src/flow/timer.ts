@@ -105,7 +105,8 @@ export function renderTimer(ctx: TimerContext): TemplateResult {
     color: RING_COLORS[tint],
     wordColor: PHASE_TEXT_COLORS[tint],
     caption: t(paused ? "flow.tap_to_resume" : "flow.seconds_left"),
-    room: !paused,
+    // The room stays while paused too, so the texts don't move on a pause or a resume.
+    room: true,
   });
   const stations = view.stations ?? [];
   const one = stations.length === 1;
@@ -799,7 +800,7 @@ export const timerStyles = css`
     gap: 6px;
     align-items: center;
     height: var(--line-tap);
-    color: var(--primary-color);
+    color: ${unsafeCSS(PHASE_TEXT_COLORS.rest)};
     font-size: 1rem;
     font-weight: 600;
     --mdc-icon-size: 18px;
