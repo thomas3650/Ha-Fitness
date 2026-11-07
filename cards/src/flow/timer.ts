@@ -197,19 +197,32 @@ function renderBand(ctx: TimerContext) {
       style="--ring-color: ${RING_COLORS[view.status === "paused" ? "rest" : ctx.countdown.kind]}"
     >
       <span class="timer-band-done" style="width: ${share * 100}%"></span>
-      ${marks.map(
-        (mark) =>
-          html`<span
-            class="timer-band-gap"
-            role="separator"
-            aria-hidden="true"
-            style="left: ${(mark / planned) * 100}%"
-          ></span>`,
-      )}
+      <span class="timer-band-gaps" style=${clearZones(clock(now), left, t("flow.band_left"))}>
+        ${marks.map(
+          (mark) =>
+            html`<span
+              class="timer-band-gap"
+              role="separator"
+              aria-hidden="true"
+              style="left: ${(mark / planned) * 100}%"
+            ></span>`,
+        )}
+      </span>
       <span class="timer-band-trained">${clock(now)}</span>
       <span class="timer-band-left"><strong>${left}</strong> <span>${t("flow.band_left")}</span></span>
     </div>
   `;
+}
+
+/**
+ * How far the band's texts reach in from each end, from their lengths in characters: no gap is
+ * drawn there, except for a stub above and below the text. The widths follow the band's
+ * styles: the padding, the trained time at 1.25rem, the time left at 2rem and its word at 1.25rem.
+ */
+function clearZones(trained: string, left: string, word: string): string {
+  const start = `calc(20px + ${trained.length * 0.8}rem + 8px)`;
+  const end = `calc(20px + ${left.length * 1.25}rem + 8px + ${word.length * 0.8}rem + 8px)`;
+  return `--clear-start: ${start}; --clear-end: ${end}`;
 }
 
 /**
@@ -443,8 +456,32 @@ export const timerStyles = css`
   /* The screen is one grid: the top row, the banners (only while one shows), the stations with
      the ring, and the band. The gaps are the only spacing. */
   .timer {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 20px;
+  }
+  /* Landscape: the timer fills the overlay's height. The stations row takes the free height, so
+     the cards grow (their picture flexes) and the band sits at the bottom. Portrait stacks and
+     keeps its own height. */
+  @media (orientation: landscape) {
+    .page.fill {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+    }
+    .page.fill > .timer {
+      flex: 1;
+    }
+    .page.fill .timer-duo,
+    .page.fill .timer-solo {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .page.fill .duo-card .gif {
+      flex: 1 1 0;
+      height: auto;
+      min-height: 200px;
+    }
   }
   .timer-banners {
     display: flex;
@@ -918,6 +955,29 @@ export const timerStyles = css`
     inset: 0 auto 0 0;
     background: var(--ring-color);
   }
+  /* The gaps' layer leaves the texts' zones clear but for a stub above and below them, so no gap
+     crosses a text. */
+  .timer-band-gaps {
+    position: absolute;
+    inset: 0;
+    --stub: 5px;
+    --zones: linear-gradient(
+      to right,
+      transparent var(--clear-start),
+      #000 var(--clear-start),
+      #000 calc(100% - var(--clear-end)),
+      transparent calc(100% - var(--clear-end))
+    );
+    --stubs: linear-gradient(
+      to bottom,
+      #000 var(--stub),
+      transparent var(--stub),
+      transparent calc(100% - var(--stub)),
+      #000 calc(100% - var(--stub))
+    );
+    -webkit-mask-image: var(--zones), var(--stubs);
+    mask-image: var(--zones), var(--stubs);
+  }
   .timer-band-gap {
     position: absolute;
     top: 0;
@@ -929,6 +989,7 @@ export const timerStyles = css`
   .timer-band-trained,
   .timer-band-left {
     position: relative;
+    z-index: 1;
     font-variant-numeric: tabular-nums;
   }
   .timer-band-trained {
