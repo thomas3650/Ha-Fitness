@@ -40,7 +40,7 @@ _MISSING = object()
 SPEAKER_PATTERN = re.compile(r"media_player\.[a-z0-9_]+")
 
 # The music commands of the cards (the music spec §5.5).
-MUSIC_ACTIONS = ("pause", "play", "next")
+MUSIC_ACTIONS = ("pause", "play", "next", "volume")
 
 SESSION_COMMANDS = (
     "start",
@@ -442,11 +442,33 @@ def ws_speakers(
     connection.send_result(msg["id"], {"speakers": music_speakers(hass)})
 
 
+def _music_level(msg: dict[str, Any]) -> dict[str, Any]:
+    """Require `level`, an integer 0 to 100, with `volume`, and refuse it with any other action."""
+    if msg["action"] != "volume":
+        if "level" in msg:
+            raise probatio.Invalid("level is only for the volume action", ["level"])
+        return msg
+    level = msg.get("level", _MISSING)
+    if level is _MISSING:
+        raise probatio.Invalid("the volume action needs a level", ["level"])
+    # A boolean is an int to Python, so it is refused first.
+    if isinstance(level, bool) or not isinstance(level, int) or not 0 <= level <= 100:
+        raise probatio.Invalid("level must be an integer from 0 to 100", ["level"])
+    return msg
+
+
+# HA's `websocket_command` extends the first schema of an `All`; the check across fields comes after.
 @websocket_command(
-    {
-        probatio.Required("type"): "ha_fitness/music",
-        probatio.Required("action"): probatio.In(MUSIC_ACTIONS),
-    }
+    probatio.All(
+        probatio.Schema(
+            {
+                probatio.Required("type"): "ha_fitness/music",
+                probatio.Required("action"): probatio.In(MUSIC_ACTIONS),
+                probatio.Optional("level"): object,
+            }
+        ),
+        _music_level,
+    )
 )
 @async_response
 async def ws_music(
@@ -454,7 +476,7 @@ async def ws_music(
     connection: ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Pause, play or skip the active session's music on its speaker (the music spec §5.5).
+    """Pause, play, skip or set the volume of the active session's music on its speaker (the music spec §5.5).
 
     It doesn't change the workout, and needs no connected add-on: the speaker is Home Assistant's, and the
     session is the one last seen. Without a loaded entry or an active session with music it is not_found;
@@ -463,7 +485,7 @@ async def ws_music(
     for entry in hass.config_entries.async_loaded_entries(DOMAIN):
         coordinator: FitnessCoordinator = entry.runtime_data
         try:
-            await coordinator.music.async_command(msg["action"])
+            await coordinator.music.async_command(msg["action"], msg.get("level"))
         except MusicNotFound:
             break
         except MusicUnavailable:

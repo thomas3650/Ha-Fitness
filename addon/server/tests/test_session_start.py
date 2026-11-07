@@ -145,7 +145,13 @@ async def test_start_returns_view_at_phase_0(make_app: MakeApp) -> None:
             {"current": _station(program, 0), "next": _station(program, 1)},
             {"current": _station(program, 1), "next": _station(program, 2)},
         ],
-        "totals": {"planned": 1665, "rounds": 5, "stations": 5, "stretches": 0},
+        "totals": {
+            "planned": 1665,
+            "rounds": 5,
+            "stations": 5,
+            "stretches": 0,
+            "marks": [345, 690, 1035, 1380],
+        },
         "started_at": None,
         "ended_at": None,
         "music": None,
@@ -193,10 +199,10 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
 
 
 @pytest.mark.parametrize(
-    ("stations", "fields", "planned"),
+    ("stations", "fields", "planned", "marks"),
     [
         # 5 x 5 x 45 + 5 x 4 x 15 + 4 x 60: no switch after a round's last station.
-        (FIVE, {}, 1665),
+        (FIVE, {}, 1665, [345, 690, 1035, 1380]),
         # 3 x 2 x 30 + 2 x 2 x 10 + 1 x 20; the countdown of 10 is left out.
         (
             FIVE[:3],
@@ -208,9 +214,16 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
                 "countdown_seconds": 10,
             },
             240,
+            # A round is 3 x 30 + 2 x 10 = 110, then the rest of 20.
+            [130],
         ),
         # No switches and no rests: 5 x 3 x 45.
-        (FIVE, {"rounds": 3, "switch_seconds": 0, "round_rest_seconds": 0}, 675),
+        (
+            FIVE,
+            {"rounds": 3, "switch_seconds": 0, "round_rest_seconds": 0},
+            675,
+            [225, 450],
+        ),
         # One station, one round: only the work phase.
         (
             FIVE[:1],
@@ -221,6 +234,7 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
                 "countdown_seconds": 0,
             },
             10,
+            [],
         ),
         # One station, two rounds: work, rest, work; one station has no switch.
         (
@@ -232,11 +246,16 @@ async def test_start_without_countdown_begins_at_work(make_app: MakeApp) -> None
                 "round_rest_seconds": 30,
             },
             70,
+            [50],
         ),
     ],
 )
 async def test_planned_total_excludes_countdown_and_round_end_switches(
-    make_app: MakeApp, stations: list[str], fields: dict[str, Any], planned: int
+    make_app: MakeApp,
+    stations: list[str],
+    fields: dict[str, Any],
+    planned: int,
+    marks: list[int],
 ) -> None:
     """`totals.planned` sums the work, switch and rest phases: no countdown, and no switch after a round's last station."""
     async with started(FrozenClock(WEDNESDAY_9), make_app) as client:
@@ -249,6 +268,7 @@ async def test_planned_total_excludes_countdown_and_round_end_switches(
         "rounds": program["program"]["rounds"],
         "stations": len(stations),
         "stretches": 0,
+        "marks": marks,
     }
 
 

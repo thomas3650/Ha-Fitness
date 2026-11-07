@@ -162,6 +162,7 @@ async def test_view_in_cooldown(make_app: MakeApp) -> None:
         "rounds": 2,
         "stations": 2,
         "stretches": 2,
+        "marks": [45, 90],
     }
     assert views[-1]["status"] == "completed"
     assert views[-1]["totals"]["stretches"] == 2

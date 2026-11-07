@@ -93,9 +93,13 @@ async def unsubscribe(client: MockHAClientWebSocket, subscription: int) -> None:
             return
 
 
-async def music_command(client: MockHAClientWebSocket, action: str) -> dict[str, Any]:
-    """Send `ha_fitness/music`; return the reply."""
-    await client.send_json_auto_id({"type": "ha_fitness/music", "action": action})
+async def music_command(
+    client: MockHAClientWebSocket, action: str, **fields: Any
+) -> dict[str, Any]:
+    """Send `ha_fitness/music` with any further fields (the volume's `level`); return the reply."""
+    await client.send_json_auto_id(
+        {"type": "ha_fitness/music", "action": action, **fields}
+    )
     reply: dict[str, Any] = await client.receive_json()
     return reply
 
@@ -149,9 +153,9 @@ class Workout:
         state: str = music["state"]
         return state
 
-    async def command(self, action: str) -> dict[str, Any]:
-        """Send `ha_fitness/music`; return the reply."""
-        return await music_command(self.client, action)
+    async def command(self, action: str, **fields: Any) -> dict[str, Any]:
+        """Send `ha_fitness/music` with any further fields; return the reply."""
+        return await music_command(self.client, action, **fields)
 
 
 async def set_up_workout(

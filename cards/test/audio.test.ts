@@ -174,5 +174,73 @@ test("work is one long beep of 1.5 s; the short beep stays short", () => {
   expect(fake.tones()).toHaveLength(2);
   // Each oscillator is planned to stop at its end: the work tone lasts 1.5 s.
   expect(work.stops[0]! - work.start!).toBeCloseTo(1.5, 6);
-  expect(beep.stops[0]! - beep.start!).toBeCloseTo(0.12, 6);
+  expect(beep.stops[0]! - beep.start!).toBeCloseTo(0.25, 6);
+});
+
+test("the countdown beep", () => {
+  const fake = installFakeAudio("running");
+  audio.unlockAudio();
+  const now = 1_761_300_000_000;
+
+  audio.scheduleTone("beep", now + 1_000, now);
+
+  const [beep] = fake.tones();
+  expect(fake.tones()).toHaveLength(1);
+  expect(beep.frequency).toBe(1175);
+  expect(beep.stops[0]! - beep.start!).toBeCloseTo(0.25, 6);
+  expect(beep.peak).toBeCloseTo(0.5, 6);
+});
+
+test("every tone at volume 0.5", () => {
+  const fake = installFakeAudio("running");
+  audio.unlockAudio();
+  const now = 1_761_300_000_000;
+
+  audio.scheduleTone("work", now + 1_000, now);
+  audio.scheduleTone("chime", now + 3_000, now);
+
+  expect(fake.tones()).toHaveLength(4);
+  for (const tone of fake.tones()) expect(tone.peak).toBeCloseTo(0.5, 6);
+});
+
+test("keep-alive", () => {
+  const fake = installFakeAudio("running");
+  audio.unlockAudio();
+
+  audio.startKeepAlive();
+  const context = fake.contexts[0];
+  expect(context.keepAlives).toHaveLength(1);
+  const [keepAlive] = context.keepAlives;
+  expect(audio.KEEP_ALIVE_HZ).toBeGreaterThanOrEqual(100);
+  expect(keepAlive.frequency).toBe(audio.KEEP_ALIVE_HZ);
+  expect(keepAlive.peak).toBeGreaterThan(0);
+  expect(keepAlive.peak).toBeLessThanOrEqual(0.001);
+  expect(keepAlive.cancelled).toBe(false);
+  // Its own node: the tones don't see it.
+  expect(fake.tones()).toHaveLength(0);
+
+  // A second start adds none.
+  audio.startKeepAlive();
+  expect(context.keepAlives).toHaveLength(1);
+
+  audio.stopKeepAlive();
+  expect(keepAlive.cancelled).toBe(true);
+  expect(() => audio.stopKeepAlive()).not.toThrow();
+
+  // It starts again after a stop.
+  audio.startKeepAlive();
+  expect(context.keepAlives.filter((tone) => !tone.cancelled)).toHaveLength(1);
+});
+
+test("keep-alive: nothing starts without a running context", () => {
+  const fake = installFakeAudio("suspended");
+  // No context yet.
+  audio.startKeepAlive();
+  expect(fake.contexts).toHaveLength(0);
+
+  // A context the browser hasn't resumed yet.
+  audio.unlockAudio();
+  audio.startKeepAlive();
+  expect(fake.contexts[0].keepAlives).toHaveLength(0);
+  expect(() => audio.stopKeepAlive()).not.toThrow();
 });
